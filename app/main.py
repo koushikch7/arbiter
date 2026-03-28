@@ -121,7 +121,6 @@ async def lifespan(app: FastAPI):
                 import json as _json
                 _modal_redis_keys = [k for k in _json.loads(_modal_redis_raw) if k.strip()]
             if _modal_redis_keys:
-                from app.providers.modal_provider import ModalProvider
                 providers["modal"] = ModalProvider()
                 _modal_limits = PROVIDER_LIMITS.get("modal", {"rpm": 20, "tpm": 100_000, "daily": 1000})
                 key_pools["modal"] = KeyPool(

@@ -164,12 +164,18 @@ arbiter/
 │       ├── __init__.py
 │       ├── chat.py                   # POST /v1/chat/completions
 │       ├── models_api.py             # GET /v1/models
-│       ├── dashboard.py              # Dashboard & stats endpoints
+│       ├── dashboard.py              # Dashboard & stats HTML endpoints
+│       ├── settings_api.py           # GET/POST/DELETE /settings/routing, /settings/cache
+│       ├── keys_api.py               # GET/POST/DELETE /api/providers/* (runtime key mgmt)
+│       ├── image_api.py              # POST /v1/images/generations (Pollinations)
 │       └── cloudflare_manager.py     # Workers AI management endpoints
 │
-├── static/                            # Static assets
-│   ├── dashboard.html                # Web UI dashboard
-│   └── api-docs.html                 # Interactive API documentation
+├── static/                            # Static assets (served at /static/)
+│   ├── arbiter.css                   # Shared design system (light/dark theme, components)
+│   ├── arbiter.js                    # Shared JS (theme toggle, sidebar, toast, helpers)
+│   ├── dashboard.html                # Web UI dashboard (/dashboard)
+│   ├── api-docs.html                 # Interactive API documentation (/api-docs)
+│   └── settings.html                 # Settings control panel (/settings)
 │
 ├── Dockerfile                         # Docker image
 ├── docker-compose.yml                # Compose config
@@ -181,6 +187,82 @@ arbiter/
 ├── CHANGELOG.md                      # Version history
 └── DEVELOPER.md                      # This file
 ```
+
+---
+
+## Full API Reference
+
+### Chat & Models (OpenAI-compatible)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/chat/completions` | Chat completions (OpenAI format) |
+| `GET`  | `/v1/models` | List all available models |
+
+### Image Generation
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/images/generations` | Generate images via Pollinations.ai (free) |
+| `GET`  | `/v1/images/models` | List available image models |
+
+### Provider Key Management
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`    | `/api/providers` | List all providers with status, masked keys, pool stats |
+| `POST`   | `/api/providers/{name}/keys` | Add a runtime key `{"key": "..."}` |
+| `DELETE` | `/api/providers/{name}/keys/{hash}` | Remove a runtime key by MD5 hash |
+| `POST`   | `/api/providers/{name}/enable` | Enable a disabled provider |
+| `POST`   | `/api/providers/{name}/disable` | Disable a provider (removes from routing) |
+| `POST`   | `/api/providers/{name}/test` | Probe connectivity, returns latency + sample reply |
+| `POST`   | `/api/providers/reload` | Hot-reload all providers from env + Redis |
+
+### Settings (Routing & Cache)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`    | `/settings/routing` | Current routing config (provider order + model overrides) |
+| `POST`   | `/settings/routing` | Update `{"provider_order": [...], "model_overrides": {...}}` |
+| `DELETE` | `/settings/routing` | Reset to built-in defaults |
+| `DELETE` | `/settings/cache` | Clear all cached responses from Redis |
+
+### Cloudflare Workers AI Management
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`    | `/cloudflare/models` | List available Workers AI text-generation models |
+| `POST`   | `/cloudflare/workers` | Create a Worker `{"name": "...", "model": "@cf/..."}` |
+| `GET`    | `/cloudflare/workers` | List deployed workers |
+| `DELETE` | `/cloudflare/workers/{name}` | Delete a deployed worker |
+
+### UI & Monitoring
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/dashboard` | Web dashboard (HTML) |
+| `GET` | `/dashboard/stats` | Dashboard stats (JSON) |
+| `GET` | `/api-docs` | Interactive API documentation (HTML) |
+| `GET` | `/settings` | Settings control panel (HTML) |
+| `GET` | `/health` | Health check |
+| `GET` | `/docs` | Swagger UI |
+| `GET` | `/redoc` | ReDoc |
+
+### Redis Key Schema
+
+| Key Pattern | Type | Description |
+|---|---|---|
+| `arbiter:stats:requests_total` | Counter | Global request count |
+| `arbiter:stats:provider:{name}:success` | Counter | Per-provider success count |
+| `{provider}:{keyhash}:rpm` | Counter (60s TTL) | Per-key RPM usage |
+| `{provider}:{keyhash}:tpm` | Counter (60s TTL) | Per-key TPM usage |
+| `{provider}:{keyhash}:daily` | Counter (24h TTL) | Per-key daily token usage |
+| `{provider}:{keyhash}:failed` | String (5m TTL) | Key on cooldown flag |
+| `arbiter:cache:{sha256}` | JSON | Cached response |
+| `arbiter:config:provider_order` | JSON | Custom provider order |
+| `arbiter:config:models:{provider}` | JSON | Custom model hierarchy |
+| `arbiter:runtime:keys:{provider}` | JSON | Runtime-added keys |
+| `arbiter:runtime:disabled:{provider}` | String | Provider disabled flag |
 
 ---
 

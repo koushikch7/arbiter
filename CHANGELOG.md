@@ -6,7 +6,120 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.1.0] – 2026-03-28 (Latest)
+## [1.3.0] – 2026-03-28 (Latest)
+
+### ✨ Runtime API Key Management (no restart required)
+
+- **New endpoint group: `GET/POST/DELETE /api/providers/*`**
+  - `GET /api/providers` — list all providers with status, masked keys, pool stats
+  - `POST /api/providers/{name}/keys` — add a key at runtime (stored in Redis)
+  - `DELETE /api/providers/{name}/keys/{hash}` — remove a runtime-added key
+  - `POST /api/providers/{name}/enable` — re-enable a disabled provider
+  - `POST /api/providers/{name}/disable` — take a provider offline without restart
+  - `POST /api/providers/{name}/test` — probe provider connectivity and measure latency
+  - `POST /api/providers/reload` — hot-reload all key pools from env + Redis
+
+- Keys added via the UI are stored in Redis (`arbiter:runtime:keys:{provider}`) and
+  merged with `.env` keys automatically; no container restart needed.
+- Enable/disable state stored in Redis (`arbiter:runtime:disabled:{provider}`).
+- Env-var keys are shown as read-only (source: `env`); runtime keys can be deleted.
+
+### 🖼️ Image Generation (Pollinations.ai — free, no key required)
+
+- **New endpoints:**
+  - `POST /v1/images/generations` — OpenAI-compatible image generation
+  - `GET /v1/images/models` — list available image models
+- Backed by Pollinations.ai FLUX models: `flux`, `flux-realism`, `flux-anime`, `flux-3d`, `flux-cablyai`, `turbo`
+- Supports: prompt, negative prompt, model, size (up to 2048×2048), count (1–4), seed, AI enhance
+- Returns image URLs (Pollinations renders lazily on first access)
+- Completely free — no API key, no credit card
+
+### 🎨 Settings UI — Full Overhaul
+
+- **API Keys tab** (new, shown first):
+  - Per-provider cards with status badge, enable/disable toggle, test button
+  - Masked key list with source label (`env` or `runtime`)
+  - Add key form with format hint per provider
+  - Inline Cloudflare setup guide with step-by-step instructions
+  - Sign-up links per provider
+- **Image Generation tab** (new):
+  - Live image generator UI backed by Pollinations
+  - Model, size, count, seed, negative prompt, enhance controls
+  - Generated images shown as clickable grid with download links
+  - API endpoint reference panel
+- **Reload Providers** button in topbar (calls `/api/providers/reload`)
+- Cloudflare Workers tab: setup banner shown when CF keys not configured
+
+### 🔧 Infrastructure
+
+- Added `app/api/keys_api.py` (new) — provider management router
+- Added `app/api/image_api.py` (new) — image generation router
+- `app/main.py` — registers `keys_router` and `image_router`
+- `app/middleware/auth.py` — exempts `/api/providers/*` and `/v1/images/models` paths
+
+---
+
+## [1.2.0] – 2026-03-28
+
+### 🎨 Enterprise UI/UX Overhaul
+
+- **Shared design system** — `static/arbiter.css` and `static/arbiter.js` loaded by all pages
+  - Consistent CSS custom properties for colors, spacing, radius, shadows
+  - Sidebar (240 px fixed), topbar (56 px), main content area
+  - KPI cards, chart grid, stat rows, progress bars, tables, badges, drag list, toast, tabs, accordion
+- **Light / Dark mode**
+  - System preference detection (`prefers-color-scheme`)
+  - Manual toggle persisted in `localStorage` (`arbiter-theme`)
+  - Applied immediately on `<html>` before paint (no FOUC)
+- **Unified single-site navigation** — identical sidebar across all three pages
+- `app/main.py` — added `StaticFiles` mount at `/static/`
+- `app/middleware/auth.py` — exempt paths starting with `/static/`
+
+### 📊 Dashboard (`/dashboard`) — Rewrite
+
+- 4 KPI cards: Total Requests, Success Rate, Cache Hit Rate, Cached Entries
+- Chart.js **line chart** (request history, 20 data points stored in `localStorage`) + **doughnut chart** (provider distribution)
+- Provider Status table with health badges
+- **Key Details accordion** — per-provider, collapsible; shows hash, status badge, score bar, RPM/TPM/daily mini-bars
+- 10-second auto-refresh via `/dashboard/stats`
+- Live status pill and last-update timestamp in topbar
+
+### 📚 API Docs (`/api-docs`) — Rewrite
+
+- 5-tab layout: Overview, Authentication, Endpoints, Playground, Providers
+- **Live playground** — vendor/model select, temperature slider, system/user messages, response panel with token usage
+- Providers tab loads real data from `/settings/routing`
+- Model list loads from `/v1/models`
+
+### ⚙️ Settings (`/settings`) — New page
+
+- **Routing tab** — drag-to-reorder provider priority list
+- **Models tab** — per-provider model hierarchy management (add/remove/reorder)
+- **Cloudflare Workers tab** — list, create, delete deployed Workers
+- **Cache tab** — stats display + clear cache button
+
+### 🛠️ Settings Management API
+
+- `GET /settings/routing` — current routing config (provider order + model overrides)
+- `POST /settings/routing` — save custom provider order and/or model overrides to Redis
+- `DELETE /settings/routing` — reset to built-in defaults
+- `DELETE /settings/cache` — clear all `arbiter:cache:*` keys from Redis
+
+### 🔧 Router — Runtime Config Support
+
+- `IntelligentRouter` reads custom config from Redis (`arbiter:config:provider_order`, `arbiter:config:models:{provider}`)
+- 30-second in-memory cache on router to avoid per-request Redis reads
+- `_provider_order()` and `_model_hierarchy()` accept optional `cfg` dict from Redis
+
+### 🚫 Cache-Control Headers
+
+- All HTML endpoints (`/dashboard`, `/api-docs`, `/settings`) now return:
+  `Cache-Control: no-store, no-cache, must-revalidate` + `CDN-Cache-Control: no-store`
+- Prevents Cloudflare CDN from caching stale UI after deployments
+
+---
+
+## [1.1.0] – 2026-03-28
 
 ### 🚀 New Providers & Model Updates
 

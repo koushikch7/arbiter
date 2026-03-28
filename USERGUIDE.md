@@ -13,8 +13,168 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 5. [Understanding Rate Limits](#understanding-rate-limits)
 6. [API Reference](#api-reference)
 7. [Usage Examples](#usage-examples)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
+8. [Managing API Keys via UI](#managing-api-keys-via-ui)
+9. [Image Generation](#image-generation)
+10. [Settings Dashboard](#settings-dashboard)
+11. [Best Practices](#best-practices)
+12. [Troubleshooting](#troubleshooting)
+
+---
+
+## Managing API Keys via UI
+
+You can add, remove, test, and enable/disable provider API keys at runtime — **no container restart required**.
+
+### Open Settings → API Keys tab
+
+Navigate to `/settings` and click the **API Keys** tab (shown first by default).
+
+Each provider card shows:
+- **Status badge** — Active (green) or Inactive (grey)
+- **Enable / Disable toggle** — instantly remove or restore a provider from the routing pool
+- **Test button** — sends a minimal probe request and reports latency
+- **Existing keys** — masked (e.g. `AIzaSy...Ab3c`), labelled `env` (from `.env` file) or `runtime` (added via UI)
+- **Add key form** — paste a new key and click **Add Key**
+
+### Key Format by Provider
+
+| Provider | Format | Example |
+|---|---|---|
+| Gemini | API key | `AIzaSy...` |
+| Groq | API key | `gsk_...` |
+| OpenRouter | API key | `sk-or-v1-...` |
+| Cohere | API key | `...` |
+| **Cloudflare Workers AI** | `account_id\|api_token` | `abc123\|your_token` |
+| Cerebras | API key | `csk-...` |
+| HuggingFace | Access Token | `hf_...` |
+| Pollinations | *(none needed)* | Free, anonymous |
+
+### Cloudflare Workers AI Setup
+
+1. Sign up at [cloudflare.com](https://cloudflare.com) (free)
+2. Go to **Workers & Pages** — this activates the Workers AI free tier
+3. Find your **Account ID** in the right sidebar of the Workers overview page
+4. Go to **Profile → API Tokens → Create Token**
+5. Use the "Cloudflare Workers AI" template (or add `AI Gateway: Read` permission)
+6. In the API Keys tab, add the key as: `<Account_ID>|<API_Token>`
+
+### Runtime API (programmatic)
+
+```bash
+# List all providers
+GET /api/providers
+
+# Add a key
+POST /api/providers/gemini/keys
+{"key": "AIzaSy..."}
+
+# Remove a key by hash
+DELETE /api/providers/gemini/keys/{hash}
+
+# Enable / disable
+POST /api/providers/cloudflare/enable
+POST /api/providers/cloudflare/disable
+
+# Test connectivity
+POST /api/providers/groq/test
+
+# Reload all key pools
+POST /api/providers/reload
+```
+
+---
+
+## Image Generation
+
+Arbiter includes a **free image generation endpoint** powered by [Pollinations.ai](https://pollinations.ai) — no API key required.
+
+### Via the UI
+
+Go to **Settings → Image Generation tab**:
+1. Enter a prompt (and optional negative prompt)
+2. Choose model, size, count, and seed
+3. Click **Generate Images**
+4. Click any image to open full-size; click ↗ to download
+
+### API (OpenAI-compatible)
+
+```bash
+POST /v1/images/generations
+Content-Type: application/json
+
+{
+  "prompt": "a red fox sitting in autumn leaves, photorealistic",
+  "model": "flux",
+  "size": "1024x1024",
+  "n": 1,
+  "seed": -1,
+  "enhance": false
+}
+```
+
+Response:
+```json
+{
+  "created": 1711584000,
+  "provider": "pollinations",
+  "model": "flux",
+  "data": [
+    {"url": "https://image.pollinations.ai/prompt/..."}
+  ]
+}
+```
+
+### Available Models
+
+| Model | Description |
+|---|---|
+| `flux` | Default — high quality, versatile |
+| `flux-realism` | Photorealistic images |
+| `flux-anime` | Anime / manga style |
+| `flux-3d` | 3D rendered style |
+| `flux-cablyai` | CablyAI fine-tune |
+| `turbo` | Fast generation (SDXL Turbo) |
+
+List models: `GET /v1/images/models`
+
+### Size Options
+
+Any `WxH` up to `2048x2048`. Common presets:
+- `1024x1024` (square, default)
+- `1280x720` (landscape / 16:9)
+- `720x1280` (portrait / 9:16)
+- `1920x1080` (Full HD)
+
+---
+
+## Settings Dashboard
+
+Navigate to `/settings` for the full control panel.
+
+### Tab: API Keys
+Manage provider keys at runtime — see [Managing API Keys via UI](#managing-api-keys-via-ui).
+
+### Tab: Routing
+Drag providers up/down to change priority. The router falls back top → bottom.
+- Click **Save Order** to persist
+- Click **Reset to Default** to undo customization
+
+### Tab: Models
+Override the model hierarchy per provider — reorder, add, or remove models.
+Changes apply within ~30 seconds (Redis config cache TTL).
+
+### Tab: Image Generation
+Live image generator — see [Image Generation](#image-generation).
+
+### Tab: CF Workers
+Deploy and manage Cloudflare Workers that expose an OpenAI-compatible endpoint backed by Workers AI.
+- **List deployed workers** with creation date and copy URL button
+- **Create new worker** — pick a model from the Cloudflare model list
+- **Delete workers** you no longer need
+
+### Tab: Cache
+- View hit rate, total hits/misses, and cached entry count
+- **Clear All Cache** — deletes all `arbiter:cache:*` keys from Redis (irreversible)
 
 ---
 

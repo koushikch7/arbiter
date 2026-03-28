@@ -77,6 +77,26 @@ Try Gemini (large context required):
 - **No API keys in logs** — Keys hashed; only first 4 chars logged
 - **Secure header transmission** — All secrets sent via secure channels
 
+### ✅ Runtime API Key Management (no restart)
+- **Add / remove keys at runtime** — stored in Redis, merged with `.env` keys automatically
+- **Enable / disable providers** — take a provider offline and bring it back without restarting Docker
+- **Test connectivity** — probe any provider and measure round-trip latency
+- **Hot-reload all providers** in one click
+- **API:** `GET/POST/DELETE /api/providers/*`
+
+### ✅ Image Generation — Pollinations.ai (free)
+- **`POST /v1/images/generations`** — OpenAI-compatible image endpoint
+- Backed by FLUX models: `flux`, `flux-realism`, `flux-anime`, `flux-3d`, `turbo`
+- Free, no API key required; supports prompt, negative prompt, size up to 2048×2048, seed, count
+- **`GET /v1/images/models`** — list available models
+
+### ✅ Enterprise UI/UX (unified design system)
+- Shared `arbiter.css` + `arbiter.js` across all pages — consistent sidebar, topbar, components
+- **Light / dark mode** — system preference detection + manual toggle, persisted in `localStorage`
+- **Dashboard** — KPI cards, Chart.js line + doughnut charts, provider status table, key details accordion
+- **API Docs** (`/api-docs`) — 5-tab layout with live playground, provider table, endpoint reference
+- **Settings** (`/settings`) — API Keys management, routing order, model overrides, image gen, Cloudflare Workers, cache
+
 ### ✅ Cloudflare Workers AI Manager
 - **Create Workers** — Provision new Workers AI instances from the gateway
 - **List Models** — View available Cloudflare models
@@ -97,12 +117,14 @@ Gateway starts successfully **even without Redis**:
                         OpenClaw / Your App
                                 │
                                 ▼
-                  ┌─────────────────────────────────┐
-                  │      FastAPI Gateway            │
-                  │  /v1/chat/completions           │
-                  │  /api-docs · /dashboard · /docs │
-                  │  /cloudflare/workers (mgr)      │
-                  └─────────────────────────────────┘
+                  ┌─────────────────────────────────────┐
+                  │        FastAPI Gateway              │
+                  │  /v1/chat/completions               │
+                  │  /v1/images/generations             │
+                  │  /dashboard · /api-docs · /settings │
+                  │  /api/providers/* (key mgmt)        │
+                  │  /cloudflare/workers/* (mgr)        │
+                  └─────────────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
         ▼                       ▼                       ▼

@@ -24,6 +24,8 @@ from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
 from app.api.cloudflare_manager import router as cloudflare_router
 from app.api.settings_api import router as settings_router
+from app.api.keys_api import router as keys_router
+from app.api.image_api import router as image_router
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
@@ -199,6 +201,8 @@ app.include_router(models_api.router, tags=["Models"])
 app.include_router(dashboard.router, tags=["Dashboard"])
 app.include_router(cloudflare_router, tags=["Cloudflare Workers AI"])
 app.include_router(settings_router, tags=["Settings"])
+app.include_router(keys_router, tags=["Provider Management"])
+app.include_router(image_router, tags=["Images"])
 
 
 @app.get("/health", summary="Health check")

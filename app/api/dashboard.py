@@ -46,6 +46,13 @@ async def dashboard(request: Request) -> HTMLResponse:
         )
 
 
+@router.get("/images", response_class=HTMLResponse, summary="Redirect to image generation settings")
+async def images_redirect() -> HTMLResponse:
+    """Redirect /images to the settings page image gen tab."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/settings#images")
+
+
 @router.get("/settings", response_class=HTMLResponse, summary="Settings dashboard")
 async def settings_page() -> HTMLResponse:
     """Serve the settings management page."""

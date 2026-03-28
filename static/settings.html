@@ -8,16 +8,102 @@
   <link rel="stylesheet" href="/static/arbiter.css" />
   <script src="/static/arbiter.js"></script>
   <style>
+    /* ── Provider card ─────────────────────────────────────────── */
+    .provider-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      margin-bottom: 14px;
+      transition: border-color .15s;
+    }
+    .provider-card.disabled-card { opacity: .55; }
+    .provider-card-hd {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .provider-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+    .provider-info { flex: 1; min-width: 0; }
+    .provider-name  { font-size: 13px; font-weight: 600; color: var(--text); }
+    .provider-meta  { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .provider-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .toggle-btn {
+      position: relative; width: 40px; height: 22px; cursor: pointer;
+      appearance: none; -webkit-appearance: none;
+      background: var(--border); border-radius: 11px;
+      transition: background .2s; outline: none; border: none;
+    }
+    .toggle-btn:checked { background: var(--green); }
+    .toggle-btn::before {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #fff; transition: left .2s;
+    }
+    .toggle-btn:checked::before { left: 21px; }
+    .provider-card-body { padding: 14px 16px; }
+    /* ── Key row ──────────────────────────────────────────────── */
+    .key-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 0; border-bottom: 1px solid var(--border);
+    }
+    .key-row:last-of-type { border-bottom: none; }
+    .key-hash   { font-family: 'JetBrains Mono',monospace; font-size: 10px; color: var(--text-3); min-width: 72px; }
+    .key-masked { font-family: 'JetBrains Mono',monospace; font-size: 11px; flex: 1; color: var(--text-2); }
+    .key-source { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+    .key-source.env     { background: var(--accent-dim); color: var(--accent); }
+    .key-source.runtime { background: var(--green-dim);  color: var(--green); }
+    .key-del-btn {
+      background: none; border: none; color: var(--red); cursor: pointer;
+      padding: 3px 6px; border-radius: var(--r-sm); opacity: .6; font-size: 13px;
+    }
+    .key-del-btn:hover { opacity: 1; background: var(--red-dim); }
+    /* ── Add key form ─────────────────────────────────────────── */
+    .add-key-row { display: flex; gap: 8px; margin-top: 12px; }
+    .add-key-row .form-control { flex: 1; font-family: 'JetBrains Mono',monospace; font-size: 12px; }
+    /* ── Setup guide ──────────────────────────────────────────── */
+    .setup-guide {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-md); padding: 12px 14px; margin-top: 12px;
+    }
+    .setup-guide-title {
+      font-size: 11px; font-weight: 600; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px;
+    }
+    .setup-guide ol { margin: 0; padding-left: 18px; }
+    .setup-guide li { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+    /* ── Image gen ─────────────────────────────────────────────── */
+    .img-grid {
+      display: grid; gap: 12px; margin-top: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    }
+    .img-thumb {
+      aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden;
+      background: var(--surface-3); border: 1px solid var(--border);
+      position: relative; cursor: pointer;
+    }
+    .img-thumb img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .img-thumb .img-loader {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; font-size: 11px; color: var(--text-3);
+    }
+    /* ── Misc ─────────────────────────────────────────────────── */
     .model-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
     .model-row:last-child { border-bottom: none; }
     .model-row-name { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-2); }
     .model-row-ctx  { font-size: 10px; color: var(--text-3); min-width: 48px; text-align: right; }
     .model-move-btn { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm); line-height: 1; }
     .model-move-btn:hover { background: var(--surface-3); color: var(--text); }
-    .model-del-btn  { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px 6px; border-radius: var(--r-sm); font-size: 13px; opacity: 0.6; }
+    .model-del-btn  { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px 6px; border-radius: var(--r-sm); font-size: 13px; opacity: .6; }
     .model-del-btn:hover { opacity: 1; background: var(--red-dim); }
     .add-model-row  { display: flex; gap: 8px; margin-top: 12px; }
-    .provider-desc  { font-size: 12px; color: var(--text-3); margin-left: auto; }
     .worker-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .worker-row:last-child { border-bottom: none; }
   </style>
@@ -75,6 +161,10 @@
       <h1 class="page-title">Settings</h1>
       <div class="topbar-right">
         <span id="settings-status" style="font-size:11px;color:var(--text-3)"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="reloadAll()">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Reload Providers
+        </button>
       </div>
     </header>
 
@@ -82,7 +172,11 @@
 
       <!-- Tab bar -->
       <div class="tab-bar">
-        <button class="tab-btn active" onclick="switchTab('routing', this)">
+        <button class="tab-btn active" onclick="switchTab('keys', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          API Keys
+        </button>
+        <button class="tab-btn" onclick="switchTab('routing', this)">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
           Routing
         </button>
@@ -90,9 +184,13 @@
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
           Models
         </button>
+        <button class="tab-btn" onclick="switchTab('images', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Image Gen
+        </button>
         <button class="tab-btn" onclick="switchTab('cloudflare', this)">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
-          Cloudflare Workers
+          CF Workers
         </button>
         <button class="tab-btn" onclick="switchTab('cache', this)">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
@@ -100,8 +198,14 @@
         </button>
       </div>
 
-      <!-- Routing Tab -->
-      <div id="tab-routing" class="tab-panel active">
+      <!-- ═══════════════ API Keys Tab ═══════════════ -->
+      <div id="tab-keys" class="tab-panel active">
+        <div id="keys-loading" style="padding:40px;text-align:center;color:var(--text-3)">Loading providers…</div>
+        <div id="providers-grid" style="display:none"></div>
+      </div>
+
+      <!-- ═══════════════ Routing Tab ═══════════════ -->
+      <div id="tab-routing" class="tab-panel">
         <div class="grid-2" style="align-items:start">
           <div>
             <div class="card" style="margin-bottom:14px">
@@ -110,7 +214,7 @@
                 <span id="routing-customized" class="badge badge-gray" style="display:none">Customized</span>
               </div>
               <div class="card-body">
-                <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">Drag to reorder providers. The router tries them from top (highest priority) to bottom.</p>
+                <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">Drag to reorder providers. The router tries them top → bottom.</p>
                 <div class="drag-list" id="drag-list"></div>
                 <div style="display:flex;gap:10px;margin-top:16px">
                   <button class="btn btn-primary" onclick="saveRouting()">
@@ -128,20 +232,20 @@
           </div>
 
           <div class="card">
-            <div class="card-hd"><span class="card-title">Routing Logic Reference</span></div>
+            <div class="card-hd"><span class="card-title">Routing Logic</span></div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:10px">
                 <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
-                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Model-Name Routing</div>
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Model-Name Routing</div>
                   <p style="font-size:12px;color:var(--text-2)">Model keywords like <code>gemini</code>, <code>@cf/</code>, <code>command-r</code> override this order.</p>
                 </div>
                 <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
-                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Token-Count Routing</div>
-                  <p style="font-size:12px;color:var(--text-2)">Huge context (&gt;100K) → Gemini first. Large (&gt;16K) → Gemini/OpenRouter. Small (&lt;4K) → Groq.</p>
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Token-Count Routing</div>
+                  <p style="font-size:12px;color:var(--text-2)">&gt;100K tokens → Gemini. &gt;16K → Gemini/OpenRouter. &lt;4K → Groq (fastest).</p>
                 </div>
                 <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
-                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Fallback</div>
-                  <p style="font-size:12px;color:var(--text-2)">If a provider fails, the next in this list is tried automatically.</p>
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Automatic Fallback</div>
+                  <p style="font-size:12px;color:var(--text-2)">On failure, the next provider in this list is tried automatically.</p>
                 </div>
               </div>
             </div>
@@ -149,7 +253,7 @@
         </div>
       </div>
 
-      <!-- Models Tab -->
+      <!-- ═══════════════ Models Tab ═══════════════ -->
       <div id="tab-models" class="tab-panel">
         <div class="card" style="margin-bottom:14px">
           <div class="card-hd">
@@ -164,23 +268,182 @@
             </div>
           </div>
           <div class="card-body">
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:16px">Customize the model list and priority for each provider. Changes are applied within 30 seconds (cache TTL). Leave a provider empty to use its defaults.</p>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:16px">Customize the model list and priority for each provider. Changes apply within 30 s. Leave empty to use provider defaults.</p>
             <div id="models-accordion"></div>
           </div>
         </div>
       </div>
 
-      <!-- Cloudflare Tab -->
+      <!-- ═══════════════ Image Generation Tab ═══════════════ -->
+      <div id="tab-images" class="tab-panel">
+        <div class="grid-2" style="align-items:start">
+
+          <!-- Generator -->
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Image Generator</span>
+              <span class="badge badge-green">Free · Pollinations</span>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Prompt</label>
+                <textarea id="img-prompt" class="form-control" rows="3" placeholder="A serene mountain lake at sunset, photorealistic, golden hour lighting…"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Negative Prompt <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+                <input id="img-negative" type="text" class="form-control" placeholder="blurry, low quality, watermark…" />
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Model</label>
+                  <select id="img-model" class="form-control">
+                    <option value="flux">flux — versatile (default)</option>
+                    <option value="flux-realism">flux-realism — photorealistic</option>
+                    <option value="flux-anime">flux-anime — anime style</option>
+                    <option value="flux-3d">flux-3d — 3D rendered</option>
+                    <option value="flux-cablyai">flux-cablyai — fine-tune</option>
+                    <option value="turbo">turbo — fast</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Size</label>
+                  <select id="img-size" class="form-control">
+                    <option value="1024x1024">1024×1024 (square)</option>
+                    <option value="1280x720">1280×720 (landscape)</option>
+                    <option value="720x1280">720×1280 (portrait)</option>
+                    <option value="1920x1080">1920×1080 (HD)</option>
+                    <option value="768x768">768×768</option>
+                    <option value="512x512">512×512 (fast)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Count</label>
+                  <select id="img-count" class="form-control">
+                    <option value="1">1 image</option>
+                    <option value="2">2 images</option>
+                    <option value="4">4 images</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Seed <span style="color:var(--text-3);font-weight:400">(−1 = random)</span></label>
+                  <input id="img-seed" type="number" class="form-control" value="-1" min="-1" />
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                  <input type="checkbox" id="img-enhance" style="accent-color:var(--accent)" />
+                  Enhance prompt (AI rewrite)
+                </label>
+              </div>
+              <button class="btn btn-primary" style="width:100%" onclick="generateImages()">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                Generate Images
+                <span class="spinner" id="img-spinner"></span>
+              </button>
+              <div id="img-result" class="img-grid" style="display:none"></div>
+            </div>
+          </div>
+
+          <!-- Info -->
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="card-hd"><span class="card-title">API Endpoint</span></div>
+              <div class="card-body">
+                <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">Use this OpenAI-compatible endpoint in your applications:</p>
+                <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">
+                  <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">POST</div>
+                  <code style="font-size:11px;color:var(--accent)">/v1/images/generations</code>
+                </div>
+                <div style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">
+                  <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">Example</div>
+                  <pre style="margin:0;font-size:11px;color:var(--text-2);overflow-x:auto">{
+  "prompt": "a red fox in snow",
+  "model": "flux",
+  "size": "1024x1024",
+  "n": 1
+}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-hd"><span class="card-title">About Pollinations</span></div>
+              <div class="card-body">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <span style="font-size:18px">🆓</span>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">Completely free</div>
+                      <div style="font-size:11px;color:var(--text-3)">No API key needed, no credit card</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <span style="font-size:18px">⚡</span>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">Powered by FLUX</div>
+                      <div style="font-size:11px;color:var(--text-3)">State-of-the-art image generation</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <span style="font-size:18px">🖼️</span>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">6 models</div>
+                      <div style="font-size:11px;color:var(--text-3)">Realistic, anime, 3D, and more</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <span style="font-size:18px">📐</span>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">Any resolution</div>
+                      <div style="font-size:11px;color:var(--text-3)">Up to 2048×2048 pixels</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ Cloudflare Workers Tab ═══════════════ -->
       <div id="tab-cloudflare" class="tab-panel">
+
+        <!-- Setup guide (shown when no CF keys configured) -->
+        <div id="cf-setup-banner" class="card" style="margin-bottom:14px;border-color:var(--accent);display:none">
+          <div class="card-hd" style="background:var(--accent-dim)">
+            <span class="card-title" style="color:var(--accent)">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Cloudflare Workers AI Setup
+            </span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:13px;color:var(--text-2);margin-bottom:12px">To use Cloudflare Workers AI, add your credentials in the <strong>API Keys</strong> tab. Here's how to get them:</p>
+            <ol style="font-size:13px;color:var(--text-2);padding-left:20px;margin-bottom:16px">
+              <li style="margin-bottom:6px">Sign up for a free account at <a href="https://cloudflare.com" target="_blank" style="color:var(--accent)">cloudflare.com</a></li>
+              <li style="margin-bottom:6px">Go to <strong>Workers &amp; Pages</strong> in your dashboard — this activates Workers AI free tier</li>
+              <li style="margin-bottom:6px">Find your <strong>Account ID</strong> in the right sidebar of the Workers overview page</li>
+              <li style="margin-bottom:6px">Go to <strong>Profile → API Tokens → Create Token</strong></li>
+              <li style="margin-bottom:6px">Use the "Cloudflare Workers AI" template — grant <em>AI Gateway: Read</em> permission</li>
+              <li style="margin-bottom:6px">Add the key in API Keys tab as: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">YOUR_ACCOUNT_ID|YOUR_API_TOKEN</code></li>
+            </ol>
+            <a href="/settings#tab-keys" class="btn btn-primary" onclick="switchTabByName('keys')">
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+              Go to API Keys Tab
+            </a>
+          </div>
+        </div>
+
         <div class="grid-2" style="align-items:start">
           <div class="card">
             <div class="card-hd">
-              <span class="card-title">AI Gateway Workers</span>
+              <span class="card-title">Deployed Workers</span>
               <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadWorkers()">Refresh</button>
             </div>
             <div class="card-body">
               <div id="workers-list">
-                <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading workers...</div>
+                <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading workers…</div>
               </div>
             </div>
           </div>
@@ -188,19 +451,20 @@
           <div class="card">
             <div class="card-hd"><span class="card-title">Create New Worker</span></div>
             <div class="card-body">
+              <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">Deploy a Cloudflare Worker that exposes an OpenAI-compatible endpoint backed by Workers AI.</p>
               <div class="form-group">
                 <label class="form-label">Worker Name</label>
-                <input type="text" class="form-control" id="cf-name" placeholder="my-ai-worker" />
+                <input type="text" class="form-control" id="cf-name" placeholder="my-llm-worker" />
               </div>
               <div class="form-group">
                 <label class="form-label">Model</label>
                 <select class="form-control" id="cf-model">
-                  <option value="">Loading models...</option>
+                  <option value="">Loading models…</option>
                 </select>
               </div>
               <button class="btn btn-primary" onclick="createWorker()">
                 <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>
-                Create Worker
+                Deploy Worker
                 <span class="spinner" id="cf-spinner"></span>
               </button>
             </div>
@@ -208,23 +472,23 @@
         </div>
       </div>
 
-      <!-- Cache Tab -->
+      <!-- ═══════════════ Cache Tab ═══════════════ -->
       <div id="tab-cache" class="tab-panel">
         <div class="grid-2" style="align-items:start">
           <div class="card">
             <div class="card-hd"><span class="card-title">Cache Statistics</span></div>
             <div class="card-body" id="cache-stats-body">
-              <div style="padding:20px;text-align:center;color:var(--text-3)">Loading...</div>
+              <div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>
             </div>
           </div>
 
           <div class="card">
             <div class="card-hd"><span class="card-title">Cache Management</span></div>
             <div class="card-body">
-              <p style="font-size:13px;color:var(--text-2);margin-bottom:16px">The semantic cache stores responses for deterministic requests (temperature ≤ 0.3). Clearing the cache forces re-fetching from providers.</p>
+              <p style="font-size:13px;color:var(--text-2);margin-bottom:16px">The semantic cache stores responses for deterministic requests (temperature ≤ 0.3). Clearing forces re-fetching from providers.</p>
               <div style="background:var(--red-dim);border:1px solid rgba(239,68,68,0.2);border-radius:var(--r-md);padding:14px;margin-bottom:16px">
                 <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">Warning</div>
-                <p style="font-size:12px;color:var(--text-2)">Clearing the cache will delete all cached responses. This cannot be undone. Subsequent identical requests will hit the LLM providers directly.</p>
+                <p style="font-size:12px;color:var(--text-2)">This deletes all cached responses permanently. Subsequent identical requests will hit LLM providers directly.</p>
               </div>
               <button class="btn btn-danger" onclick="clearCache()">
                 <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -242,46 +506,255 @@
 </div>
 
 <script>
-// ── State ───────────────────────────────────────────────────────────────────
-let routingData = null;
-let modelOverrides = {}; // { provider: [model_id, ...] }
+// ── State ────────────────────────────────────────────────────────────────────
+var routingData    = null;
+var modelOverrides = {};
+var providersData  = [];
 
-const PROVIDER_DESCS = {
-  gemini:      'Google Gemini — 1M ctx, free tier',
-  groq:        'Groq LPU — ultra-fast inference',
-  cerebras:    'Cerebras — wafer-scale speed',
-  cloudflare:  'Cloudflare Workers AI — edge inference',
-  openrouter:  'OpenRouter — 100+ free models',
-  cohere:      'Cohere — enterprise Command models',
-  huggingface: 'HuggingFace — open source models',
-  pollinations:'Pollinations — free, no auth needed',
+// Provider icon colors
+var PROVIDER_COLORS = {
+  gemini:       '#4285f4',
+  groq:         '#f55036',
+  openrouter:   '#7c3aed',
+  cohere:       '#39d353',
+  cloudflare:   '#f48120',
+  cerebras:     '#ff6b35',
+  huggingface:  '#ffbd45',
+  pollinations: '#ec4899',
+};
+
+var PROVIDER_DESCS = {
+  gemini:       'Google Gemini — 1M ctx, free tier',
+  groq:         'Groq LPU — ultra-fast inference',
+  cerebras:     'Cerebras — wafer-scale speed',
+  cloudflare:   'Cloudflare Workers AI — edge inference',
+  openrouter:   'OpenRouter — 100+ free models',
+  cohere:       'Cohere — enterprise Command models',
+  huggingface:  'HuggingFace — open source models',
+  pollinations: 'Pollinations — free, no auth needed',
 };
 
 // ── Tab switching ────────────────────────────────────────────────────────────
 function switchTab(name, btn) {
   document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
+  var panel = document.getElementById('tab-' + name);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
   if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
-  if (name === 'cache') { loadCacheStats(); }
+  if (name === 'cache')      { loadCacheStats(); }
+  if (name === 'routing' && !routingData) { loadRouting(); }
+  if (name === 'models' && !routingData)  { loadRouting(); }
 }
 
-// ── Load routing config ──────────────────────────────────────────────────────
+function switchTabByName(name) {
+  var btns = document.querySelectorAll('.tab-btn');
+  var tabOrder = ['keys','routing','models','images','cloudflare','cache'];
+  var idx = tabOrder.indexOf(name);
+  if (idx >= 0 && btns[idx]) { switchTab(name, btns[idx]); }
+}
+
+// ── API Keys Tab ─────────────────────────────────────────────────────────────
+async function loadProviders() {
+  try {
+    var r = await fetch('/api/providers');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    providersData = await r.json();
+    renderProviders(providersData);
+    // Show CF setup banner if cloudflare not configured
+    var cf = providersData.find(function(p) { return p.name === 'cloudflare'; });
+    var banner = document.getElementById('cf-setup-banner');
+    if (banner && cf && !cf.configured) { banner.style.display = ''; }
+  } catch(e) {
+    document.getElementById('keys-loading').innerHTML =
+      '<span style="color:var(--red)">Failed to load providers: ' + e.message + '</span>';
+  }
+}
+
+function renderProviders(providers) {
+  var grid = document.getElementById('providers-grid');
+  grid.innerHTML = '';
+  providers.forEach(function(p) { grid.appendChild(buildProviderCard(p)); });
+  document.getElementById('keys-loading').style.display = 'none';
+  grid.style.display = '';
+}
+
+function buildProviderCard(p) {
+  var div = document.createElement('div');
+  div.className = 'provider-card' + (p.disabled ? ' disabled-card' : '');
+  div.id = 'provider-card-' + p.name;
+
+  var color  = PROVIDER_COLORS[p.name] || '#6366f1';
+  var letter = (p.label || p.name)[0].toUpperCase();
+
+  // Keys HTML
+  var keysHtml = '';
+  if (p.name === 'pollinations') {
+    keysHtml = '<div style="font-size:12px;color:var(--green);padding:8px 0">✓ No key required — anonymous free service</div>';
+  } else if (p.keys && p.keys.length > 0) {
+    keysHtml = p.keys.map(function(k) {
+      var delBtn = k.source === 'runtime'
+        ? '<button class="key-del-btn" onclick="deleteKey(\'' + p.name + '\',\'' + k.hash + '\')" title="Remove key">✕</button>'
+        : '<span style="font-size:10px;color:var(--text-3);padding:0 6px" title="Set via .env — edit .env to remove">env</span>';
+      return '<div class="key-row">' +
+        '<span class="key-hash">' + k.hash + '</span>' +
+        '<span class="key-masked">' + k.masked + '</span>' +
+        '<span class="key-source ' + k.source + '">' + k.source + '</span>' +
+        delBtn +
+        '</div>';
+    }).join('');
+  } else {
+    keysHtml = '<div style="font-size:12px;color:var(--text-3);padding:8px 0">No keys configured. Add one below.</div>';
+  }
+
+  // Test button result area
+  var testId = 'test-result-' + p.name;
+
+  // Setup steps
+  var stepsHtml = '';
+  if (p.setup_steps && p.setup_steps.length > 0 && !p.configured) {
+    stepsHtml = '<div class="setup-guide">' +
+      '<div class="setup-guide-title">Setup Guide</div>' +
+      '<ol>' + p.setup_steps.map(function(s) { return '<li>' + s + '</li>'; }).join('') + '</ol>' +
+      (p.signup_url ? '<a href="' + p.signup_url + '" target="_blank" class="btn btn-ghost" style="margin-top:10px;font-size:11px">' +
+        '<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>' +
+        ' Get API Key</a>' : '') +
+      '</div>';
+  }
+
+  // Add key form
+  var addFormHtml = p.name !== 'pollinations' ? (
+    '<div class="add-key-row">' +
+    '<input type="password" id="key-input-' + p.name + '" class="form-control" ' +
+    'placeholder="' + (p.key_hint || 'Paste API key…') + '" ' +
+    'style="font-family:\'JetBrains Mono\',monospace;font-size:12px" />' +
+    '<button class="btn btn-primary" style="white-space:nowrap" onclick="addKey(\'' + p.name + '\')">' +
+    '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>' +
+    ' Add Key</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text-3);margin-top:6px">Format: <code>' + p.key_format + '</code>' +
+    (p.signup_url ? ' · <a href="' + p.signup_url + '" target="_blank" style="color:var(--accent)">Get key ↗</a>' : '') + '</div>'
+  ) : '';
+
+  div.innerHTML =
+    '<div class="provider-card-hd">' +
+    '  <div class="provider-icon" style="background:' + color + '">' + letter + '</div>' +
+    '  <div class="provider-info">' +
+    '    <div class="provider-name">' + p.label + '</div>' +
+    '    <div class="provider-meta">' + (PROVIDER_DESCS[p.name] || '') + '</div>' +
+    '  </div>' +
+    '  <div class="provider-actions">' +
+    '    <span class="badge ' + (p.configured ? 'badge-green' : 'badge-gray') + '">' +
+           (p.configured ? '● Active' : '○ Inactive') + '</span>' +
+    '    <label title="Enable / Disable provider" style="display:flex;align-items:center;gap:5px;cursor:pointer">' +
+    '      <input type="checkbox" class="toggle-btn" id="toggle-' + p.name + '"' +
+           (p.configured && !p.disabled ? ' checked' : '') +
+           ' onchange="toggleProvider(\'' + p.name + '\', this.checked)" />' +
+    '    </label>' +
+    '    <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="testProvider(\'' + p.name + '\')">' +
+    '      Test</button>' +
+    '  </div>' +
+    '</div>' +
+    '<div class="provider-card-body">' +
+    '  <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">API Keys (' + (p.name === 'pollinations' ? 'free' : (p.key_count || 0)) + ')</div>' +
+    keysHtml +
+    addFormHtml +
+    stepsHtml +
+    '  <div id="' + testId + '" style="margin-top:10px;font-size:12px"></div>' +
+    '</div>';
+
+  return div;
+}
+
+async function addKey(providerName) {
+  var inp = document.getElementById('key-input-' + providerName);
+  var key = inp.value.trim();
+  if (!key) { toast('Please enter a key', 'error'); return; }
+  try {
+    var r = await fetch('/api/providers/' + providerName + '/keys', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({key: key}),
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error');
+    inp.value = '';
+    toast('Key added: ' + data.masked, 'success');
+    await loadProviders();
+  } catch(e) {
+    toast('Failed to add key: ' + e.message, 'error');
+  }
+}
+
+async function deleteKey(providerName, keyHash) {
+  if (!confirm('Remove this key?')) return;
+  try {
+    var r = await fetch('/api/providers/' + providerName + '/keys/' + keyHash, {method:'DELETE'});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error');
+    toast('Key removed', 'success');
+    await loadProviders();
+  } catch(e) {
+    toast('Failed to remove key: ' + e.message, 'error');
+  }
+}
+
+async function toggleProvider(name, enable) {
+  try {
+    var action = enable ? 'enable' : 'disable';
+    var r = await fetch('/api/providers/' + name + '/' + action, {method:'POST'});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error');
+    toast((enable ? 'Enabled' : 'Disabled') + ' provider: ' + name, 'success');
+    await loadProviders();
+  } catch(e) {
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+async function testProvider(name) {
+  var resultEl = document.getElementById('test-result-' + name);
+  if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-3)">Testing…</span>';
+  try {
+    var r = await fetch('/api/providers/' + name + '/test', {method:'POST'});
+    var data = await r.json();
+    if (data.ok) {
+      resultEl.innerHTML =
+        '<span style="color:var(--green)">✓ Online</span>' +
+        '<span style="color:var(--text-3);margin-left:8px">' + data.latency_ms + ' ms</span>' +
+        (data.reply ? '<span style="color:var(--text-2);margin-left:8px">→ "' + data.reply.slice(0,60) + '"</span>' : '');
+    } else {
+      resultEl.innerHTML = '<span style="color:var(--red)">✗ ' + (data.error || 'Failed') + '</span>';
+    }
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">✗ ' + e.message + '</span>';
+  }
+}
+
+async function reloadAll() {
+  try {
+    var r = await fetch('/api/providers/reload', {method:'POST'});
+    var data = await r.json();
+    toast('Reloaded: ' + (data.reloaded || []).join(', '), 'success');
+    await loadProviders();
+  } catch(e) {
+    toast('Reload failed: ' + e.message, 'error');
+  }
+}
+
+// ── Routing Tab ──────────────────────────────────────────────────────────────
 async function loadRouting() {
   try {
-    const r = await fetch('/settings/routing');
+    var r = await fetch('/settings/routing');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     routingData = await r.json();
     renderDragList(routingData.provider_order);
     renderModelsAccordion(routingData);
-    const customBadge = document.getElementById('routing-customized');
+    var badge = document.getElementById('routing-customized');
     if (routingData.is_customized) {
-      customBadge.style.display = '';
-      customBadge.className = 'badge badge-accent';
-      customBadge.textContent = 'Customized';
+      badge.style.display = ''; badge.className = 'badge badge-accent'; badge.textContent = 'Customized';
     } else {
-      customBadge.style.display = 'none';
+      badge.style.display = 'none';
     }
     document.getElementById('settings-status').textContent = 'Loaded ' + new Date().toLocaleTimeString();
   } catch(e) {
@@ -289,390 +762,376 @@ async function loadRouting() {
   }
 }
 
-// ── Drag list ────────────────────────────────────────────────────────────────
-let dragSrc = null;
+var dragSrc = null;
 
 function renderDragList(order) {
-  const list = document.getElementById('drag-list');
+  var list = document.getElementById('drag-list');
   list.innerHTML = order.map(function(p, i) {
     return '<div class="drag-item" draggable="true" data-provider="' + p + '" ' +
       'ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)">' +
-      '<svg class="drag-handle" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' +
-      '<div class="drag-num">' + (i + 1) + '</div>' +
-      '<div style="flex:1">' +
-      '<div style="font-size:13px;font-weight:600;text-transform:capitalize">' + p + '</div>' +
-      '<div style="font-size:11px;color:var(--text-3)">' + (PROVIDER_DESCS[p] || '') + '</div>' +
-      '</div>' +
+      '<span class="drag-handle">⠿</span>' +
+      '<span class="drag-num">' + (i + 1) + '</span>' +
+      '<span class="drag-label">' + p + '</span>' +
+      '<span style="font-size:11px;color:var(--text-3);margin-left:auto">' + (PROVIDER_DESCS[p] || '') + '</span>' +
       '</div>';
   }).join('');
 }
 
 function onDragStart(e) {
   dragSrc = e.currentTarget;
-  e.currentTarget.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragSrc.dataset.provider);
+  dragSrc.style.opacity = '0.4';
 }
 function onDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
   document.querySelectorAll('.drag-item').forEach(function(el) { el.classList.remove('drag-over'); });
   e.currentTarget.classList.add('drag-over');
 }
 function onDrop(e) {
   e.preventDefault();
-  if (dragSrc === e.currentTarget) return;
-  const list = document.getElementById('drag-list');
-  const items = Array.from(list.querySelectorAll('.drag-item'));
-  const srcIdx = items.indexOf(dragSrc);
-  const dstIdx = items.indexOf(e.currentTarget);
-  if (srcIdx < dstIdx) {
-    e.currentTarget.after(dragSrc);
-  } else {
-    e.currentTarget.before(dragSrc);
+  if (dragSrc !== e.currentTarget) {
+    var list = e.currentTarget.parentNode;
+    var items = Array.from(list.children);
+    var si = items.indexOf(dragSrc);
+    var ti = items.indexOf(e.currentTarget);
+    if (si < ti) list.insertBefore(dragSrc, e.currentTarget.nextSibling);
+    else list.insertBefore(dragSrc, e.currentTarget);
+    items = Array.from(list.children);
+    items.forEach(function(el, i) {
+      el.querySelector('.drag-num').textContent = i + 1;
+    });
   }
-  renumberDragList();
 }
 function onDragEnd(e) {
-  e.currentTarget.classList.remove('dragging');
+  e.currentTarget.style.opacity = '';
   document.querySelectorAll('.drag-item').forEach(function(el) { el.classList.remove('drag-over'); });
 }
-function renumberDragList() {
-  document.querySelectorAll('.drag-item').forEach(function(el, i) {
-    el.querySelector('.drag-num').textContent = i + 1;
-  });
-}
-function getCurrentOrder() {
-  return Array.from(document.querySelectorAll('.drag-item')).map(function(el) {
-    return el.dataset.provider;
-  });
+
+function getDragOrder() {
+  return Array.from(document.querySelectorAll('#drag-list .drag-item'))
+    .map(function(el) { return el.dataset.provider; });
 }
 
-// ── Save routing ─────────────────────────────────────────────────────────────
 async function saveRouting() {
-  const order = getCurrentOrder();
-  const spin = document.getElementById('save-spinner');
-  spin.classList.add('show');
+  var sp = document.getElementById('save-spinner');
+  if (sp) sp.style.display = 'inline-block';
   try {
-    const r = await fetch('/settings/routing', {
+    var order = getDragOrder();
+    var r = await fetch('/settings/routing', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider_order: order })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({provider_order: order}),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    toast('Provider order saved', 'success');
+    toast('Routing order saved', 'success');
+    routingData = null;
     await loadRouting();
   } catch(e) {
     toast('Save failed: ' + e.message, 'error');
-  } finally {
-    spin.classList.remove('show');
   }
+  if (sp) sp.style.display = 'none';
 }
 
 async function resetRouting() {
-  if (!confirm('Reset to default provider order? Custom model overrides will also be cleared.')) return;
+  if (!confirm('Reset provider order to defaults?')) return;
   try {
-    const r = await fetch('/settings/routing', { method: 'DELETE' });
+    var r = await fetch('/settings/routing', {method:'DELETE'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    toast('Settings reset to defaults', 'success');
+    toast('Routing reset to defaults', 'success');
+    routingData = null;
     await loadRouting();
   } catch(e) {
     toast('Reset failed: ' + e.message, 'error');
   }
 }
 
-// ── Models accordion ─────────────────────────────────────────────────────────
+// ── Models Tab ───────────────────────────────────────────────────────────────
 function renderModelsAccordion(data) {
-  const container = document.getElementById('models-accordion');
-  const order = data.provider_order || [];
-  const hierarchies = data.model_hierarchies || {};
-  const overrides = data.model_overrides || {};
-  modelOverrides = {};
-
-  container.innerHTML = order.map(function(p) {
-    const defaults = (hierarchies[p] || []).map(function(m) { return m.model; });
-    const current = overrides[p] ? overrides[p] : null;
-    modelOverrides[p] = current ? current.slice() : null;
-    const isCustom = current !== null;
-    const displayModels = current || defaults;
-
-    return '<div class="accordion-item" id="acc-' + p + '">' +
-      '<div class="accordion-hd" onclick="toggleModelAccordion(this)">' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-      '<span style="font-weight:600;text-transform:capitalize">' + p + '</span>' +
-      (isCustom ? '<span class="badge badge-accent">Custom</span>' : '<span class="badge badge-gray">Default</span>') +
-      '<span class="provider-desc">' + (PROVIDER_DESCS[p] || '') + '</span>' +
-      '</div>' +
-      '<svg class="accordion-arrow" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
-      '</div>' +
-      '<div class="accordion-body">' +
-      '<div style="padding:14px 18px">' +
-      '<div id="models-' + p + '" class="model-list"></div>' +
-      '<div class="add-model-row">' +
-      '<input type="text" class="form-control" id="add-model-' + p + '" placeholder="model-id-to-add" style="flex:1" />' +
-      '<button class="btn btn-ghost" onclick="addModel(\'' + p + '\')" style="flex-shrink:0">Add Model</button>' +
-      '<button class="btn btn-ghost" onclick="resetProvider(\'' + p + '\')" style="flex-shrink:0;color:var(--red)">Use Default</button>' +
-      '</div>' +
-      '</div>' +
-      '</div>' +
-      '</div>';
-  }).join('');
-
-  order.forEach(function(p) {
-    const defaults = (hierarchies[p] || []).map(function(m) { return m.model; });
-    const current = overrides[p] ? overrides[p] : null;
-    renderModelList(p, current || defaults, !current);
-  });
-}
-
-function renderModelList(provider, models, isDefault) {
-  const container = document.getElementById('models-' + provider);
-  if (!container) return;
-  if (!models.length) {
-    container.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0">No models — add one below</div>';
-    return;
-  }
-  container.innerHTML = models.map(function(m, i) {
-    return '<div class="model-row" data-model="' + m + '">' +
-      '<div style="display:flex;flex-direction:column;gap:2px">' +
-      '<button class="model-move-btn" ' + (i === 0 ? 'disabled style="opacity:0.2"' : '') + ' onclick="moveModel(\'' + provider + '\',' + i + ',-1)" title="Move up">▲</button>' +
-      '<button class="model-move-btn" ' + (i === models.length-1 ? 'disabled style="opacity:0.2"' : '') + ' onclick="moveModel(\'' + provider + '\',' + i + ',1)" title="Move down">▼</button>' +
-      '</div>' +
-      '<span class="model-row-name">' + m + '</span>' +
-      (isDefault ? '<span class="badge badge-gray" style="font-size:9px">default</span>' : '') +
-      '<button class="model-del-btn" onclick="removeModel(\'' + provider + '\',' + i + ')" title="Remove">✕</button>' +
-      '</div>';
+  var acc = document.getElementById('models-accordion');
+  if (!acc) return;
+  var providers = data.provider_order || [];
+  acc.innerHTML = providers.map(function(p) {
+    var models = (data.model_overrides && data.model_overrides[p])
+      ? data.model_overrides[p]
+      : (data.model_hierarchies && data.model_hierarchies[p] ? data.model_hierarchies[p].map(function(m) { return m[0] || m; }) : []);
+    modelOverrides[p] = models.slice();
+    return buildModelAccordion(p, models);
   }).join('');
 }
 
-function getProviderModels(provider) {
-  if (modelOverrides[provider] !== null && modelOverrides[provider] !== undefined) {
-    return modelOverrides[provider];
-  }
-  // Use defaults
-  if (routingData && routingData.model_hierarchies && routingData.model_hierarchies[provider]) {
-    return routingData.model_hierarchies[provider].map(function(m) { return m.model; });
-  }
-  return [];
+function buildModelAccordion(provider, models) {
+  var id = 'macc-' + provider;
+  var rows = models.map(function(m, i) {
+    var name = typeof m === 'string' ? m : (m[0] || '');
+    var ctx  = Array.isArray(m) && m[1] ? (m[1] >= 1000 ? Math.round(m[1]/1000) + 'K' : m[1]) : '';
+    return '<div class="model-row" data-model="' + name + '">' +
+      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',-1)">▲</button>' +
+      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',1)">▼</button>' +
+      '<span class="model-row-name">' + name + '</span>' +
+      (ctx ? '<span class="model-row-ctx">' + ctx + ' ctx</span>' : '') +
+      '<button class="model-del-btn" onclick="removeModel(\'' + provider + '\',' + i + ')">✕</button>' +
+      '</div>';
+  }).join('');
+
+  return '<div class="accordion-item">' +
+    '<button class="accordion-btn" onclick="this.classList.toggle(\'open\');var b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'block\':\'none\'">' +
+    '<span>' + provider + '</span>' +
+    '<span style="font-size:11px;color:var(--text-3);margin-left:auto;margin-right:8px">' + models.length + ' models</span>' +
+    '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
+    '</button>' +
+    '<div class="accordion-body" style="display:none">' +
+    '<div id="' + id + '">' + (rows || '<div style="font-size:12px;color:var(--text-3);padding:8px 0">No models (using provider defaults)</div>') + '</div>' +
+    '<div class="add-model-row">' +
+    '<input type="text" id="model-input-' + provider + '" class="form-control" placeholder="model-id" style="font-family:\'JetBrains Mono\',monospace;font-size:11px" />' +
+    '<button class="btn btn-ghost" onclick="addModel(\'' + provider + '\')">Add</button>' +
+    '</div>' +
+    '</div>' +
+    '</div>';
 }
 
 function moveModel(provider, idx, dir) {
-  const models = getProviderModels(provider).slice();
-  const newIdx = idx + dir;
-  if (newIdx < 0 || newIdx >= models.length) return;
-  const tmp = models[idx]; models[idx] = models[newIdx]; models[newIdx] = tmp;
-  modelOverrides[provider] = models;
-  updateAccordionBadge(provider, true);
-  renderModelList(provider, models, false);
+  var m = modelOverrides[provider];
+  if (!m) return;
+  var ni = idx + dir;
+  if (ni < 0 || ni >= m.length) return;
+  var tmp = m[idx]; m[idx] = m[ni]; m[ni] = tmp;
+  renderModelsAccordion(routingData ? Object.assign({}, routingData, {model_overrides: modelOverrides}) : {provider_order: Object.keys(modelOverrides), model_overrides: modelOverrides});
 }
 
 function removeModel(provider, idx) {
-  const models = getProviderModels(provider).slice();
-  models.splice(idx, 1);
-  modelOverrides[provider] = models;
-  updateAccordionBadge(provider, true);
-  renderModelList(provider, models, false);
+  if (modelOverrides[provider]) {
+    modelOverrides[provider].splice(idx, 1);
+    renderModelsAccordion({provider_order: Object.keys(modelOverrides), model_overrides: modelOverrides});
+  }
 }
 
 function addModel(provider) {
-  const input = document.getElementById('add-model-' + provider);
-  const val = (input.value || '').trim();
-  if (!val) { toast('Enter a model ID', 'error'); return; }
-  const models = getProviderModels(provider).slice();
-  if (models.indexOf(val) >= 0) { toast('Model already in list', 'error'); return; }
-  models.push(val);
-  modelOverrides[provider] = models;
-  input.value = '';
-  updateAccordionBadge(provider, true);
-  renderModelList(provider, models, false);
-}
-
-function resetProvider(provider) {
-  modelOverrides[provider] = null;
-  const defaults = routingData && routingData.model_hierarchies && routingData.model_hierarchies[provider]
-    ? routingData.model_hierarchies[provider].map(function(m) { return m.model; }) : [];
-  updateAccordionBadge(provider, false);
-  renderModelList(provider, defaults, true);
-}
-
-function updateAccordionBadge(provider, custom) {
-  const acc = document.getElementById('acc-' + provider);
-  if (!acc) return;
-  const badge = acc.querySelector('.accordion-hd .badge');
-  if (badge) {
-    badge.className = 'badge ' + (custom ? 'badge-accent' : 'badge-gray');
-    badge.textContent = custom ? 'Custom' : 'Default';
-  }
-}
-
-function toggleModelAccordion(hd) {
-  const body  = hd.nextElementSibling;
-  const arrow = hd.querySelector('.accordion-arrow');
-  const open  = body.classList.toggle('open');
-  arrow.classList.toggle('open', open);
+  var inp = document.getElementById('model-input-' + provider);
+  if (!inp || !inp.value.trim()) return;
+  if (!modelOverrides[provider]) modelOverrides[provider] = [];
+  modelOverrides[provider].push(inp.value.trim());
+  inp.value = '';
+  renderModelsAccordion({provider_order: Object.keys(modelOverrides), model_overrides: modelOverrides});
 }
 
 async function saveModelOverrides() {
-  const overridesToSave = {};
-  Object.keys(modelOverrides).forEach(function(p) {
-    if (modelOverrides[p] !== null && modelOverrides[p] !== undefined) {
-      overridesToSave[p] = modelOverrides[p];
-    }
-  });
-  const spin = document.getElementById('models-spinner');
-  spin.classList.add('show');
+  var sp = document.getElementById('models-spinner');
+  if (sp) sp.style.display = 'inline-block';
   try {
-    const r = await fetch('/settings/routing', {
+    var r = await fetch('/settings/routing', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_overrides: overridesToSave })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({model_overrides: modelOverrides}),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     toast('Model overrides saved', 'success');
-    await loadRouting();
   } catch(e) {
     toast('Save failed: ' + e.message, 'error');
-  } finally {
-    spin.classList.remove('show');
   }
+  if (sp) sp.style.display = 'none';
 }
 
 async function resetModelOverrides() {
-  if (!confirm('Reset ALL model overrides to defaults?')) return;
+  if (!confirm('Reset all model overrides to defaults?')) return;
   try {
-    const r = await fetch('/settings/routing', { method: 'DELETE' });
+    var r = await fetch('/settings/routing', {method:'DELETE'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
     toast('Model overrides reset', 'success');
+    routingData = null;
     await loadRouting();
   } catch(e) {
     toast('Reset failed: ' + e.message, 'error');
   }
 }
 
-// ── Cloudflare workers ───────────────────────────────────────────────────────
-async function loadWorkers() {
-  const list = document.getElementById('workers-list');
+// ── Image Generation Tab ─────────────────────────────────────────────────────
+async function generateImages() {
+  var prompt = document.getElementById('img-prompt').value.trim();
+  if (!prompt) { toast('Enter a prompt', 'error'); return; }
+
+  var sp    = document.getElementById('img-spinner');
+  var grid  = document.getElementById('img-result');
+  if (sp)   sp.style.display = 'inline-block';
+  if (grid) grid.style.display = 'none';
+
   try {
-    const r = await fetch('/cloudflare/workers');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    const workers = data.workers || [];
-    if (!workers.length) {
-      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">No workers deployed yet</div>';
-    } else {
-      list.innerHTML = workers.map(function(w) {
-        const name = w.name || w.id || w;
-        return '<div class="worker-row">' +
-          '<div>' +
-          '<div style="font-weight:600;font-size:13px">' + name + '</div>' +
-          (w.model ? '<div style="font-size:11px;color:var(--text-3);font-family:\'JetBrains Mono\',monospace">' + w.model + '</div>' : '') +
-          '</div>' +
-          '<button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteWorker(\'' + name + '\')">Delete</button>' +
-          '</div>';
-      }).join('');
-    }
+    var neg  = document.getElementById('img-negative').value.trim();
+    var body = {
+      prompt:          prompt,
+      model:           document.getElementById('img-model').value,
+      size:            document.getElementById('img-size').value,
+      n:               parseInt(document.getElementById('img-count').value, 10),
+      seed:            parseInt(document.getElementById('img-seed').value, 10),
+      enhance:         document.getElementById('img-enhance').checked,
+      negative_prompt: neg || null,
+    };
+
+    var r    = await fetch('/v1/images/generations', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify(body),
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'HTTP ' + r.status);
+
+    grid.innerHTML = '';
+    (data.data || []).forEach(function(img) {
+      var thumb = document.createElement('div');
+      thumb.className = 'img-thumb';
+      thumb.onclick   = function() { window.open(img.url, '_blank'); };
+
+      var loader = document.createElement('div');
+      loader.className = 'img-loader';
+      loader.textContent = 'Loading image…';
+      thumb.appendChild(loader);
+
+      var el  = document.createElement('img');
+      el.alt  = prompt;
+      el.loading = 'lazy';
+      el.onload  = function() { loader.style.display = 'none'; };
+      el.onerror = function() { loader.textContent = '⚠ Load error'; };
+      el.src     = img.url;
+      thumb.appendChild(el);
+
+      // Download link
+      var dl = document.createElement('a');
+      dl.href   = img.url; dl.target = '_blank'; dl.download = 'image.jpg';
+      dl.style  = 'position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;border-radius:4px;padding:3px 8px;font-size:10px;text-decoration:none';
+      dl.textContent = '↗';
+      thumb.appendChild(dl);
+
+      grid.appendChild(thumb);
+    });
+    grid.style.display = 'grid';
+    toast('Generated ' + (data.data || []).length + ' image(s)', 'success');
   } catch(e) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Could not load workers: ' + e.message + '</div>';
+    toast('Image generation failed: ' + e.message, 'error');
+  }
+  if (sp) sp.style.display = 'none';
+}
+
+// ── Cloudflare Workers Tab ───────────────────────────────────────────────────
+async function loadWorkers() {
+  var el = document.getElementById('workers-list');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>';
+  try {
+    var r = await fetch('/cloudflare/workers');
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — check Cloudflare API keys');
+    var data = await r.json();
+    var result = data.result || [];
+    if (result.length === 0) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">No workers deployed yet.</div>';
+      return;
+    }
+    el.innerHTML = result.map(function(w) {
+      return '<div class="worker-row">' +
+        '<div>' +
+        '  <div style="font-size:13px;font-weight:600;color:var(--text)">' + (w.id || w.script_name || w.name || 'worker') + '</div>' +
+        '  <div style="font-size:11px;color:var(--text-3)">' + (w.created_on ? new Date(w.created_on).toLocaleString() : '') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+        '  <button class="btn btn-ghost" style="font-size:11px" onclick="navigator.clipboard && navigator.clipboard.writeText(\'https://' + (w.id || w.script_name || '') + '.workers.dev\')">Copy URL</button>' +
+        '  <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteWorker(\'' + (w.id || w.script_name || '') + '\')">Delete</button>' +
+        '</div>' +
+        '</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="padding:20px;color:var(--red);font-size:13px">Error: ' + e.message + '</div>';
   }
 }
 
 async function loadCfModels() {
-  const sel = document.getElementById('cf-model');
+  var sel = document.getElementById('cf-model');
+  if (!sel) return;
   try {
-    const r = await fetch('/cloudflare/models');
+    var r    = await fetch('/cloudflare/models');
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    const models = data.models || data.data || [];
-    if (models.length) {
-      sel.innerHTML = models.map(function(m) {
-        const id = m.id || m.name || m;
-        return '<option value="' + id + '">' + id + '</option>';
-      }).join('');
-    } else {
-      sel.innerHTML = '<option value="">No models available</option>';
-    }
+    var data = await r.json();
+    var models = (data.result || []).map(function(m) { return m.name || m.id || m; });
+    sel.innerHTML = models.length
+      ? models.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('')
+      : '<option value="">No models found</option>';
   } catch(e) {
-    sel.innerHTML = '<option value="">Failed to load models</option>';
+    sel.innerHTML = '<option value="">Failed to load — check CF keys</option>';
   }
 }
 
 async function createWorker() {
-  const name  = document.getElementById('cf-name').value.trim();
-  const model = document.getElementById('cf-model').value;
-  const spin  = document.getElementById('cf-spinner');
-  if (!name) { toast('Enter a worker name', 'error'); return; }
+  var name  = document.getElementById('cf-name').value.trim();
+  var model = document.getElementById('cf-model').value;
+  if (!name)  { toast('Enter a worker name', 'error'); return; }
   if (!model) { toast('Select a model', 'error'); return; }
-  spin.classList.add('show');
+  var sp = document.getElementById('cf-spinner');
+  if (sp) sp.style.display = 'inline-block';
   try {
-    const r = await fetch('/cloudflare/workers', {
+    var r = await fetch('/cloudflare/workers', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, model })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, model}),
     });
-    if (!r.ok) {
-      const err = await r.json();
-      throw new Error((err.detail || err.error || 'HTTP ' + r.status));
-    }
-    toast('Worker created: ' + name, 'success');
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error ' + r.status);
+    toast('Worker created: ' + data.name + (data.worker_url ? ' → ' + data.worker_url : ''), 'success');
     document.getElementById('cf-name').value = '';
     await loadWorkers();
   } catch(e) {
     toast('Create failed: ' + e.message, 'error');
-  } finally {
-    spin.classList.remove('show');
   }
+  if (sp) sp.style.display = 'none';
 }
 
 async function deleteWorker(name) {
   if (!confirm('Delete worker "' + name + '"?')) return;
   try {
-    const r = await fetch('/cloudflare/workers/' + encodeURIComponent(name), { method: 'DELETE' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    toast('Worker deleted', 'success');
+    var r = await fetch('/cloudflare/workers/' + name, {method:'DELETE'});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error');
+    toast('Worker deleted: ' + name, 'success');
     await loadWorkers();
   } catch(e) {
     toast('Delete failed: ' + e.message, 'error');
   }
 }
 
-// ── Cache ─────────────────────────────────────────────────────────────────────
+// ── Cache Tab ────────────────────────────────────────────────────────────────
 async function loadCacheStats() {
-  const body = document.getElementById('cache-stats-body');
+  var body = document.getElementById('cache-stats-body');
+  if (!body) return;
   try {
-    const r = await fetch('/dashboard/stats');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    const c = data.cache || {};
+    var r    = await fetch('/dashboard/stats');
+    var data = await r.json();
+    var c    = data.cache || {};
+    var fmtPct = function(v) { return v + '%'; };
     body.innerHTML =
-      '<div class="stat-row"><span class="stat-label">Cached Entries</span><span class="stat-value" style="color:var(--blue)">' + (c.cached_responses || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Cache Hits</span><span class="stat-value" style="color:var(--green)">' + (c.hits || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Cache Misses</span><span class="stat-value" style="color:var(--yellow)">' + (c.misses || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Hit Rate</span><span class="stat-value">' + (c.hit_rate || 0) + '%</span></div>' +
-      '<div class="progress-wrap"><div class="progress-meta"><span>Cache efficiency</span><span>' + (c.hit_rate || 0) + '%</span></div>' +
-      '<div class="progress-track"><div class="progress-fill" style="width:' + (c.hit_rate || 0) + '%;background:var(--yellow)"></div></div></div>';
+      '<div class="stat-row"><span class="stat-lbl">Hit Rate</span><div style="flex:1"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px">' + fmtPct(c.hit_rate||0) + '</span></div><div class="progress" style="height:6px"><div class="progress-bar" style="width:' + (c.hit_rate||0) + '%"></div></div></div></div>' +
+      '<div class="stat-row"><span class="stat-lbl">Cache Hits</span><span class="stat-val">' + (c.hits||0).toLocaleString() + '</span></div>' +
+      '<div class="stat-row"><span class="stat-lbl">Cache Misses</span><span class="stat-val">' + (c.misses||0).toLocaleString() + '</span></div>' +
+      '<div class="stat-row"><span class="stat-lbl">Cached Entries</span><span class="stat-val">' + (c.cached_responses||0).toLocaleString() + '</span></div>';
   } catch(e) {
-    body.innerHTML = '<div style="color:var(--text-3);font-size:13px">Failed to load cache stats</div>';
+    body.innerHTML = '<div style="color:var(--red)">Failed to load stats</div>';
   }
 }
 
 async function clearCache() {
-  if (!confirm('Clear all cached responses? This cannot be undone.')) return;
-  const spin = document.getElementById('cache-spinner');
-  spin.classList.add('show');
+  var sp = document.getElementById('cache-spinner');
+  if (sp) sp.style.display = 'inline-block';
   try {
-    const r = await fetch('/settings/cache', { method: 'DELETE' });
+    var r = await fetch('/settings/cache', {method:'DELETE'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    toast('Cache cleared — ' + (data.entries_deleted || 0) + ' entries deleted', 'success');
+    toast('Cache cleared', 'success');
     await loadCacheStats();
   } catch(e) {
-    toast('Failed to clear cache: ' + e.message, 'error');
-  } finally {
-    spin.classList.remove('show');
+    toast('Clear failed: ' + e.message, 'error');
   }
+  if (sp) sp.style.display = 'none';
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+  initSidebar();
+  loadProviders();
   loadRouting();
 });
 </script>

@@ -36,7 +36,9 @@ _EXEMPT_PATHS: frozenset = frozenset([
     "/health", "/docs", "/redoc", "/openapi.json",
     "/api-docs", "/dashboard", "/dashboard/stats",
     "/v1/models", "/settings",
-    "/settings/routing",   # GET config read is public
+    "/settings/routing",       # GET config read is public
+    "/v1/images/models",       # Image model list is public
+    "/api/providers",          # Provider management (settings UI)
 ])
 
 
@@ -93,7 +95,9 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
 
         # Exempt paths — pass through
         path = request.url.path
-        if path in _EXEMPT_PATHS or path.startswith("/static/"):
+        if (path in _EXEMPT_PATHS
+                or path.startswith("/static/")
+                or path.startswith("/api/providers")):
             return await call_next(request)
 
         # Validate Authorization header
@@ -219,7 +223,9 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         # Exempt paths — always allow
         path = request.url.path
-        if path in _EXEMPT_PATHS or path.startswith("/static/"):
+        if (path in _EXEMPT_PATHS
+                or path.startswith("/static/")
+                or path.startswith("/api/providers")):
             return await call_next(request)
 
         jwt_token = request.headers.get("Cf-Access-Jwt-Assertion", "")

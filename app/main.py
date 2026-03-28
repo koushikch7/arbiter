@@ -110,6 +110,32 @@ async def lifespan(app: FastAPI):
 
     app.state.key_pools = key_pools
 
+    # Restore Modal provider from Redis if it has registered endpoints but no env keys.
+    # Modal endpoints are runtime-registered (via deploy or manual), so they live only in
+    # Redis and would be lost on every restart without this restoration step.
+    if "modal" not in providers:
+        try:
+            _modal_redis_raw = await redis_client.get("arbiter:runtime:keys:modal")
+            _modal_redis_keys = []
+            if _modal_redis_raw:
+                import json as _json
+                _modal_redis_keys = [k for k in _json.loads(_modal_redis_raw) if k.strip()]
+            if _modal_redis_keys:
+                from app.providers.modal_provider import ModalProvider
+                providers["modal"] = ModalProvider()
+                _modal_limits = PROVIDER_LIMITS.get("modal", {"rpm": 20, "tpm": 100_000, "daily": 1000})
+                key_pools["modal"] = KeyPool(
+                    provider="modal",
+                    keys=_modal_redis_keys,
+                    redis_client=redis_client,
+                    rpm_limit=_modal_limits["rpm"],
+                    tpm_limit=_modal_limits["tpm"],
+                    daily_limit=_modal_limits["daily"],
+                )
+                logger.info(f"Restored Modal provider from Redis with {len(_modal_redis_keys)} endpoint(s)")
+        except Exception as _e:
+            logger.warning(f"Could not restore Modal provider from Redis: {_e}")
+
     # Initialize cache
     cache = CacheLayer(redis_client=redis_client, default_ttl=settings.CACHE_TTL)
     app.state.cache = cache

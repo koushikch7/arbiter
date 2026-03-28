@@ -205,17 +205,16 @@ App:   {app_name}
 import time
 import modal
 
-MODEL_ID    = "{model_id}"
-APP_NAME    = "{app_name}"
-GPU         = "{gpu}"
-MAX_LEN     = {max_model_len}
-IDLE_SECS   = {idle_timeout}
+MODEL_ID       = "{model_id}"
+APP_NAME       = "{app_name}"
+GPU            = "{gpu}"
+MAX_LEN        = {max_model_len}
+IDLE_SECS      = {idle_timeout}
 MAX_CONCURRENT = {concurrent_inputs}
 
 app = modal.App(APP_NAME)
 
-# Persistent volume — model weights are cached here across cold starts.
-# First cold start downloads the model; subsequent ones reuse the cache.
+# Persistent volume — model weights cached across cold starts.
 model_vol = modal.Volume.from_name("arbiter-model-cache", create_if_missing=True)
 
 image = (
@@ -225,6 +224,8 @@ image = (
         "transformers>=4.44.0",
         "huggingface_hub[hf_transfer]",
         "hf_transfer",
+        "fastapi>=0.110.0",
+        "uvicorn",
     )
     .env({{
         "HF_HOME":                   "/model-cache",
@@ -240,9 +241,9 @@ image = (
     volumes={{"/model-cache": model_vol}},
     scaledown_window=IDLE_SECS,
     timeout=900,
+    allow_concurrent_inputs=MAX_CONCURRENT,
     {secrets_arg}
 )
-@modal.concurrent(max_inputs=MAX_CONCURRENT)
 class VLLMServer:
     @modal.enter()
     def load(self):
@@ -259,64 +260,84 @@ class VLLMServer:
         self.tokenizer = AutoTokenizer.from_pretrained(
             MODEL_ID, trust_remote_code=True
         )
-        has_tmpl = bool(getattr(self.tokenizer, "chat_template", None))
-        self._has_chat_template = has_tmpl
-        print(f"[arbiter] Model loaded: {{MODEL_ID}}, chat_template={{has_tmpl}}")
+        self._has_chat_template = bool(getattr(self.tokenizer, "chat_template", None))
+        print("[arbiter] Model loaded: " + MODEL_ID)
 
-    def _build_prompt(self, messages: list) -> str:
+    def _build_prompt(self, messages):
         if self._has_chat_template:
             return self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-        # Fallback for models without a chat template
         out = ""
         for m in messages:
-            r, c = m.get("role", "user"), m.get("content", "")
+            r = m.get("role", "user")
+            c = m.get("content", "")
             if r == "system":
-                out += f"{{c}}\\n\\n"
+                out += c + "\\n\\n"
             elif r == "user":
-                out += f"Human: {{c}}\\n"
+                out += "Human: " + c + "\\n"
             elif r == "assistant":
-                out += f"Assistant: {{c}}\\n"
+                out += "Assistant: " + c + "\\n"
         return out + "Assistant: "
 
-    @modal.web_endpoint(method="POST", label="{label}")
-    def serve(self, request: dict) -> dict:
-        from vllm import SamplingParams
-        messages = request.get("messages", [])
-        if not messages:
-            return {{"error": "messages array is required"}}, 400
-        prompt = self._build_prompt(messages)
-        params = SamplingParams(
-            temperature=float(request.get("temperature", 0.7)),
-            max_tokens=min(int(request.get("max_tokens", 512)), MAX_LEN // 2),
-            top_p=float(request.get("top_p", 0.95)),
-            stop=request.get("stop") or None,
-        )
-        t0 = time.perf_counter()
-        outputs = self.llm.generate([prompt], params)
-        latency = round((time.perf_counter() - t0) * 1000)
-        result   = outputs[0]
-        text     = result.outputs[0].text
-        finish   = result.outputs[0].finish_reason or "stop"
-        c_tokens = len(result.outputs[0].token_ids)
-        return {{
-            "id":      f"chatcmpl-{{int(time.time())}}",
-            "object":  "chat.completion",
-            "created": int(time.time()),
-            "model":   MODEL_ID,
-            "choices": [{{
-                "index":         0,
-                "message":       {{"role": "assistant", "content": text}},
-                "finish_reason": finish,
-            }}],
-            "usage": {{
-                "prompt_tokens":     0,
-                "completion_tokens": c_tokens,
-                "total_tokens":      c_tokens,
-            }},
-            "x_arbiter": {{"latency_ms": latency}},
-        }}
+    @modal.asgi_app(label="{label}")
+    def web(self):
+        """Serve an OpenAI-compatible FastAPI app at /v1/chat/completions."""
+        import fastapi, time as _t, asyncio
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+
+        web_app = fastapi.FastAPI()
+        _server = self  # capture reference for inner functions
+
+        @web_app.post("/v1/chat/completions")
+        async def chat_completions(request: Request):
+            from vllm import SamplingParams
+            body = await request.json()
+            messages = body.get("messages", [])
+            if not messages:
+                return JSONResponse({{"error": "messages array is required"}}, status_code=400)
+            prompt = _server._build_prompt(messages)
+            params = SamplingParams(
+                temperature=float(body.get("temperature", 0.7)),
+                max_tokens=min(int(body.get("max_tokens", 512)), MAX_LEN // 2),
+                top_p=float(body.get("top_p", 0.95)),
+                stop=body.get("stop") or None,
+            )
+            t0 = _t.perf_counter()
+            # Run blocking vLLM call in thread executor so we don't block the event loop
+            loop = asyncio.get_event_loop()
+            outputs = await loop.run_in_executor(
+                None, lambda: _server.llm.generate([prompt], params)
+            )
+            latency  = round((_t.perf_counter() - t0) * 1000)
+            result   = outputs[0]
+            text     = result.outputs[0].text
+            finish   = result.outputs[0].finish_reason or "stop"
+            c_tokens = len(result.outputs[0].token_ids)
+            return {{
+                "id":      "chatcmpl-" + str(int(_t.time())),
+                "object":  "chat.completion",
+                "created": int(_t.time()),
+                "model":   MODEL_ID,
+                "choices": [{{
+                    "index":         0,
+                    "message":       {{"role": "assistant", "content": text}},
+                    "finish_reason": finish,
+                }}],
+                "usage": {{
+                    "prompt_tokens":     0,
+                    "completion_tokens": c_tokens,
+                    "total_tokens":      c_tokens,
+                }},
+                "x_arbiter": {{"latency_ms": latency}},
+            }}
+
+        @web_app.get("/health")
+        def health():
+            return {{"status": "ok", "model": MODEL_ID}}
+
+        return web_app
 '''
 
 
@@ -545,28 +566,45 @@ async def _run_deployment(
 
 def _token_from_env() -> str:
     """Return token string from MODAL_TOKEN_ID/MODAL_TOKEN_SECRET env vars, or ''."""
-    from app.config import settings
-    if settings.MODAL_TOKEN_ID and settings.MODAL_TOKEN_SECRET:
-        return f"{settings.MODAL_TOKEN_ID}:{settings.MODAL_TOKEN_SECRET}"
+    # Try settings singleton first (loaded from .env at startup)
+    try:
+        from app.config import settings
+        if settings.MODAL_TOKEN_ID and settings.MODAL_TOKEN_SECRET:
+            return f"{settings.MODAL_TOKEN_ID}:{settings.MODAL_TOKEN_SECRET}"
+    except Exception:
+        pass
+    # Fallback: read directly from os.environ (works if env vars were set after settings loaded)
+    tid = os.environ.get("MODAL_TOKEN_ID", "")
+    sec = os.environ.get("MODAL_TOKEN_SECRET", "")
+    if tid and sec:
+        return f"{tid}:{sec}"
     return ""
 
 
 @router.get("/account", summary="Check Modal account token")
 async def get_account(request: Request) -> JSONResponse:
-    redis = request.app.state.redis
-    raw   = await redis.get(_KEY_TOKEN)
-    # Fall back to env vars if Redis has no token
+    redis   = request.app.state.redis
+    raw     = await redis.get(_KEY_TOKEN)
+    source  = "saved"
+    # Fall back to env vars if Redis has no token, then cache for subsequent calls
     if not raw:
         raw = _token_from_env()
         if raw:
-            await redis.set(_KEY_TOKEN, raw)  # cache in Redis for subsequent calls
+            source = "env"
+            await redis.set(_KEY_TOKEN, raw)
+    if not raw:
+        # Also check if env has it now (e.g. after container restart with new .env)
+        env_tok = _token_from_env()
+        if env_tok:
+            await redis.set(_KEY_TOKEN, env_tok)
+            raw    = env_tok
+            source = "env"
     if not raw:
         return JSONResponse({"configured": False, "source": None})
     try:
         tid, _ = _parse_token(raw)
         masked = tid[:8] + "..." if len(tid) > 8 else tid
-        return JSONResponse({"configured": True, "token_id_masked": masked,
-                             "source": "env" if raw == _token_from_env() else "saved"})
+        return JSONResponse({"configured": True, "token_id_masked": masked, "source": source})
     except Exception:
         return JSONResponse({"configured": False, "error": "Invalid stored token"})
 

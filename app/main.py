@@ -28,6 +28,7 @@ from app.api.settings_api import router as settings_router
 from app.api.keys_api import router as keys_router
 from app.api.image_api import router as image_router
 from app.api.modal_manager import router as modal_router
+from app.api.modal_deploy import router as modal_deploy_router
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
@@ -210,6 +211,7 @@ app.include_router(settings_router, tags=["Settings"])
 app.include_router(keys_router, tags=["Provider Management"])
 app.include_router(image_router, tags=["Images"])
 app.include_router(modal_router, tags=["Modal"])
+app.include_router(modal_deploy_router, tags=["Modal Deploy"])
 
 
 @app.get("/health", summary="Health check")

@@ -595,10 +595,114 @@
           </div>
         </div>
 
+        <!-- ── Deploy vLLM from UI ── -->
+        <div style="margin-top:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span style="font-size:15px;font-weight:600;color:var(--text-1)">One-Click vLLM Deploy</span>
+            <span style="font-size:11px;background:rgba(99,102,241,0.15);color:#6366f1;padding:2px 8px;border-radius:12px;font-weight:600">BETA</span>
+          </div>
+
+          <div class="grid-2" style="align-items:start;margin-bottom:14px">
+            <!-- Account Token -->
+            <div class="card">
+              <div class="card-hd"><span class="card-title">Modal Account Token</span></div>
+              <div class="card-body">
+                <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+                  Required for deploying. Get it from <code style="background:var(--surface-3);padding:1px 5px;border-radius:3px">~/.modal/config.toml</code> after running <code style="background:var(--surface-3);padding:1px 5px;border-radius:3px">modal token new</code>.
+                </p>
+                <div id="modal-account-status" style="font-size:12px;margin-bottom:10px;color:var(--text-3)">Checking…</div>
+                <div class="form-group">
+                  <label class="form-label">Token (token_id:token_secret)</label>
+                  <input type="password" class="form-control" id="modal-account-token" placeholder="ak-XXXXX:as-YYYYY" />
+                </div>
+                <button class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="saveModalToken()">
+                  Save Token <span class="spinner" id="modal-token-spinner"></span>
+                </button>
+                <div id="modal-token-msg" style="margin-top:8px;font-size:12px"></div>
+              </div>
+            </div>
+
+            <!-- Deploy new model -->
+            <div class="card">
+              <div class="card-hd"><span class="card-title">Deploy a Model</span></div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label class="form-label">Model</label>
+                  <select class="form-control" id="deploy-model-select" onchange="onDeployModelChange()">
+                    <option value="">— select a model —</option>
+                  </select>
+                  <div id="deploy-model-info" style="font-size:11px;color:var(--text-3);margin-top:5px"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Deployment Name (label)</label>
+                  <input type="text" class="form-control" id="deploy-name" placeholder="my-llama-8b" />
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div class="form-group">
+                    <label class="form-label">GPU Override</label>
+                    <select class="form-control" id="deploy-gpu">
+                      <option value="">Auto (recommended)</option>
+                      <option value="T4">T4 ($0.36/hr)</option>
+                      <option value="A10G">A10G ($0.72/hr)</option>
+                      <option value="A100-40GB">A100-40GB ($2.16/hr)</option>
+                      <option value="A100-80GB">A100-80GB ($3.40/hr)</option>
+                      <option value="H100">H100 ($6.00/hr)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Idle Timeout (sec)</label>
+                    <input type="number" class="form-control" id="deploy-idle" value="300" min="60" max="3600" />
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div class="form-group">
+                    <label class="form-label">Concurrent Inputs</label>
+                    <input type="number" class="form-control" id="deploy-concurrent" value="8" min="1" max="32" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">HuggingFace Token</label>
+                    <input type="password" class="form-control" id="deploy-hf-token" placeholder="hf_..." />
+                  </div>
+                </div>
+                <button class="btn btn-primary" onclick="startDeployment()" id="deploy-btn">
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  Deploy to Modal
+                  <span class="spinner" id="deploy-spinner"></span>
+                </button>
+                <div id="deploy-msg" style="margin-top:8px;font-size:12px"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Deployments -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-hd">
+              <span class="card-title">Active Deployments</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadDeployments()">Refresh</button>
+            </div>
+            <div class="card-body">
+              <div id="deployments-list">
+                <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deployment log viewer -->
+          <div id="deploy-log-card" class="card" style="margin-bottom:14px;display:none">
+            <div class="card-hd">
+              <span class="card-title" id="deploy-log-title">Deployment Log</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="closeDeployLog()">Close</button>
+            </div>
+            <div class="card-body">
+              <pre id="deploy-log-pre" style="background:var(--surface-3);padding:12px;border-radius:6px;font-size:11px;max-height:320px;overflow-y:auto;color:var(--text-1);line-height:1.5;white-space:pre-wrap;word-break:break-all">No logs yet…</pre>
+            </div>
+          </div>
+        </div>
+
         <!-- Deployment templates -->
         <div class="card" style="margin-top:14px">
           <div class="card-hd">
-            <span class="card-title">vLLM Deployment Template (recommended)</span>
+            <span class="card-title">vLLM Deployment Template (manual)</span>
             <a href="https://modal.com/docs/examples/vllm_inference" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:4px 10px">Docs ↗</a>
           </div>
           <div class="card-body">
@@ -706,7 +810,7 @@ function switchTab(name, btn) {
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
   if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
-  if (name === 'modal')      { loadModalEndpoints(); }
+  if (name === 'modal')      { loadModalEndpoints(); loadModalDeployTab(); }
   if (name === 'cache')      { loadCacheStats(); }
   if (name === 'routing' && !routingData) { loadRouting(); }
   if (name === 'models' && !routingData)  { loadRouting(); }
@@ -1433,6 +1537,231 @@ async function deleteModalEndpoint(name) {
     toast('Deleted ' + name, 'success');
     loadModalEndpoints();
   } catch(e) { toast('Delete failed: ' + e.message, 'error'); }
+}
+
+// ── Modal Deploy Tab ─────────────────────────────────────────────────────────
+var _deployPollTimer = null;
+var _deployModels    = [];
+
+async function loadModalDeployTab() {
+  await Promise.all([checkModalToken(), loadDeployModels(), loadDeployments()]);
+}
+
+async function checkModalToken() {
+  var el = document.getElementById('modal-account-status');
+  if (!el) return;
+  try {
+    var r = await fetch('/modal/deploy/account', {cache:'no-store'});
+    var d = await r.json();
+    if (d.configured) {
+      el.innerHTML = '<span style="color:var(--success)">✓ Token configured: ' + d.token_id_masked + '</span>';
+    } else {
+      el.innerHTML = '<span style="color:var(--danger)">✗ No token saved yet</span>';
+    }
+  } catch(e) {
+    el.textContent = 'Could not check token';
+  }
+}
+
+async function saveModalToken() {
+  var token = document.getElementById('modal-account-token').value.trim();
+  var msg   = document.getElementById('modal-token-msg');
+  var spin  = document.getElementById('modal-token-spinner');
+  if (!token) { msg.textContent = 'Enter a token first.'; msg.style.color = 'var(--danger)'; return; }
+  spin.style.display = 'inline-block';
+  msg.textContent = '';
+  try {
+    var r = await fetch('/modal/deploy/account', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token: token}),
+    });
+    var d = await r.json();
+    if (!r.ok) { msg.textContent = d.detail || 'Error ' + r.status; msg.style.color = 'var(--danger)'; return; }
+    msg.textContent = '✓ Saved: ' + d.token_id_masked;
+    msg.style.color = 'var(--success)';
+    document.getElementById('modal-account-token').value = '';
+    checkModalToken();
+  } catch(e) {
+    msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--danger)';
+  } finally { spin.style.display = 'none'; }
+}
+
+async function loadDeployModels() {
+  var sel = document.getElementById('deploy-model-select');
+  if (!sel) return;
+  try {
+    var r = await fetch('/modal/deploy/models', {cache:'no-store'});
+    var d = await r.json();
+    _deployModels = d.models || [];
+    var groups = {};
+    _deployModels.forEach(function(m) { (groups[m.tier] = groups[m.tier] || []).push(m); });
+    var html = '<option value="">— select a model —</option>';
+    var tierLabels = {fast:'Fast & Affordable', cheapest:'Cheapest', balanced:'Balanced', reasoning:'Reasoning', 'high-quality':'High Quality'};
+    Object.keys(groups).forEach(function(t) {
+      html += '<optgroup label="' + (tierLabels[t] || t) + '">';
+      groups[t].forEach(function(m) {
+        html += '<option value="' + m.id + '">' + m.label + ' — ' + m.gpu + ' ($' + m.cost_per_hr + '/hr)</option>';
+      });
+      html += '</optgroup>';
+    });
+    sel.innerHTML = html;
+  } catch(e) { console.warn('Could not load deploy models', e); }
+}
+
+function onDeployModelChange() {
+  var sel  = document.getElementById('deploy-model-select');
+  var info = document.getElementById('deploy-model-info');
+  var hfEl = document.getElementById('deploy-hf-token');
+  var m    = _deployModels.find(function(x) { return x.id === sel.value; });
+  if (!m) { info.textContent = ''; return; }
+  info.innerHTML =
+    m.notes + ' &nbsp;|&nbsp; GPU: ' + m.gpu +
+    ' &nbsp;|&nbsp; VRAM: ' + m.vram_gb + 'GB' +
+    ' &nbsp;|&nbsp; Est. RPM: ' + m.est_rpm +
+    (m.requires_hf_token ? ' &nbsp;|&nbsp; <span style="color:#f48120">⚠ HuggingFace token required</span>' : '');
+  // Pre-fill name suggestion
+  var nameEl = document.getElementById('deploy-name');
+  if (!nameEl.value) {
+    nameEl.value = m.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/,'');
+  }
+}
+
+async function startDeployment() {
+  var modelId    = document.getElementById('deploy-model-select').value;
+  var name       = document.getElementById('deploy-name').value.trim();
+  var gpu        = document.getElementById('deploy-gpu').value;
+  var idle       = parseInt(document.getElementById('deploy-idle').value) || 300;
+  var concurrent = parseInt(document.getElementById('deploy-concurrent').value) || 8;
+  var hfToken    = document.getElementById('deploy-hf-token').value.trim();
+  var msg        = document.getElementById('deploy-msg');
+  var spin       = document.getElementById('deploy-spinner');
+  var btn        = document.getElementById('deploy-btn');
+
+  if (!modelId) { msg.textContent = 'Select a model first.'; msg.style.color = 'var(--danger)'; return; }
+  if (!name) { msg.textContent = 'Enter a deployment name.'; msg.style.color = 'var(--danger)'; return; }
+
+  btn.disabled = true;
+  spin.style.display = 'inline-block';
+  msg.textContent = 'Starting deployment…';
+  msg.style.color = 'var(--text-2)';
+
+  try {
+    var body = {model_id: modelId, name: name, idle_timeout: idle, concurrent_inputs: concurrent};
+    if (gpu) body.gpu = gpu;
+    if (hfToken) body.hf_token = hfToken;
+
+    var r = await fetch('/modal/deploy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if (!r.ok) { msg.textContent = d.detail || 'Error ' + r.status; msg.style.color = 'var(--danger)'; return; }
+
+    msg.textContent = '✓ Deployment started! ID: ' + d.deploy_id;
+    msg.style.color = 'var(--success)';
+    // Clear form
+    document.getElementById('deploy-name').value = '';
+    document.getElementById('deploy-hf-token').value = '';
+    document.getElementById('deploy-model-select').selectedIndex = 0;
+    document.getElementById('deploy-model-info').textContent = '';
+    // Show log and start polling
+    openDeployLog(d.deploy_id);
+    loadDeployments();
+  } catch(e) {
+    msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+    spin.style.display = 'none';
+  }
+}
+
+async function loadDeployments() {
+  var list = document.getElementById('deployments-list');
+  if (!list) return;
+  try {
+    var r = await fetch('/modal/deploy', {cache:'no-store'});
+    var d = await r.json();
+    var deps = d.deployments || [];
+    if (!deps.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">No deployments yet. Deploy a model above.</div>';
+      return;
+    }
+    deps.sort(function(a,b) { return (b.created_at||'') > (a.created_at||'') ? 1 : -1; });
+    list.innerHTML = deps.map(function(dep) {
+      var statusColor = {active:'var(--success)', deploying:'#f48120', building:'#f48120', pending:'var(--text-3)', failed:'var(--danger)'}[dep.status] || 'var(--text-3)';
+      var urlHtml = dep.url
+        ? '<a href="' + dep.url + '" target="_blank" style="font-size:11px;color:#6366f1;text-decoration:none">' + dep.url + ' ↗</a>'
+        : '<span style="font-size:11px;color:var(--text-3)">URL pending…</span>';
+      return '<div style="padding:12px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start">' +
+        '<div style="flex:1">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">' +
+        '<span style="font-weight:600;font-size:13px">' + dep.name + '</span>' +
+        '<span style="font-size:11px;padding:1px 8px;border-radius:10px;background:' + statusColor + '22;color:' + statusColor + ';font-weight:600">' + dep.status + '</span>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-bottom:2px">' + dep.model_id + ' · ' + dep.gpu + '</div>' +
+        '<div>' + urlHtml + '</div>' +
+        (dep.error ? '<div style="font-size:11px;color:var(--danger);margin-top:3px">⚠ ' + dep.error + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;margin-left:10px">' +
+        '<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openDeployLog(\'' + dep.deploy_id + '\')">Logs</button>' +
+        '<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--danger)" onclick="stopDeployment(\'' + dep.deploy_id + '\',\'' + dep.name + '\')">Stop</button>' +
+        '</div></div></div>';
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--danger);font-size:13px">Error loading deployments: ' + e.message + '</div>';
+  }
+}
+
+function openDeployLog(deployId) {
+  var card = document.getElementById('deploy-log-card');
+  var pre  = document.getElementById('deploy-log-pre');
+  var title = document.getElementById('deploy-log-title');
+  card.style.display = 'block';
+  pre.textContent = 'Loading logs…';
+  title.textContent = 'Deployment Log: ' + deployId;
+  card.scrollIntoView({behavior:'smooth', block:'nearest'});
+  // Start polling
+  if (_deployPollTimer) clearInterval(_deployPollTimer);
+  var poll = async function() {
+    try {
+      var r = await fetch('/modal/deploy/' + deployId, {cache:'no-store'});
+      var d = await r.json();
+      var logs = d.logs || [];
+      pre.textContent = logs.length ? logs.join('\n') : 'No logs yet…';
+      pre.scrollTop = pre.scrollHeight;
+      // Update deployments list
+      loadDeployments();
+      // Stop polling when terminal state reached
+      if (['active','failed'].indexOf(d.status) !== -1) {
+        clearInterval(_deployPollTimer);
+        _deployPollTimer = null;
+      }
+    } catch(e) { /* ignore poll errors */ }
+  };
+  poll();
+  _deployPollTimer = setInterval(poll, 2000);
+}
+
+function closeDeployLog() {
+  if (_deployPollTimer) { clearInterval(_deployPollTimer); _deployPollTimer = null; }
+  document.getElementById('deploy-log-card').style.display = 'none';
+}
+
+async function stopDeployment(deployId, name) {
+  if (!confirm('Stop deployment "' + name + '"? This will stop the Modal app and remove it from the gateway.')) return;
+  try {
+    var r = await fetch('/modal/deploy/' + deployId, {method:'DELETE'});
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'HTTP ' + r.status);
+    toast('Stopped ' + name, 'success');
+    if (_deployPollTimer) { clearInterval(_deployPollTimer); _deployPollTimer = null; }
+    document.getElementById('deploy-log-card').style.display = 'none';
+    loadDeployments();
+    loadModalEndpoints();
+  } catch(e) { toast('Stop failed: ' + e.message, 'error'); }
 }
 
 // ── Cache Tab ────────────────────────────────────────────────────────────────

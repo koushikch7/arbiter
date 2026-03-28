@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   gateway:
     build: .
@@ -26,8 +24,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No host port binding — Redis is internal only, accessed via Docker network
+    expose:
+      - "6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data

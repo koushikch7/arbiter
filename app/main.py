@@ -19,6 +19,7 @@ from app.providers.cloudflare import CloudflareProvider
 from app.providers.cerebras import CerebrasProvider
 from app.providers.huggingface import HuggingFaceProvider
 from app.providers.pollinations import PollinationsProvider
+from app.providers.modal_provider import ModalProvider
 from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
@@ -26,6 +27,7 @@ from app.api.cloudflare_manager import router as cloudflare_router
 from app.api.settings_api import router as settings_router
 from app.api.keys_api import router as keys_router
 from app.api.image_api import router as image_router
+from app.api.modal_manager import router as modal_router
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
@@ -64,6 +66,7 @@ async def lifespan(app: FastAPI):
         "cerebras":     CerebrasProvider,
         "huggingface":  HuggingFaceProvider,
         "pollinations": PollinationsProvider,
+        "modal":        ModalProvider,
     }
 
     for name, cls in provider_classes.items():
@@ -72,6 +75,9 @@ async def lifespan(app: FastAPI):
         # Pollinations is free/anonymous — inject a dummy key so the pool works
         if name == "pollinations" and not keys:
             keys = ["free"]
+        # Modal keys come from Redis (registered via UI); skip until at least one is added
+        if name == "modal" and not keys:
+            continue
 
         if keys:
             providers[name] = cls()
@@ -203,6 +209,7 @@ app.include_router(cloudflare_router, tags=["Cloudflare Workers AI"])
 app.include_router(settings_router, tags=["Settings"])
 app.include_router(keys_router, tags=["Provider Management"])
 app.include_router(image_router, tags=["Images"])
+app.include_router(modal_router, tags=["Modal"])
 
 
 @app.get("/health", summary="Health check")

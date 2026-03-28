@@ -97,7 +97,9 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if (path in _EXEMPT_PATHS
                 or path.startswith("/static/")
-                or path.startswith("/api/providers")):
+                or path.startswith("/api/providers")
+                or path.startswith("/modal/")
+                or path.startswith("/cloudflare/")):
             return await call_next(request)
 
         # Validate Authorization header
@@ -225,7 +227,9 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if (path in _EXEMPT_PATHS
                 or path.startswith("/static/")
-                or path.startswith("/api/providers")):
+                or path.startswith("/api/providers")
+                or path.startswith("/modal/")
+                or path.startswith("/cloudflare/")):
             return await call_next(request)
 
         jwt_token = request.headers.get("Cf-Access-Jwt-Assertion", "")

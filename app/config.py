@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Cerebras Inference
     CEREBRAS_API_KEYS: str = ""
 
+    # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
+    MODAL_API_KEYS: str = ""
+
     # ── Cloudflare Zero Trust / Access ───────────────────────────────────────
     # Team name, e.g. "myteam"  → https://myteam.cloudflareaccess.com
     CLOUDFLARE_ACCESS_TEAM_NAME: str = ""
@@ -54,6 +57,7 @@ class Settings(BaseSettings):
             "huggingface":  self.HUGGINGFACE_API_KEYS,
             "cloudflare":   self.CLOUDFLARE_API_KEYS,
             "cerebras":     self.CEREBRAS_API_KEYS,
+            "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")
         return [k.strip() for k in raw.split(",") if k.strip()]

@@ -88,6 +88,11 @@ PROVIDER_LIMITS = {
         "tpm":   100_000,     # no published TPM; sentinel
         "daily": 1_000,       # no published daily limit; conservative sentinel
     },
+    "modal": {
+        "rpm":   60,          # serverless — no hard RPM limit; conservative sentinel
+        "tpm":   500_000,     # no TPM limit; sentinel
+        "daily": 100_000,     # ~$30/month free tier estimate on typical usage
+    },
 }
 
 # Score weights

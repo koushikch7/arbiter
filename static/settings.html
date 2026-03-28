@@ -192,6 +192,10 @@
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
           CF Workers
         </button>
+        <button class="tab-btn" onclick="switchTab('modal', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Modal GPU
+        </button>
         <button class="tab-btn" onclick="switchTab('cache', this)">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           Cache
@@ -419,14 +423,14 @@
             </span>
           </div>
           <div class="card-body">
-            <p style="font-size:13px;color:var(--text-2);margin-bottom:12px">To use Cloudflare Workers AI, add your credentials in the <strong>API Keys</strong> tab. Here's how to get them:</p>
+            <p style="font-size:13px;color:var(--text-2);margin-bottom:12px">Add your Cloudflare credentials in the <strong>API Keys</strong> tab first.</p>
             <ol style="font-size:13px;color:var(--text-2);padding-left:20px;margin-bottom:16px">
-              <li style="margin-bottom:6px">Sign up for a free account at <a href="https://cloudflare.com" target="_blank" style="color:var(--accent)">cloudflare.com</a></li>
-              <li style="margin-bottom:6px">Go to <strong>Workers &amp; Pages</strong> in your dashboard — this activates Workers AI free tier</li>
-              <li style="margin-bottom:6px">Find your <strong>Account ID</strong> in the right sidebar of the Workers overview page</li>
+              <li style="margin-bottom:6px">Sign up at <a href="https://cloudflare.com" target="_blank" style="color:var(--accent)">cloudflare.com</a> (free account)</li>
+              <li style="margin-bottom:6px">Go to <strong>Workers &amp; Pages</strong> to activate Workers AI free tier</li>
+              <li style="margin-bottom:6px">Note your <strong>Account ID</strong> (top-right of Workers overview page)</li>
               <li style="margin-bottom:6px">Go to <strong>Profile → API Tokens → Create Token</strong></li>
-              <li style="margin-bottom:6px">Use the "Cloudflare Workers AI" template — grant <em>AI Gateway: Read</em> permission</li>
-              <li style="margin-bottom:6px">Add the key in API Keys tab as: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">YOUR_ACCOUNT_ID|YOUR_API_TOKEN</code></li>
+              <li style="margin-bottom:6px">Use template <em>"Edit Cloudflare Workers"</em> — grants <strong>Workers Scripts: Edit</strong> + <strong>Workers AI: Execute</strong></li>
+              <li style="margin-bottom:6px">Key format: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">ACCOUNT_ID|API_TOKEN</code></li>
             </ol>
             <a href="/settings#tab-keys" class="btn btn-primary" onclick="switchTabByName('keys')">
               <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
@@ -435,23 +439,51 @@
           </div>
         </div>
 
+        <!-- API permissions notice -->
+        <div class="card" style="margin-bottom:14px;border-color:#f48120">
+          <div class="card-hd" style="background:rgba(244,129,32,0.08)">
+            <span class="card-title" style="color:#f48120">Required API Token Permissions</span>
+          </div>
+          <div class="card-body" style="display:flex;gap:24px;flex-wrap:wrap">
+            <div style="font-size:12px;color:var(--text-2)">
+              <div style="font-weight:600;color:var(--text-1);margin-bottom:4px">For AI inference (direct API calls):</div>
+              <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">Account &gt; Workers AI &gt; Execute</code>
+            </div>
+            <div style="font-size:12px;color:var(--text-2)">
+              <div style="font-weight:600;color:var(--text-1);margin-bottom:4px">For creating/deleting workers:</div>
+              <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">Account &gt; Workers Scripts &gt; Edit</code>
+            </div>
+            <div style="font-size:12px;color:var(--text-2)">
+              <div style="font-weight:600;color:var(--text-1);margin-bottom:4px">Easiest: use built-in template</div>
+              <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">Edit Cloudflare Workers</code> template
+            </div>
+          </div>
+        </div>
+
         <div class="grid-2" style="align-items:start">
+          <!-- Workers list -->
           <div class="card">
             <div class="card-hd">
               <span class="card-title">Deployed Workers</span>
-              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadWorkers()">Refresh</button>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadWorkers()">Refresh</button>
+              </div>
             </div>
-            <div class="card-body">
+            <div class="card-body" style="padding:0">
               <div id="workers-list">
                 <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading workers…</div>
               </div>
             </div>
           </div>
 
+          <!-- Create worker -->
           <div class="card">
             <div class="card-hd"><span class="card-title">Create New Worker</span></div>
             <div class="card-body">
-              <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">Deploy a Cloudflare Worker that exposes an OpenAI-compatible endpoint backed by Workers AI.</p>
+              <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">
+                Creates a Cloudflare Worker backed by Workers AI, enables workers.dev access,
+                and registers it in the Arbiter gateway automatically.
+              </p>
               <div class="form-group">
                 <label class="form-label">Worker Name</label>
                 <input type="text" class="form-control" id="cf-name" placeholder="my-llm-worker" />
@@ -462,11 +494,141 @@
                   <option value="">Loading models…</option>
                 </select>
               </div>
-              <button class="btn btn-primary" onclick="createWorker()">
+              <button class="btn btn-primary" onclick="createWorker()" style="width:100%">
                 <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>
-                Deploy Worker
+                Deploy &amp; Integrate Worker
                 <span class="spinner" id="cf-spinner"></span>
               </button>
+              <div id="cf-create-result" style="margin-top:12px;display:none"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gateway integration info -->
+        <div class="card" style="margin-top:14px">
+          <div class="card-hd" style="background:rgba(0,200,100,0.06)">
+            <span class="card-title" style="color:var(--success)">How Workers integrate with Arbiter Gateway</span>
+          </div>
+          <div class="card-body" style="font-size:12px;color:var(--text-2)">
+            <p style="margin-bottom:8px">Workers created here are automatically routed via Arbiter's <code style="background:var(--surface-3);padding:1px 5px;border-radius:3px">cloudflare</code> provider. No extra configuration needed.</p>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div>
+                <div style="font-weight:600;color:var(--text-1);margin-bottom:3px">Use via gateway:</div>
+                <code style="background:var(--surface-3);padding:3px 8px;border-radius:4px">POST /v1/chat/completions</code><br>
+                <code style="background:var(--surface-3);padding:3px 8px;border-radius:4px;margin-top:4px;display:inline-block">"provider": "cloudflare"</code>
+              </div>
+              <div>
+                <div style="font-weight:600;color:var(--text-1);margin-bottom:3px">Or use worker URL directly:</div>
+                <code style="background:var(--surface-3);padding:3px 8px;border-radius:4px">https://&lt;name&gt;.&lt;subdomain&gt;.workers.dev</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ Modal.com Tab ═══════════════ -->
+      <div id="tab-modal" class="tab-panel">
+
+        <!-- Info banner -->
+        <div class="card" style="margin-bottom:14px;border-color:#6366f1">
+          <div class="card-hd" style="background:rgba(99,102,241,0.08)">
+            <span class="card-title" style="color:#6366f1">Modal.com — Serverless GPU ($30 free credits/month)</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:13px;color:var(--text-2);margin-bottom:10px">
+              Deploy LLM inference apps on Modal and register the endpoint URL here. Modal provides serverless A10G/A100 GPUs — you only pay while a request runs.
+            </p>
+            <ol style="font-size:13px;color:var(--text-2);padding-left:20px;margin-bottom:14px">
+              <li style="margin-bottom:5px">Sign up at <a href="https://modal.com" target="_blank" style="color:#6366f1">modal.com</a> (free $30/month credits)</li>
+              <li style="margin-bottom:5px">Run: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">pip install modal &amp;&amp; modal setup</code></li>
+              <li style="margin-bottom:5px">Create token: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">modal token new</code></li>
+              <li style="margin-bottom:5px">Deploy a vLLM app: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">modal deploy my_llm.py</code></li>
+              <li style="margin-bottom:5px">Register the HTTPS endpoint URL below</li>
+            </ol>
+            <p style="font-size:12px;color:var(--text-3)">
+              Token format: <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">ak-&lt;token_id&gt;:&lt;token_secret&gt;</code> from <code style="background:var(--surface-3);padding:2px 6px;border-radius:4px">~/.modal/config.toml</code>
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2" style="align-items:start">
+          <!-- Registered endpoints list -->
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Registered Endpoints</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadModalEndpoints()">Refresh</button>
+            </div>
+            <div class="card-body">
+              <div id="modal-endpoints-list">
+                <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Register new endpoint -->
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Register Endpoint</span></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Name (label)</label>
+                <input type="text" class="form-control" id="modal-name" placeholder="llama-8b" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Endpoint URL</label>
+                <input type="text" class="form-control" id="modal-url" placeholder="https://myorg--app.modal.run" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Token (optional for public endpoints)</label>
+                <input type="text" class="form-control" id="modal-token" placeholder="ak-abc123:xyz456" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Description (optional)</label>
+                <input type="text" class="form-control" id="modal-desc" placeholder="Llama 3.1 8B on A10G" />
+              </div>
+              <button class="btn btn-primary" onclick="registerModalEndpoint()">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>
+                Register Endpoint
+                <span class="spinner" id="modal-spinner"></span>
+              </button>
+              <div id="modal-register-msg" style="margin-top:10px;font-size:12px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deployment templates -->
+        <div class="card" style="margin-top:14px">
+          <div class="card-hd">
+            <span class="card-title">vLLM Deployment Template (recommended)</span>
+            <a href="https://modal.com/docs/examples/vllm_inference" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:4px 10px">Docs ↗</a>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">Save as <code style="background:var(--surface-3);padding:2px 5px;border-radius:3px">my_llm.py</code> and run <code style="background:var(--surface-3);padding:2px 5px;border-radius:3px">modal deploy my_llm.py</code></p>
+            <pre style="background:var(--surface-3);padding:14px;border-radius:6px;font-size:11px;overflow-x:auto;color:var(--text-1);line-height:1.5">import modal
+
+app = modal.App("llm-serve")
+image = modal.Image.debian_slim().pip_install("vllm")
+
+@app.cls(gpu="A10G", image=image, timeout=300)
+class Model:
+    @modal.enter()
+    def load(self):
+        from vllm import LLM
+        self.llm = LLM(model="meta-llama/Llama-3.1-8B-Instruct")
+
+    @modal.web_endpoint(method="POST")
+    def serve(self, request: dict):
+        from vllm import SamplingParams
+        msgs = request.get("messages", [])
+        prompt = " ".join(m["content"] for m in msgs)
+        params = SamplingParams(
+            temperature=request.get("temperature", 0.7),
+            max_tokens=request.get("max_tokens", 512))
+        output = self.llm.generate([prompt], params)[0]
+        return {"choices": [{"message": {"role": "assistant",
+                "content": output.outputs[0].text}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}</pre>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+              <span style="font-size:12px;color:var(--text-2)">GPU pricing: T4 $0.0002/s · A10G $0.0006/s · A100-80G $0.0019/s · H100 $0.004/s</span>
             </div>
           </div>
         </div>
@@ -521,6 +683,7 @@ var PROVIDER_COLORS = {
   cerebras:     '#ff6b35',
   huggingface:  '#ffbd45',
   pollinations: '#ec4899',
+  modal:        '#6366f1',
 };
 
 var PROVIDER_DESCS = {
@@ -532,6 +695,7 @@ var PROVIDER_DESCS = {
   cohere:       'Cohere — enterprise Command models',
   huggingface:  'HuggingFace — open source models',
   pollinations: 'Pollinations — free, no auth needed',
+  modal:        'Modal.com — serverless GPU, $30/month free',
 };
 
 // ── Tab switching ────────────────────────────────────────────────────────────
@@ -542,6 +706,7 @@ function switchTab(name, btn) {
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
   if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
+  if (name === 'modal')      { loadModalEndpoints(); }
   if (name === 'cache')      { loadCacheStats(); }
   if (name === 'routing' && !routingData) { loadRouting(); }
   if (name === 'models' && !routingData)  { loadRouting(); }
@@ -549,7 +714,7 @@ function switchTab(name, btn) {
 
 function switchTabByName(name) {
   var btns = document.querySelectorAll('.tab-btn');
-  var tabOrder = ['keys','routing','models','images','cloudflare','cache'];
+  var tabOrder = ['keys','routing','models','images','cloudflare','modal','cache'];
   var idx = tabOrder.indexOf(name);
   if (idx >= 0 && btns[idx]) { switchTab(name, btns[idx]); }
 }
@@ -852,9 +1017,17 @@ function renderModelsAccordion(data) {
   if (!acc) return;
   var providers = data.provider_order || [];
   acc.innerHTML = providers.map(function(p) {
-    var models = (data.model_overrides && data.model_overrides[p])
+    var models = (data.model_overrides && data.model_overrides[p] && data.model_overrides[p].length)
       ? data.model_overrides[p]
-      : (data.model_hierarchies && data.model_hierarchies[p] ? data.model_hierarchies[p].map(function(m) { return m[0] || m; }) : []);
+      : (data.model_hierarchies && data.model_hierarchies[p]
+          ? data.model_hierarchies[p].map(function(m) {
+              // API returns {model, context_window} objects
+              if (m && typeof m === 'object' && !Array.isArray(m)) return [m.model, m.context_window];
+              // Legacy array tuples [model_id, ctx]
+              if (Array.isArray(m)) return m;
+              return [String(m), 0];
+            })
+          : []);
     modelOverrides[p] = models.slice();
     return buildModelAccordion(p, models);
   }).join('');
@@ -1017,28 +1190,59 @@ async function loadWorkers() {
   if (!el) return;
   el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>';
   try {
-    var r = await fetch('/cloudflare/workers');
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' — check Cloudflare API keys');
-    var data = await r.json();
+    // Force no-cache so we always get the live list from Cloudflare
+    var r = await fetch('/cloudflare/workers', {cache: 'no-store', headers: {'Cache-Control': 'no-cache'}});
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {}; });
+      throw new Error((err.detail || 'HTTP ' + r.status) + ' — check Cloudflare API keys in Settings → API Keys');
+    }
+    var data   = await r.json();
     var result = data.result || [];
     if (result.length === 0) {
-      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">No workers deployed yet.</div>';
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">No workers deployed yet. Create one →</div>';
       return;
     }
     el.innerHTML = result.map(function(w) {
-      return '<div class="worker-row">' +
-        '<div>' +
-        '  <div style="font-size:13px;font-weight:600;color:var(--text)">' + (w.id || w.script_name || w.name || 'worker') + '</div>' +
-        '  <div style="font-size:11px;color:var(--text-3)">' + (w.created_on ? new Date(w.created_on).toLocaleString() : '') + '</div>' +
+      var name       = w.name || '';
+      var model      = w.model || '';
+      var url        = w.worker_url || '';
+      var created    = w.created_on ? new Date(w.created_on).toLocaleString() : '';
+      var integrated = w.subdomain_enabled;
+      var statusBadge = integrated
+        ? '<span style="background:rgba(0,200,100,0.12);color:#00c864;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">● Active</span>'
+        : '<span style="background:rgba(200,50,50,0.12);color:#e05;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">○ No route</span>';
+
+      var urlRow = url
+        ? '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">' +
+          '<code style="font-size:10px;color:var(--text-3);background:var(--surface-3);padding:1px 5px;border-radius:3px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + url + '</code>' +
+          '<button class="btn btn-ghost" style="font-size:10px;padding:2px 6px" onclick="navigator.clipboard.writeText(\'' + url + '\')">Copy</button>' +
+          '</div>'
+        : '<div style="font-size:11px;color:var(--warning);margin-top:3px">workers.dev not enabled</div>';
+
+      var modelRow = model
+        ? '<div style="font-size:11px;color:var(--text-2);margin-top:2px">Model: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px;font-size:10px">' + model + '</code></div>'
+        : '';
+
+      return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
+        '<div style="min-width:0">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:13px;font-weight:600;color:var(--text-1)">' + name + '</span>' +
+        statusBadge +
         '</div>' +
-        '<div style="display:flex;gap:8px;align-items:center">' +
-        '  <button class="btn btn-ghost" style="font-size:11px" onclick="navigator.clipboard && navigator.clipboard.writeText(\'https://' + (w.id || w.script_name || '') + '.workers.dev\')">Copy URL</button>' +
-        '  <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteWorker(\'' + (w.id || w.script_name || '') + '\')">Delete</button>' +
+        (created ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">Created ' + created + '</div>' : '') +
+        modelRow +
+        urlRow +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0">' +
+        '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="showWorkerAnalytics(\'' + name + '\')">Analytics</button>' +
+        '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px;color:var(--danger)" onclick="deleteWorker(\'' + name + '\')">Delete</button>' +
+        '</div>' +
         '</div>' +
         '</div>';
     }).join('');
   } catch(e) {
-    el.innerHTML = '<div style="padding:20px;color:var(--red);font-size:13px">Error: ' + e.message + '</div>';
+    el.innerHTML = '<div style="padding:16px;color:var(--danger);font-size:12px">⚠ ' + e.message + '</div>';
   }
 }
 
@@ -1046,53 +1250,189 @@ async function loadCfModels() {
   var sel = document.getElementById('cf-model');
   if (!sel) return;
   try {
-    var r    = await fetch('/cloudflare/models');
+    var r    = await fetch('/cloudflare/models', {cache: 'no-store'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var data = await r.json();
-    var models = (data.result || []).map(function(m) { return m.name || m.id || m; });
-    sel.innerHTML = models.length
-      ? models.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('')
-      : '<option value="">No models found</option>';
+    var models = (data.result || []);
+    if (!models.length) { sel.innerHTML = '<option value="">No models found — check CF keys</option>'; return; }
+    // Group popular models first
+    var popular = models.filter(function(m) {
+      return m.name && (m.name.includes('llama-4') || m.name.includes('llama-3.3') || m.name.includes('qwen') || m.name.includes('mistral') || m.name.includes('deepseek'));
+    });
+    var rest = models.filter(function(m) { return popular.indexOf(m) === -1; });
+    var toOpt = function(m) { return '<option value="' + m.name + '">' + m.name + '</option>'; };
+    sel.innerHTML = (popular.length ? '<optgroup label="Popular">' + popular.map(toOpt).join('') + '</optgroup>' : '') +
+                    (rest.length   ? '<optgroup label="All models">' + rest.map(toOpt).join('')   + '</optgroup>' : '');
   } catch(e) {
-    sel.innerHTML = '<option value="">Failed to load — check CF keys</option>';
+    sel.innerHTML = '<option value="@cf/meta/llama-3.1-8b-instruct">@cf/meta/llama-3.1-8b-instruct (fallback)</option>';
   }
 }
 
 async function createWorker() {
   var name  = document.getElementById('cf-name').value.trim();
   var model = document.getElementById('cf-model').value;
+  var res   = document.getElementById('cf-create-result');
   if (!name)  { toast('Enter a worker name', 'error'); return; }
   if (!model) { toast('Select a model', 'error'); return; }
   var sp = document.getElementById('cf-spinner');
   if (sp) sp.style.display = 'inline-block';
+  if (res) { res.style.display = 'none'; }
   try {
     var r = await fetch('/cloudflare/workers', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({name, model}),
+      body: JSON.stringify({name: name, model: model}),
     });
     var data = await r.json();
     if (!r.ok) throw new Error(data.detail || 'Error ' + r.status);
-    toast('Worker created: ' + data.name + (data.worker_url ? ' → ' + data.worker_url : ''), 'success');
+
+    // Show success panel
+    if (res) {
+      var workerUrl = data.worker_url || '';
+      var subEnabled = data.subdomain_enabled;
+      res.style.display = 'block';
+      res.innerHTML = '<div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);border-radius:6px;padding:12px">' +
+        '<div style="font-weight:600;color:#00c864;margin-bottom:6px">✓ Worker deployed &amp; integrated!</div>' +
+        '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">Name: <strong>' + data.name + '</strong></div>' +
+        '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">Model: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">' + data.model + '</code></div>' +
+        (workerUrl ? '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">URL: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">' + workerUrl + '</code> <button class="btn btn-ghost" style="font-size:10px;padding:1px 5px" onclick="navigator.clipboard.writeText(\'' + workerUrl + '\')">Copy</button></div>' : '') +
+        '<div style="font-size:11px;color:var(--text-2);margin-bottom:2px">workers.dev: ' + (subEnabled ? '<span style="color:#00c864">enabled</span>' : '<span style="color:#f0a">check Cloudflare dashboard</span>') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:6px">Use via gateway: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">provider=cloudflare model=' + data.model + '</code></div>' +
+        '</div>';
+    }
     document.getElementById('cf-name').value = '';
-    await loadWorkers();
+    // Refresh list after a short delay (CF API takes a moment to reflect new scripts)
+    setTimeout(function() { loadWorkers(); }, 1500);
   } catch(e) {
     toast('Create failed: ' + e.message, 'error');
+    if (res) {
+      res.style.display = 'block';
+      res.innerHTML = '<div style="background:rgba(220,50,50,0.08);border:1px solid rgba(220,50,50,0.3);border-radius:6px;padding:10px;font-size:12px;color:var(--danger)">⚠ ' + e.message + '</div>';
+    }
   }
   if (sp) sp.style.display = 'none';
 }
 
 async function deleteWorker(name) {
-  if (!confirm('Delete worker "' + name + '"?')) return;
+  if (!confirm('Delete worker "' + name + '" from Cloudflare?')) return;
   try {
-    var r = await fetch('/cloudflare/workers/' + name, {method:'DELETE'});
+    var r    = await fetch('/cloudflare/workers/' + encodeURIComponent(name), {method:'DELETE'});
     var data = await r.json();
-    if (!r.ok) throw new Error(data.detail || 'Error');
+    if (!r.ok) throw new Error(data.detail || 'Error ' + r.status);
     toast('Worker deleted: ' + name, 'success');
-    await loadWorkers();
+    // Refresh after brief delay
+    setTimeout(function() { loadWorkers(); }, 800);
   } catch(e) {
     toast('Delete failed: ' + e.message, 'error');
   }
+}
+
+async function showWorkerAnalytics(name) {
+  try {
+    var r    = await fetch('/cloudflare/workers/' + encodeURIComponent(name) + '/analytics', {cache: 'no-store'});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'HTTP ' + r.status);
+    var lines = [
+      'Worker: ' + data.name,
+      'Model: ' + (data.model || '—'),
+      'URL: ' + (data.worker_url || '—'),
+      'Created: ' + (data.created_on || '—'),
+      '────────────────────────',
+      'Gateway usage today:',
+      '  CF provider daily tokens: ' + (data.gateway_usage?.cloudflare_daily_tokens || 0).toLocaleString(),
+      '  CF provider RPM: ' + (data.gateway_usage?.cloudflare_rpm || 0),
+      '────────────────────────',
+      'Cloudflare dashboard:',
+      data.dashboard_url,
+    ];
+    alert(lines.join('\n'));
+  } catch(e) {
+    toast('Analytics error: ' + e.message, 'error');
+  }
+}
+
+// ── Modal.com Tab ────────────────────────────────────────────────────────────
+async function loadModalEndpoints() {
+  var list = document.getElementById('modal-endpoints-list');
+  try {
+    var r = await fetch('/modal/endpoints');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var eps = await r.json();
+    if (!eps.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">No endpoints registered yet.</div>';
+      return;
+    }
+    list.innerHTML = eps.map(function(ep) {
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start">' +
+        '<div>' +
+        '<div style="font-weight:600;font-size:13px;color:var(--text-1)">' + ep.name + '</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px">' + ep.url + '</div>' +
+        (ep.description ? '<div style="font-size:11px;color:var(--text-2);margin-top:2px">' + ep.description + '</div>' : '') +
+        (ep.token_masked ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">Token: ' + ep.token_masked + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="testModalEndpoint(\'' + ep.name + '\')">Test</button>' +
+        '<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--danger)" onclick="deleteModalEndpoint(\'' + ep.name + '\')">Delete</button>' +
+        '</div></div></div>';
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger);font-size:13px">Error: ' + e.message + '</div>';
+  }
+}
+
+async function registerModalEndpoint() {
+  var name  = document.getElementById('modal-name').value.trim();
+  var url   = document.getElementById('modal-url').value.trim();
+  var token = document.getElementById('modal-token').value.trim();
+  var desc  = document.getElementById('modal-desc').value.trim();
+  var msg   = document.getElementById('modal-register-msg');
+  var spin  = document.getElementById('modal-spinner');
+
+  if (!name || !url) { msg.textContent = 'Name and URL are required.'; msg.style.color = 'var(--danger)'; return; }
+
+  spin.style.display = 'inline-block';
+  msg.textContent = '';
+  try {
+    var r = await fetch('/modal/endpoints', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, url: url, token: token || null, description: desc || null})
+    });
+    var data = await r.json();
+    if (!r.ok) { msg.textContent = data.detail || 'Error ' + r.status; msg.style.color = 'var(--danger)'; return; }
+    msg.textContent = 'Registered successfully!';
+    msg.style.color = 'var(--success)';
+    document.getElementById('modal-name').value = '';
+    document.getElementById('modal-url').value  = '';
+    document.getElementById('modal-token').value = '';
+    document.getElementById('modal-desc').value  = '';
+    loadModalEndpoints();
+  } catch(e) {
+    msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--danger)';
+  } finally { spin.style.display = 'none'; }
+}
+
+async function testModalEndpoint(name) {
+  try {
+    var r = await fetch('/modal/endpoints/' + encodeURIComponent(name) + '/test', {method:'POST'});
+    var data = await r.json();
+    if (data.ok) {
+      toast('✓ ' + name + ' responded in ' + data.latency_ms + 'ms: "' + (data.reply || 'ok') + '"', 'success');
+    } else {
+      toast('✗ ' + name + ' failed (' + data.status + '): ' + (data.error || '').substring(0, 80), 'error');
+    }
+  } catch(e) { toast('Test error: ' + e.message, 'error'); }
+}
+
+async function deleteModalEndpoint(name) {
+  if (!confirm('Delete endpoint "' + name + '"?')) return;
+  try {
+    var r = await fetch('/modal/endpoints/' + encodeURIComponent(name), {method:'DELETE'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Deleted ' + name, 'success');
+    loadModalEndpoints();
+  } catch(e) { toast('Delete failed: ' + e.message, 'error'); }
 }
 
 // ── Cache Tab ────────────────────────────────────────────────────────────────

@@ -127,6 +127,25 @@ _PROVIDER_META = {
         "free":       True,
         "models": ["mistral", "mistral-large", "openai", "claude"],
     },
+    "modal": {
+        "label":      "Modal.com (Serverless GPU)",
+        "key_format": "endpoint_url|token",
+        "key_hint":   "https://myorg--app.modal.run|ak-abc123:xyz456",
+        "signup_url": "https://modal.com",
+        "free":       True,
+        "setup_steps": [
+            "Sign up at modal.com ($30 free credits/month)",
+            "pip install modal && modal setup",
+            "modal token new  # creates ~/.modal/config.toml",
+            "Deploy an LLM app: modal deploy my_llm.py",
+            "Register the URL in Settings → Modal Endpoints",
+        ],
+        "models": [
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+        ],
+    },
 }
 
 
@@ -184,12 +203,14 @@ async def _reload_provider(name: str, request: Request) -> None:
     from app.providers.cerebras     import CerebrasProvider
     from app.providers.huggingface  import HuggingFaceProvider
     from app.providers.pollinations import PollinationsProvider
+    from app.providers.modal_provider import ModalProvider
 
     _classes = {
         "gemini": GeminiProvider, "groq": GroqProvider,
         "openrouter": OpenRouterProvider, "cohere": CohereProvider,
         "cloudflare": CloudflareProvider, "cerebras": CerebrasProvider,
         "huggingface": HuggingFaceProvider, "pollinations": PollinationsProvider,
+        "modal": ModalProvider,
     }
 
     redis     = request.app.state.redis

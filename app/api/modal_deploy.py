@@ -26,7 +26,7 @@ How deployment works
 Cost efficiency features
 ────────────────────────
 • modal.Volume  — model weights cached on first cold start, reused forever
-• container_idle_timeout — container auto-shuts after N seconds of silence
+• scaledown_window — container auto-shuts after N seconds of silence
 • @modal.concurrent — one GPU instance handles M parallel requests
 • gpu_memory_utilization=0.90 — maximise throughput on the chosen GPU
 • Optional AWQ 4-bit quantisation for larger models on smaller (cheaper) GPUs
@@ -238,7 +238,7 @@ image = (
     gpu=GPU,
     image=image,
     volumes={{"/model-cache": model_vol}},
-    container_idle_timeout=IDLE_SECS,
+    scaledown_window=IDLE_SECS,
     timeout=900,
     {secrets_arg}
 )
@@ -543,16 +543,30 @@ async def _run_deployment(
 # Account token endpoints
 # ---------------------------------------------------------------------------
 
+def _token_from_env() -> str:
+    """Return token string from MODAL_TOKEN_ID/MODAL_TOKEN_SECRET env vars, or ''."""
+    from app.config import settings
+    if settings.MODAL_TOKEN_ID and settings.MODAL_TOKEN_SECRET:
+        return f"{settings.MODAL_TOKEN_ID}:{settings.MODAL_TOKEN_SECRET}"
+    return ""
+
+
 @router.get("/account", summary="Check Modal account token")
 async def get_account(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     raw   = await redis.get(_KEY_TOKEN)
+    # Fall back to env vars if Redis has no token
     if not raw:
-        return JSONResponse({"configured": False})
+        raw = _token_from_env()
+        if raw:
+            await redis.set(_KEY_TOKEN, raw)  # cache in Redis for subsequent calls
+    if not raw:
+        return JSONResponse({"configured": False, "source": None})
     try:
         tid, _ = _parse_token(raw)
         masked = tid[:8] + "..." if len(tid) > 8 else tid
-        return JSONResponse({"configured": True, "token_id_masked": masked})
+        return JSONResponse({"configured": True, "token_id_masked": masked,
+                             "source": "env" if raw == _token_from_env() else "saved"})
     except Exception:
         return JSONResponse({"configured": False, "error": "Invalid stored token"})
 
@@ -602,6 +616,8 @@ async def check_modal_cli(request: Request) -> JSONResponse:
     cli_path = shutil.which("modal")
     redis = request.app.state.redis
     token_raw = await redis.get(_KEY_TOKEN)
+    if not token_raw:
+        token_raw = _token_from_env()
     token_ok = False
     token_masked = None
     if token_raw:
@@ -645,10 +661,14 @@ async def start_deployment(body: DeployBody, request: Request) -> JSONResponse:
 
     redis = request.app.state.redis
 
-    # Get token
+    # Get token — Redis first, then env vars
     token_raw = await redis.get(_KEY_TOKEN)
     if not token_raw:
-        raise HTTPException(400, "No Modal account token configured. Set it in the Modal GPU tab first.")
+        token_raw = _token_from_env()
+        if token_raw:
+            await redis.set(_KEY_TOKEN, token_raw)
+    if not token_raw:
+        raise HTTPException(400, "No Modal account token configured. Set MODAL_TOKEN_ID/MODAL_TOKEN_SECRET in .env or use the Modal GPU tab.")
     try:
         token_id, token_secret = _parse_token(token_raw)
     except ValueError as e:
@@ -763,7 +783,7 @@ async def delete_deployment(deploy_id: str, request: Request) -> JSONResponse:
     url      = dep.get("url", "")
 
     # Try to stop the Modal app via CLI
-    token_raw = await redis.get(_KEY_TOKEN)
+    token_raw = await redis.get(_KEY_TOKEN) or _token_from_env()
     stop_msg  = "No token — skipped app stop"
     if token_raw and app_name:
         try:

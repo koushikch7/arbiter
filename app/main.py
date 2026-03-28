@@ -29,12 +29,15 @@ from app.api.keys_api import router as keys_router
 from app.api.image_api import router as image_router
 from app.api.modal_manager import router as modal_router
 from app.api.modal_deploy import router as modal_deploy_router
+from app.api.logs_api import router as logs_router, log_buffer
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# Attach in-memory log buffer to root logger so all log records are captured
+logging.getLogger().addHandler(log_buffer)
 logger = logging.getLogger(__name__)
 
 
@@ -212,6 +215,7 @@ app.include_router(keys_router, tags=["Provider Management"])
 app.include_router(image_router, tags=["Images"])
 app.include_router(modal_router, tags=["Modal"])
 app.include_router(modal_deploy_router, tags=["Modal Deploy"])
+app.include_router(logs_router, tags=["Logs"])
 
 
 @app.get("/health", summary="Health check")

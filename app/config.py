@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
     MODAL_API_KEYS: str = ""
+    # Modal account token (used by the one-click deploy feature)
+    MODAL_TOKEN_ID: str = ""
+    MODAL_TOKEN_SECRET: str = ""
 
     # ── Cloudflare Zero Trust / Access ───────────────────────────────────────
     # Team name, e.g. "myteam"  → https://myteam.cloudflareaccess.com

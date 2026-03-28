@@ -32,18 +32,12 @@ from starlette.responses import JSONResponse, Response
 logger = logging.getLogger(__name__)
 
 # Paths that bypass gateway-level auth entirely
-_EXEMPT_PATHS: frozenset = frozenset(
-    [
-        "/health",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/api-docs",
-        "/dashboard",
-        "/dashboard/stats",
-        "/v1/models",
-    ]
-)
+_EXEMPT_PATHS: frozenset = frozenset([
+    "/health", "/docs", "/redoc", "/openapi.json",
+    "/api-docs", "/dashboard", "/dashboard/stats",
+    "/v1/models", "/settings",
+    "/settings/routing",   # GET config read is public
+])
 
 
 def _error_401(message: str = "Invalid API key") -> JSONResponse:
@@ -98,7 +92,8 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Exempt paths — pass through
-        if request.url.path in _EXEMPT_PATHS:
+        path = request.url.path
+        if path in _EXEMPT_PATHS or path.startswith("/static/"):
             return await call_next(request)
 
         # Validate Authorization header
@@ -223,7 +218,8 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Exempt paths — always allow
-        if request.url.path in _EXEMPT_PATHS:
+        path = request.url.path
+        if path in _EXEMPT_PATHS or path.startswith("/static/"):
             return await call_next(request)
 
         jwt_token = request.headers.get("Cf-Access-Jwt-Assertion", "")

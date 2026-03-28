@@ -46,6 +46,18 @@ async def dashboard(request: Request) -> HTMLResponse:
         )
 
 
+@router.get("/settings", response_class=HTMLResponse, summary="Settings dashboard")
+async def settings_page() -> HTMLResponse:
+    """Serve the settings management page."""
+    path = os.path.join(_STATIC_DIR, "settings.html")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content, status_code=200, headers=_NO_CACHE_HEADERS)
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Settings page not found</h1>", status_code=404)
+
+
 @router.get("/dashboard/stats", summary="Dashboard stats JSON")
 async def dashboard_stats(request: Request) -> JSONResponse:
     """Return JSON stats for the dashboard."""

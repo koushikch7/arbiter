@@ -35,7 +35,9 @@ caller names a specific model, it is placed first; remaining slots are filled
 by the hierarchy in default order.
 """
 
+import json
 import logging
+import time
 from typing import Dict, List, Optional, Set, Tuple
 
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
@@ -190,6 +192,29 @@ class IntelligentRouter:
         self.key_pools = key_pools
         self.cache     = cache
         self.redis     = redis_client
+        self._cfg_cache: dict = {}
+        self._cfg_cache_ts: float = 0.0
+
+    async def _get_custom_config(self) -> dict:
+        """Load custom routing config from Redis, cached for 30s."""
+        now = time.monotonic()
+        if now - self._cfg_cache_ts < 30 and self._cfg_cache:
+            return self._cfg_cache
+        cfg: dict = {"provider_order": None, "model_overrides": {}}
+        if self.redis:
+            try:
+                raw = await self.redis.get("arbiter:config:provider_order")
+                if raw:
+                    cfg["provider_order"] = json.loads(raw)
+                for p in _DEFAULT_PROVIDER_ORDER:
+                    raw = await self.redis.get(f"arbiter:config:models:{p}")
+                    if raw:
+                        cfg["model_overrides"][p] = json.loads(raw)
+            except Exception as e:
+                logger.debug(f"Config load error: {e}")
+        self._cfg_cache = cfg
+        self._cfg_cache_ts = now
+        return cfg
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -213,6 +238,8 @@ class IntelligentRouter:
         if force_model:
             request = request.model_copy(update={"model": force_model})
 
+        cfg = await self._get_custom_config()
+
         # ── 1. Cache lookup ──────────────────────────────────────────
         cache_key = self.cache.make_key(request)
         if request.temperature <= 0.3:
@@ -226,7 +253,7 @@ class IntelligentRouter:
         await self._inc("cache_misses")
 
         # ── 2. Provider order ────────────────────────────────────────
-        provider_order = self._provider_order(request, vendor=vendor)
+        provider_order = self._provider_order(request, vendor=vendor, cfg=cfg)
         token_est      = self._estimate_tokens(request)
         logger.info(
             f"Routing  model={request.model!r}  tokens≈{token_est}  "
@@ -243,7 +270,7 @@ class IntelligentRouter:
                 logger.debug(f"Provider {provider_name!r} not configured, skipping")
                 continue
 
-            model_list = self._model_hierarchy(provider_name, request, token_est)
+            model_list = self._model_hierarchy(provider_name, request, token_est, cfg=cfg)
             logger.debug(
                 f"[{provider_name}] model candidates: {model_list}"
             )
@@ -331,76 +358,81 @@ class IntelligentRouter:
         self,
         request: ChatCompletionRequest,
         vendor: Optional[str] = None,
+        cfg=None,
     ) -> List[str]:
         """Return the ordered list of providers to attempt.
 
         If *vendor* is supplied, it is placed unconditionally at position 0.
         """
+        cfg = cfg or {}
+        base_order = cfg.get("provider_order") or list(_DEFAULT_PROVIDER_ORDER)
+
         model     = request.model.lower()
         token_est = self._estimate_tokens(request)
 
         # ── Explicit vendor override ──
         if vendor:
-            return self._reorder(vendor)
+            return self._reorder(vendor, base_order)
 
         # ── Explicit model-name routing ──
         if "gemini" in model:
-            return self._reorder("gemini")
+            return self._reorder("gemini", base_order)
 
         # Cloudflare Workers AI model names start with @cf/
         if "@cf/" in model:
-            return self._reorder("cloudflare")
+            return self._reorder("cloudflare", base_order)
 
         # Cerebras native model names
         if "llama3.1" in model or "llama3.1-8b" in model or "cerebras" in model:
-            return self._reorder("cerebras")
+            return self._reorder("cerebras", base_order)
 
         # Groq-native model names (no slash) vs OpenRouter slash-format
         if any(k in model for k in ("llama-3.1-8b", "llama-3.3", "llama-4", "qwen3", "kimi", "gpt-oss")):
-            return self._reorder("groq")
+            return self._reorder("groq", base_order)
 
         if any(k in model for k in ("command-r", "command-a", "cohere")):
-            return self._reorder("cohere")
+            return self._reorder("cohere", base_order)
 
         # Pollinations model names
         if "pollinations" in model or model in ("mistral", "mistral-large", "openai", "claude"):
             # "openai" and "claude" are ambiguous; prefer Pollinations only if
             # the literal model string is exactly one of their known values
             if model in ("mistral", "mistral-large"):
-                return self._reorder("pollinations")
+                return self._reorder("pollinations", base_order)
 
         # HuggingFace — slash-separated org/model names not handled by OpenRouter
         if any(k in model for k in ("zephyr", "hf", "huggingface", "qwen/qwen", "mistralai/mistral")):
-            return self._reorder("huggingface")
+            return self._reorder("huggingface", base_order)
 
         if "/" in model:                          # OpenRouter format (org/model)
-            return self._reorder("openrouter")
+            return self._reorder("openrouter", base_order)
 
         # ── Token-count routing ──
         if token_est > 100_000:
             # Only Gemini has 1 M+ context; others as last resort
             logger.info(f"Huge context ({token_est} tok) → Gemini primary")
-            return ["gemini", "openrouter", "cohere", "groq", "cerebras", "cloudflare", "huggingface", "pollinations"]
+            return self._reorder("gemini", base_order)
 
         if token_est > 16_000:
             logger.info(f"Large context ({token_est} tok) → Gemini/OpenRouter")
-            return ["gemini", "openrouter", "cohere", "groq", "cerebras", "huggingface", "cloudflare", "pollinations"]
+            return self._reorder("gemini", base_order)
 
         # ── Capability routing ──
         last_msg = self._last_user_message(request)
         if last_msg and self._is_code_related(last_msg):
             logger.info("Code-related request → Gemini/Groq priority")
-            return ["gemini", "groq", "cerebras", "cloudflare", "openrouter", "cohere", "huggingface", "pollinations"]
+            return self._reorder("gemini", base_order)
 
         # ── Speed routing (small prompts) ──
         if token_est < 4_000:
             logger.info(f"Small context ({token_est} tok) → Groq (fastest)")
-            return ["groq", "gemini", "cerebras", "cloudflare", "openrouter", "cohere", "huggingface", "pollinations"]
+            return self._reorder("groq", base_order)
 
-        return list(_DEFAULT_PROVIDER_ORDER)
+        return base_order
 
-    def _reorder(self, primary: str) -> List[str]:
-        return [primary] + [p for p in _DEFAULT_PROVIDER_ORDER if p != primary]
+    def _reorder(self, primary: str, base: list = None) -> List[str]:
+        order = base if base is not None else list(_DEFAULT_PROVIDER_ORDER)
+        return [primary] + [p for p in order if p != primary]
 
     # ------------------------------------------------------------------
     # Per-vendor model hierarchy
@@ -411,6 +443,7 @@ class IntelligentRouter:
         provider_name: str,
         request: ChatCompletionRequest,
         token_est: int,
+        cfg=None,
     ) -> List[str]:
         """
         Return the ordered list of model IDs to try for *provider_name*.
@@ -421,7 +454,16 @@ class IntelligentRouter:
            (If nothing passes, fall back to the full list – better than nothing.)
         3. If the requested model matches one in the hierarchy, put it first.
         """
-        full_hierarchy = VENDOR_MODEL_HIERARCHY.get(provider_name, [])
+        cfg = cfg or {}
+        overrides = cfg.get("model_overrides", {})
+        if provider_name in overrides:
+            raw_models = overrides[provider_name]
+            if raw_models and isinstance(raw_models[0], list):
+                full_hierarchy = [(m, c) for m, c in raw_models]
+            else:
+                full_hierarchy = [(m, 131_072) for m in raw_models]
+        else:
+            full_hierarchy = VENDOR_MODEL_HIERARCHY.get(provider_name, [])
         if not full_hierarchy:
             return []
 

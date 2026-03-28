@@ -1,11 +1,13 @@
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.key_management.key_pool import KeyPool, PROVIDER_LIMITS
@@ -21,6 +23,7 @@ from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
 from app.api.cloudflare_manager import router as cloudflare_router
+from app.api.settings_api import router as settings_router
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
@@ -123,6 +126,8 @@ async def lifespan(app: FastAPI):
         pass
 
 
+_STATIC_DIR = Path(__file__).parent.parent / "static"
+
 app = FastAPI(
     title="Arbiter",
     description=(
@@ -144,6 +149,9 @@ app = FastAPI(
         "filter": True,
     },
 )
+
+# Serve /static/ files (CSS, JS shared across UI pages)
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static_files")
 
 # ── CORS middleware (permissive for self-hosted use) ────────────────────────
 app.add_middleware(
@@ -190,6 +198,7 @@ app.include_router(chat.router, tags=["Chat"])
 app.include_router(models_api.router, tags=["Models"])
 app.include_router(dashboard.router, tags=["Dashboard"])
 app.include_router(cloudflare_router, tags=["Cloudflare Workers AI"])
+app.include_router(settings_router, tags=["Settings"])
 
 
 @app.get("/health", summary="Health check")
@@ -253,6 +262,15 @@ class _InMemoryRedis:
         val = int(self._store.get(key, 0)) + amount
         self._store[key] = str(val)
         return val
+
+    async def delete(self, *keys: str) -> int:
+        count = 0
+        for key in keys:
+            if key in self._store:
+                del self._store[key]
+                self._expiry.pop(key, None)
+                count += 1
+        return count
 
     async def expire(self, key: str, seconds: int) -> int:
         self._expiry[key] = time.time() + seconds

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — Arbiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <script src="/static/arbiter.js"></script>
+  <style>
+    .model-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .model-row:last-child { border-bottom: none; }
+    .model-row-name { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-2); }
+    .model-row-ctx  { font-size: 10px; color: var(--text-3); min-width: 48px; text-align: right; }
+    .model-move-btn { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm); line-height: 1; }
+    .model-move-btn:hover { background: var(--surface-3); color: var(--text); }
+    .model-del-btn  { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px 6px; border-radius: var(--r-sm); font-size: 13px; opacity: 0.6; }
+    .model-del-btn:hover { opacity: 1; background: var(--red-dim); }
+    .add-model-row  { display: flex; gap: 8px; margin-top: 12px; }
+    .provider-desc  { font-size: 12px; color: var(--text-3); margin-left: auto; }
+    .worker-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .worker-row:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">A</div>
+      <span class="sidebar-brand-name">Arbiter</span>
+      <span class="sidebar-brand-ver">v1.1</span>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="sidebar-section">Main</span>
+      <a href="/dashboard" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="/api-docs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        API Documentation
+      </a>
+      <a href="/settings" class="nav-item active">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+      <div class="sidebar-divider"></div>
+      <span class="sidebar-section">Developer</span>
+      <a href="/docs" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        Swagger UI
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+      <a href="/redoc" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        ReDoc
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main-wrapper">
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="page-title">Settings</h1>
+      <div class="topbar-right">
+        <span id="settings-status" style="font-size:11px;color:var(--text-3)"></span>
+      </div>
+    </header>
+
+    <main class="page-content">
+
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('routing', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+          Routing
+        </button>
+        <button class="tab-btn" onclick="switchTab('models', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+          Models
+        </button>
+        <button class="tab-btn" onclick="switchTab('cloudflare', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+          Cloudflare Workers
+        </button>
+        <button class="tab-btn" onclick="switchTab('cache', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Cache
+        </button>
+      </div>
+
+      <!-- Routing Tab -->
+      <div id="tab-routing" class="tab-panel active">
+        <div class="grid-2" style="align-items:start">
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="card-hd">
+                <span class="card-title">Provider Priority Order</span>
+                <span id="routing-customized" class="badge badge-gray" style="display:none">Customized</span>
+              </div>
+              <div class="card-body">
+                <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">Drag to reorder providers. The router tries them from top (highest priority) to bottom.</p>
+                <div class="drag-list" id="drag-list"></div>
+                <div style="display:flex;gap:10px;margin-top:16px">
+                  <button class="btn btn-primary" onclick="saveRouting()">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                    Save Order
+                    <span class="spinner" id="save-spinner"></span>
+                  </button>
+                  <button class="btn btn-ghost" onclick="resetRouting()">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Reset to Default
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Routing Logic Reference</span></div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Model-Name Routing</div>
+                  <p style="font-size:12px;color:var(--text-2)">Model keywords like <code>gemini</code>, <code>@cf/</code>, <code>command-r</code> override this order.</p>
+                </div>
+                <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Token-Count Routing</div>
+                  <p style="font-size:12px;color:var(--text-2)">Huge context (&gt;100K) → Gemini first. Large (&gt;16K) → Gemini/OpenRouter. Small (&lt;4K) → Groq.</p>
+                </div>
+                <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Fallback</div>
+                  <p style="font-size:12px;color:var(--text-2)">If a provider fails, the next in this list is tried automatically.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Models Tab -->
+      <div id="tab-models" class="tab-panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd">
+            <span class="card-title">Per-Provider Model Overrides</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" onclick="saveModelOverrides()">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                Save All Overrides
+                <span class="spinner" id="models-spinner"></span>
+              </button>
+              <button class="btn btn-ghost" onclick="resetModelOverrides()">Reset All</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:16px">Customize the model list and priority for each provider. Changes are applied within 30 seconds (cache TTL). Leave a provider empty to use its defaults.</p>
+            <div id="models-accordion"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloudflare Tab -->
+      <div id="tab-cloudflare" class="tab-panel">
+        <div class="grid-2" style="align-items:start">
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">AI Gateway Workers</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadWorkers()">Refresh</button>
+            </div>
+            <div class="card-body">
+              <div id="workers-list">
+                <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Loading workers...</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Create New Worker</span></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Worker Name</label>
+                <input type="text" class="form-control" id="cf-name" placeholder="my-ai-worker" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Model</label>
+                <select class="form-control" id="cf-model">
+                  <option value="">Loading models...</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" onclick="createWorker()">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>
+                Create Worker
+                <span class="spinner" id="cf-spinner"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cache Tab -->
+      <div id="tab-cache" class="tab-panel">
+        <div class="grid-2" style="align-items:start">
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Cache Statistics</span></div>
+            <div class="card-body" id="cache-stats-body">
+              <div style="padding:20px;text-align:center;color:var(--text-3)">Loading...</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Cache Management</span></div>
+            <div class="card-body">
+              <p style="font-size:13px;color:var(--text-2);margin-bottom:16px">The semantic cache stores responses for deterministic requests (temperature ≤ 0.3). Clearing the cache forces re-fetching from providers.</p>
+              <div style="background:var(--red-dim);border:1px solid rgba(239,68,68,0.2);border-radius:var(--r-md);padding:14px;margin-bottom:16px">
+                <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">Warning</div>
+                <p style="font-size:12px;color:var(--text-2)">Clearing the cache will delete all cached responses. This cannot be undone. Subsequent identical requests will hit the LLM providers directly.</p>
+              </div>
+              <button class="btn btn-danger" onclick="clearCache()">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Clear All Cache
+                <span class="spinner" id="cache-spinner"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+    <footer class="page-footer">Arbiter — Intelligent LLM Gateway</footer>
+  </div>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+let routingData = null;
+let modelOverrides = {}; // { provider: [model_id, ...] }
+
+const PROVIDER_DESCS = {
+  gemini:      'Google Gemini — 1M ctx, free tier',
+  groq:        'Groq LPU — ultra-fast inference',
+  cerebras:    'Cerebras — wafer-scale speed',
+  cloudflare:  'Cloudflare Workers AI — edge inference',
+  openrouter:  'OpenRouter — 100+ free models',
+  cohere:      'Cohere — enterprise Command models',
+  huggingface: 'HuggingFace — open source models',
+  pollinations:'Pollinations — free, no auth needed',
+};
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
+  if (name === 'cache') { loadCacheStats(); }
+}
+
+// ── Load routing config ──────────────────────────────────────────────────────
+async function loadRouting() {
+  try {
+    const r = await fetch('/settings/routing');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    routingData = await r.json();
+    renderDragList(routingData.provider_order);
+    renderModelsAccordion(routingData);
+    const customBadge = document.getElementById('routing-customized');
+    if (routingData.is_customized) {
+      customBadge.style.display = '';
+      customBadge.className = 'badge badge-accent';
+      customBadge.textContent = 'Customized';
+    } else {
+      customBadge.style.display = 'none';
+    }
+    document.getElementById('settings-status').textContent = 'Loaded ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    toast('Failed to load routing config: ' + e.message, 'error');
+  }
+}
+
+// ── Drag list ────────────────────────────────────────────────────────────────
+let dragSrc = null;
+
+function renderDragList(order) {
+  const list = document.getElementById('drag-list');
+  list.innerHTML = order.map(function(p, i) {
+    return '<div class="drag-item" draggable="true" data-provider="' + p + '" ' +
+      'ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)">' +
+      '<svg class="drag-handle" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' +
+      '<div class="drag-num">' + (i + 1) + '</div>' +
+      '<div style="flex:1">' +
+      '<div style="font-size:13px;font-weight:600;text-transform:capitalize">' + p + '</div>' +
+      '<div style="font-size:11px;color:var(--text-3)">' + (PROVIDER_DESCS[p] || '') + '</div>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function onDragStart(e) {
+  dragSrc = e.currentTarget;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.drag-item').forEach(function(el) { el.classList.remove('drag-over'); });
+  e.currentTarget.classList.add('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  if (dragSrc === e.currentTarget) return;
+  const list = document.getElementById('drag-list');
+  const items = Array.from(list.querySelectorAll('.drag-item'));
+  const srcIdx = items.indexOf(dragSrc);
+  const dstIdx = items.indexOf(e.currentTarget);
+  if (srcIdx < dstIdx) {
+    e.currentTarget.after(dragSrc);
+  } else {
+    e.currentTarget.before(dragSrc);
+  }
+  renumberDragList();
+}
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.drag-item').forEach(function(el) { el.classList.remove('drag-over'); });
+}
+function renumberDragList() {
+  document.querySelectorAll('.drag-item').forEach(function(el, i) {
+    el.querySelector('.drag-num').textContent = i + 1;
+  });
+}
+function getCurrentOrder() {
+  return Array.from(document.querySelectorAll('.drag-item')).map(function(el) {
+    return el.dataset.provider;
+  });
+}
+
+// ── Save routing ─────────────────────────────────────────────────────────────
+async function saveRouting() {
+  const order = getCurrentOrder();
+  const spin = document.getElementById('save-spinner');
+  spin.classList.add('show');
+  try {
+    const r = await fetch('/settings/routing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider_order: order })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Provider order saved', 'success');
+    await loadRouting();
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  } finally {
+    spin.classList.remove('show');
+  }
+}
+
+async function resetRouting() {
+  if (!confirm('Reset to default provider order? Custom model overrides will also be cleared.')) return;
+  try {
+    const r = await fetch('/settings/routing', { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Settings reset to defaults', 'success');
+    await loadRouting();
+  } catch(e) {
+    toast('Reset failed: ' + e.message, 'error');
+  }
+}
+
+// ── Models accordion ─────────────────────────────────────────────────────────
+function renderModelsAccordion(data) {
+  const container = document.getElementById('models-accordion');
+  const order = data.provider_order || [];
+  const hierarchies = data.model_hierarchies || {};
+  const overrides = data.model_overrides || {};
+  modelOverrides = {};
+
+  container.innerHTML = order.map(function(p) {
+    const defaults = (hierarchies[p] || []).map(function(m) { return m.model; });
+    const current = overrides[p] ? overrides[p] : null;
+    modelOverrides[p] = current ? current.slice() : null;
+    const isCustom = current !== null;
+    const displayModels = current || defaults;
+
+    return '<div class="accordion-item" id="acc-' + p + '">' +
+      '<div class="accordion-hd" onclick="toggleModelAccordion(this)">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-weight:600;text-transform:capitalize">' + p + '</span>' +
+      (isCustom ? '<span class="badge badge-accent">Custom</span>' : '<span class="badge badge-gray">Default</span>') +
+      '<span class="provider-desc">' + (PROVIDER_DESCS[p] || '') + '</span>' +
+      '</div>' +
+      '<svg class="accordion-arrow" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
+      '</div>' +
+      '<div class="accordion-body">' +
+      '<div style="padding:14px 18px">' +
+      '<div id="models-' + p + '" class="model-list"></div>' +
+      '<div class="add-model-row">' +
+      '<input type="text" class="form-control" id="add-model-' + p + '" placeholder="model-id-to-add" style="flex:1" />' +
+      '<button class="btn btn-ghost" onclick="addModel(\'' + p + '\')" style="flex-shrink:0">Add Model</button>' +
+      '<button class="btn btn-ghost" onclick="resetProvider(\'' + p + '\')" style="flex-shrink:0;color:var(--red)">Use Default</button>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+
+  order.forEach(function(p) {
+    const defaults = (hierarchies[p] || []).map(function(m) { return m.model; });
+    const current = overrides[p] ? overrides[p] : null;
+    renderModelList(p, current || defaults, !current);
+  });
+}
+
+function renderModelList(provider, models, isDefault) {
+  const container = document.getElementById('models-' + provider);
+  if (!container) return;
+  if (!models.length) {
+    container.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0">No models — add one below</div>';
+    return;
+  }
+  container.innerHTML = models.map(function(m, i) {
+    return '<div class="model-row" data-model="' + m + '">' +
+      '<div style="display:flex;flex-direction:column;gap:2px">' +
+      '<button class="model-move-btn" ' + (i === 0 ? 'disabled style="opacity:0.2"' : '') + ' onclick="moveModel(\'' + provider + '\',' + i + ',-1)" title="Move up">▲</button>' +
+      '<button class="model-move-btn" ' + (i === models.length-1 ? 'disabled style="opacity:0.2"' : '') + ' onclick="moveModel(\'' + provider + '\',' + i + ',1)" title="Move down">▼</button>' +
+      '</div>' +
+      '<span class="model-row-name">' + m + '</span>' +
+      (isDefault ? '<span class="badge badge-gray" style="font-size:9px">default</span>' : '') +
+      '<button class="model-del-btn" onclick="removeModel(\'' + provider + '\',' + i + ')" title="Remove">✕</button>' +
+      '</div>';
+  }).join('');
+}
+
+function getProviderModels(provider) {
+  if (modelOverrides[provider] !== null && modelOverrides[provider] !== undefined) {
+    return modelOverrides[provider];
+  }
+  // Use defaults
+  if (routingData && routingData.model_hierarchies && routingData.model_hierarchies[provider]) {
+    return routingData.model_hierarchies[provider].map(function(m) { return m.model; });
+  }
+  return [];
+}
+
+function moveModel(provider, idx, dir) {
+  const models = getProviderModels(provider).slice();
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= models.length) return;
+  const tmp = models[idx]; models[idx] = models[newIdx]; models[newIdx] = tmp;
+  modelOverrides[provider] = models;
+  updateAccordionBadge(provider, true);
+  renderModelList(provider, models, false);
+}
+
+function removeModel(provider, idx) {
+  const models = getProviderModels(provider).slice();
+  models.splice(idx, 1);
+  modelOverrides[provider] = models;
+  updateAccordionBadge(provider, true);
+  renderModelList(provider, models, false);
+}
+
+function addModel(provider) {
+  const input = document.getElementById('add-model-' + provider);
+  const val = (input.value || '').trim();
+  if (!val) { toast('Enter a model ID', 'error'); return; }
+  const models = getProviderModels(provider).slice();
+  if (models.indexOf(val) >= 0) { toast('Model already in list', 'error'); return; }
+  models.push(val);
+  modelOverrides[provider] = models;
+  input.value = '';
+  updateAccordionBadge(provider, true);
+  renderModelList(provider, models, false);
+}
+
+function resetProvider(provider) {
+  modelOverrides[provider] = null;
+  const defaults = routingData && routingData.model_hierarchies && routingData.model_hierarchies[provider]
+    ? routingData.model_hierarchies[provider].map(function(m) { return m.model; }) : [];
+  updateAccordionBadge(provider, false);
+  renderModelList(provider, defaults, true);
+}
+
+function updateAccordionBadge(provider, custom) {
+  const acc = document.getElementById('acc-' + provider);
+  if (!acc) return;
+  const badge = acc.querySelector('.accordion-hd .badge');
+  if (badge) {
+    badge.className = 'badge ' + (custom ? 'badge-accent' : 'badge-gray');
+    badge.textContent = custom ? 'Custom' : 'Default';
+  }
+}
+
+function toggleModelAccordion(hd) {
+  const body  = hd.nextElementSibling;
+  const arrow = hd.querySelector('.accordion-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
+
+async function saveModelOverrides() {
+  const overridesToSave = {};
+  Object.keys(modelOverrides).forEach(function(p) {
+    if (modelOverrides[p] !== null && modelOverrides[p] !== undefined) {
+      overridesToSave[p] = modelOverrides[p];
+    }
+  });
+  const spin = document.getElementById('models-spinner');
+  spin.classList.add('show');
+  try {
+    const r = await fetch('/settings/routing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_overrides: overridesToSave })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Model overrides saved', 'success');
+    await loadRouting();
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  } finally {
+    spin.classList.remove('show');
+  }
+}
+
+async function resetModelOverrides() {
+  if (!confirm('Reset ALL model overrides to defaults?')) return;
+  try {
+    const r = await fetch('/settings/routing', { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Model overrides reset', 'success');
+    await loadRouting();
+  } catch(e) {
+    toast('Reset failed: ' + e.message, 'error');
+  }
+}
+
+// ── Cloudflare workers ───────────────────────────────────────────────────────
+async function loadWorkers() {
+  const list = document.getElementById('workers-list');
+  try {
+    const r = await fetch('/cloudflare/workers');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const workers = data.workers || [];
+    if (!workers.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">No workers deployed yet</div>';
+    } else {
+      list.innerHTML = workers.map(function(w) {
+        const name = w.name || w.id || w;
+        return '<div class="worker-row">' +
+          '<div>' +
+          '<div style="font-weight:600;font-size:13px">' + name + '</div>' +
+          (w.model ? '<div style="font-size:11px;color:var(--text-3);font-family:\'JetBrains Mono\',monospace">' + w.model + '</div>' : '') +
+          '</div>' +
+          '<button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteWorker(\'' + name + '\')">Delete</button>' +
+          '</div>';
+      }).join('');
+    }
+  } catch(e) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Could not load workers: ' + e.message + '</div>';
+  }
+}
+
+async function loadCfModels() {
+  const sel = document.getElementById('cf-model');
+  try {
+    const r = await fetch('/cloudflare/models');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const models = data.models || data.data || [];
+    if (models.length) {
+      sel.innerHTML = models.map(function(m) {
+        const id = m.id || m.name || m;
+        return '<option value="' + id + '">' + id + '</option>';
+      }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No models available</option>';
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">Failed to load models</option>';
+  }
+}
+
+async function createWorker() {
+  const name  = document.getElementById('cf-name').value.trim();
+  const model = document.getElementById('cf-model').value;
+  const spin  = document.getElementById('cf-spinner');
+  if (!name) { toast('Enter a worker name', 'error'); return; }
+  if (!model) { toast('Select a model', 'error'); return; }
+  spin.classList.add('show');
+  try {
+    const r = await fetch('/cloudflare/workers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, model })
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error((err.detail || err.error || 'HTTP ' + r.status));
+    }
+    toast('Worker created: ' + name, 'success');
+    document.getElementById('cf-name').value = '';
+    await loadWorkers();
+  } catch(e) {
+    toast('Create failed: ' + e.message, 'error');
+  } finally {
+    spin.classList.remove('show');
+  }
+}
+
+async function deleteWorker(name) {
+  if (!confirm('Delete worker "' + name + '"?')) return;
+  try {
+    const r = await fetch('/cloudflare/workers/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Worker deleted', 'success');
+    await loadWorkers();
+  } catch(e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+// ── Cache ─────────────────────────────────────────────────────────────────────
+async function loadCacheStats() {
+  const body = document.getElementById('cache-stats-body');
+  try {
+    const r = await fetch('/dashboard/stats');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const c = data.cache || {};
+    body.innerHTML =
+      '<div class="stat-row"><span class="stat-label">Cached Entries</span><span class="stat-value" style="color:var(--blue)">' + (c.cached_responses || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Cache Hits</span><span class="stat-value" style="color:var(--green)">' + (c.hits || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Cache Misses</span><span class="stat-value" style="color:var(--yellow)">' + (c.misses || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Hit Rate</span><span class="stat-value">' + (c.hit_rate || 0) + '%</span></div>' +
+      '<div class="progress-wrap"><div class="progress-meta"><span>Cache efficiency</span><span>' + (c.hit_rate || 0) + '%</span></div>' +
+      '<div class="progress-track"><div class="progress-fill" style="width:' + (c.hit_rate || 0) + '%;background:var(--yellow)"></div></div></div>';
+  } catch(e) {
+    body.innerHTML = '<div style="color:var(--text-3);font-size:13px">Failed to load cache stats</div>';
+  }
+}
+
+async function clearCache() {
+  if (!confirm('Clear all cached responses? This cannot be undone.')) return;
+  const spin = document.getElementById('cache-spinner');
+  spin.classList.add('show');
+  try {
+    const r = await fetch('/settings/cache', { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    toast('Cache cleared — ' + (data.entries_deleted || 0) + ' entries deleted', 'success');
+    await loadCacheStats();
+  } catch(e) {
+    toast('Failed to clear cache: ' + e.message, 'error');
+  } finally {
+    spin.classList.remove('show');
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  loadRouting();
+});
+</script>
+</body>
+</html>

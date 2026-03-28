@@ -1,680 +1,398 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Arbiter — Dashboard</title>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Arbiter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg-primary:    #080c14;
-      --bg-secondary:  #0d1421;
-      --bg-card:       #111827;
-      --bg-card-hover: #161f30;
-      --border:        #1f2d45;
-      --border-subtle: #182032;
-      --text-primary:  #f0f4ff;
-      --text-secondary:#8fa3bf;
-      --text-muted:    #4a607a;
-      --accent:        #4f6ef7;
-      --accent-glow:   rgba(79, 110, 247, 0.15);
-      --accent-bright: #6b85f8;
-      --green:         #22c55e;
-      --green-dim:     rgba(34, 197, 94, 0.12);
-      --yellow:        #eab308;
-      --yellow-dim:    rgba(234, 179, 8, 0.12);
-      --red:           #ef4444;
-      --red-dim:       rgba(239, 68, 68, 0.12);
-      --radius-sm:     6px;
-      --radius-md:     10px;
-      --radius-lg:     14px;
-      --shadow-card:   0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03);
-      --shadow-glow:   0 0 24px rgba(79, 110, 247, 0.08);
-    }
-
-    html { font-size: 14px; }
-    body {
-      font-family: 'Inter', -apple-system, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      min-height: 100vh;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* ── Layout ── */
-    .app { display: flex; flex-direction: column; min-height: 100vh; }
-
-    /* ── Topbar ── */
-    .topbar {
-      height: 56px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 24px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      backdrop-filter: blur(12px);
-    }
-    .topbar-left { display: flex; align-items: center; gap: 12px; }
-    .logo {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #4f6ef7 0%, #7c3aed 100%);
-      border-radius: var(--radius-sm);
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 13px; color: #fff;
-      box-shadow: 0 0 12px rgba(79, 110, 247, 0.4);
-    }
-    .brand { font-size: 15px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; }
-    .brand-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 2px; }
-
-    .topbar-nav { display: flex; gap: 4px; }
-    .nav-link {
-      padding: 6px 14px;
-      border-radius: var(--radius-sm);
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      text-decoration: none;
-      transition: all 0.15s;
-    }
-    .nav-link:hover { background: var(--bg-card); color: var(--text-primary); }
-    .nav-link.active { background: var(--accent-glow); color: var(--accent-bright); }
-
-    .topbar-right { display: flex; align-items: center; gap: 16px; }
-    .status-pill {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      transition: all 0.3s;
-    }
-    .status-pill.online { border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.06); color: var(--green); }
-    .status-pill.offline { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.06); color: var(--red); }
-    .status-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-    .status-dot.pulse { animation: pulse-ring 2s ease-in-out infinite; }
-    @keyframes pulse-ring {
-      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
-      50% { opacity: 0.7; box-shadow: 0 0 0 4px transparent; }
-    }
-    .last-update { font-size: 11px; color: var(--text-muted); }
-
-    /* ── Main Content ── */
-    main { flex: 1; max-width: 1280px; width: 100%; margin: 0 auto; padding: 28px 24px; }
-
-    /* ── Section headers ── */
-    .section-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px;
-    }
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-
-    /* ── KPI Grid ── */
-    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-    @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 480px) { .kpi-grid { grid-template-columns: 1fr; } }
-
-    .kpi-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: 20px 22px;
-      box-shadow: var(--shadow-card);
-      position: relative;
-      overflow: hidden;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .kpi-card:hover { border-color: var(--border); box-shadow: var(--shadow-card), var(--shadow-glow); }
-    .kpi-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-    .kpi-card:hover::before { opacity: 1; }
-
-    .kpi-label { font-size: 11px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 10px; }
-    .kpi-value { font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.03em; line-height: 1; }
-    .kpi-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
-    .kpi-icon {
-      position: absolute;
-      top: 18px; right: 18px;
-      width: 34px; height: 34px;
-      border-radius: var(--radius-sm);
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0.7;
-    }
-
-    /* ── Two column grid ── */
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-    @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
-
-    /* ── Cards ── */
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-card);
-      overflow: hidden;
-    }
-    .card-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-subtle);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-    .card-badge {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 20px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .card-body { padding: 18px 20px; }
-
-    /* ── Stat rows ── */
-    .stat-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 9px 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-    .stat-row:last-child { border-bottom: none; }
-    .stat-label { font-size: 13px; color: var(--text-secondary); }
-    .stat-value { font-size: 13px; font-weight: 600; }
-
-    /* ── Progress ── */
-    .progress-wrap { margin-top: 14px; }
-    .progress-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
-    .progress-track {
-      height: 5px;
-      background: var(--border);
-      border-radius: 99px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      border-radius: 99px;
-      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-      background: linear-gradient(90deg, var(--accent) 0%, var(--accent-bright) 100%);
-    }
-
-    /* ── Table ── */
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      padding: 11px 18px;
-      text-align: left;
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-    tbody tr {
-      border-bottom: 1px solid var(--border-subtle);
-      transition: background 0.15s;
-    }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: var(--bg-card-hover); }
-    tbody td { padding: 13px 18px; font-size: 13px; vertical-align: middle; }
-
-    /* ── Badges ── */
-    .badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 9px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-    .badge-green  { background: var(--green-dim);  color: var(--green);  }
-    .badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
-    .badge-red    { background: var(--red-dim);    color: var(--red);    }
-    .badge-gray   { background: var(--bg-secondary); color: var(--text-muted); }
-
-    /* ── Model tags ── */
-    .model-tag {
-      display: inline-flex;
-      padding: 2px 7px;
-      font-size: 10px;
-      font-weight: 500;
-      border-radius: 4px;
-      background: rgba(79, 110, 247, 0.1);
-      color: var(--accent-bright);
-      border: 1px solid rgba(79, 110, 247, 0.15);
-      margin: 1px;
-    }
-
-    /* ── Score bar ── */
-    .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
-    .score-track { width: 60px; height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; }
-    .score-fill { height: 100%; border-radius: 99px; }
-    .score-good { background: var(--green); }
-    .score-mid  { background: var(--yellow); }
-    .score-bad  { background: var(--red); }
-
-    /* ── Mini bar ── */
-    .mini-bar-wrap { min-width: 90px; }
-    .mini-bar-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 3px; }
-    .mini-track { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
-    .mini-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
-
-    /* ── Key detail section ── */
-    .provider-detail-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-      margin-bottom: 12px;
-      box-shadow: var(--shadow-card);
-    }
-    .provider-detail-header {
-      padding: 14px 20px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
-    }
-    .provider-name { font-size: 13px; font-weight: 600; text-transform: capitalize; }
-
-    /* ── Footer ── */
-    footer {
-      padding: 20px 24px;
-      border-top: 1px solid var(--border-subtle);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .footer-left { font-size: 11px; color: var(--text-muted); }
-    .footer-right { font-size: 11px; color: var(--text-muted); }
-
-    /* ── Skeleton loader ── */
-    .skeleton {
-      background: linear-gradient(90deg, var(--border-subtle) 25%, var(--border) 50%, var(--border-subtle) 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.5s infinite;
-      border-radius: 4px;
-    }
-    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-
-    /* ── Divider ── */
-    .divider { height: 1px; background: var(--border-subtle); margin: 20px 0; }
-
-    /* ── Responsive ── */
-    @media (max-width: 600px) {
-      main { padding: 16px; }
-      .topbar { padding: 0 16px; }
-      .topbar-nav { display: none; }
-    }
-  </style>
+  <script src="/static/arbiter.js"></script>
 </head>
 <body>
-<div class="app">
+<div class="app-shell">
 
-  <!-- ── Top Bar ── -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="logo">A</div>
-      <div>
-        <span class="brand">Arbiter</span>
-        <span class="brand-sub">Gateway</span>
-      </div>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">A</div>
+      <span class="sidebar-brand-name">Arbiter</span>
+      <span class="sidebar-brand-ver">v1.1</span>
     </div>
-
-    <nav class="topbar-nav">
-      <a href="/dashboard" class="nav-link active">Dashboard</a>
-      <a href="/api-docs" class="nav-link">API Docs</a>
-      <a href="/docs" class="nav-link">Swagger</a>
+    <nav class="sidebar-nav">
+      <span class="sidebar-section">Main</span>
+      <a href="/dashboard" class="nav-item active">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="/api-docs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        API Documentation
+      </a>
+      <a href="/settings" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+      <div class="sidebar-divider"></div>
+      <span class="sidebar-section">Developer</span>
+      <a href="/docs" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        Swagger UI
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+      <a href="/redoc" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        ReDoc
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
     </nav>
-
-    <div class="topbar-right">
-      <div class="status-pill" id="status-pill">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="status-label">Connecting</span>
-      </div>
-      <span class="last-update" id="last-update">–</span>
+    <div class="sidebar-footer">
+      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-label">Dark mode</span>
+      </button>
     </div>
-  </header>
+  </aside>
 
-  <!-- ── Main ── -->
-  <main>
+  <div class="main-wrapper">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="page-title">Dashboard</h1>
+      <div class="topbar-right">
+        <div class="status-pill" id="status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-label">Connecting</span>
+        </div>
+        <span class="topbar-time" id="last-update">–</span>
+      </div>
+    </header>
 
-    <!-- KPI Cards -->
-    <div class="section-header">
-      <span class="section-title">Overview</span>
-      <span style="font-size:11px;color:var(--text-muted)">Refreshes every 10s</span>
-    </div>
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-icon" style="background:rgba(79,110,247,0.12)">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#6b85f8" stroke-width="2"><path d="M3 12h18M12 3l9 9-9 9"/></svg>
-        </div>
-        <div class="kpi-label">Total Requests</div>
-        <div class="kpi-value" id="kpi-total">–</div>
-        <div class="kpi-sub" id="kpi-total-sub">Loading…</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-icon" style="background:rgba(34,197,94,0.1)">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        </div>
-        <div class="kpi-label">Success Rate</div>
-        <div class="kpi-value" id="kpi-success-rate" style="color:var(--green)">–</div>
-        <div class="kpi-sub" id="kpi-success-sub">of all requests</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-icon" style="background:rgba(234,179,8,0.1)">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#eab308" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-        </div>
-        <div class="kpi-label">Cache Hit Rate</div>
-        <div class="kpi-value" id="kpi-cache-rate" style="color:var(--yellow)">–</div>
-        <div class="kpi-sub">semantic cache</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-icon" style="background:rgba(79,110,247,0.1)">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#6b85f8" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-        </div>
-        <div class="kpi-label">Cached Responses</div>
-        <div class="kpi-value" id="kpi-cached">–</div>
-        <div class="kpi-sub">stored in Redis</div>
-      </div>
-    </div>
+    <main class="page-content">
 
-    <!-- Stats Grid -->
-    <div class="grid-2">
-      <!-- Request Breakdown -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Request Breakdown</span>
-          <span class="card-badge" style="background:var(--accent-glow);color:var(--accent-bright)">Live</span>
+      <!-- KPI cards -->
+      <div class="section-hd" style="margin-bottom:12px">
+        <span class="section-label">Overview</span>
+        <span style="font-size:11px;color:var(--text-3)">Auto-refreshes every 10s</span>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card" style="--kpi-color:var(--accent)">
+          <div class="kpi-icon" style="background:var(--accent-dim)">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--accent-br)" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <div class="kpi-label">Total Requests</div>
+          <div class="kpi-value" id="kpi-total">–</div>
+          <div class="kpi-sub" id="kpi-total-sub">all time</div>
         </div>
-        <div class="card-body">
-          <div class="stat-row">
-            <span class="stat-label">Total Requests</span>
-            <span class="stat-value" id="rb-total">–</span>
+        <div class="kpi-card" style="--kpi-color:var(--green)">
+          <div class="kpi-icon" style="background:var(--green-dim)">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--green)" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Successful</span>
-            <span class="stat-value" style="color:var(--green)" id="rb-success">–</span>
+          <div class="kpi-label">Success Rate</div>
+          <div class="kpi-value" id="kpi-success" style="color:var(--green)">–</div>
+          <div class="kpi-sub" id="kpi-success-sub">of all requests</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color:var(--yellow)">
+          <div class="kpi-icon" style="background:var(--yellow-dim)">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--yellow)" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Failed</span>
-            <span class="stat-value" style="color:var(--red)" id="rb-failed">–</span>
+          <div class="kpi-label">Cache Hit Rate</div>
+          <div class="kpi-value" id="kpi-cache" style="color:var(--yellow)">–</div>
+          <div class="kpi-sub">semantic cache</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color:var(--blue)">
+          <div class="kpi-icon" style="background:var(--blue-dim)">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--blue)" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           </div>
-          <div class="progress-wrap">
-            <div class="progress-meta">
-              <span>Success rate</span>
-              <span id="rb-rate-label">0%</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill" id="rb-rate-bar" style="width:0%"></div>
-            </div>
-          </div>
+          <div class="kpi-label">Cached Entries</div>
+          <div class="kpi-value" id="kpi-cached" style="color:var(--blue)">–</div>
+          <div class="kpi-sub">in Redis</div>
         </div>
       </div>
 
-      <!-- Cache Statistics -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Cache Statistics</span>
-          <span class="card-badge" style="background:rgba(234,179,8,0.1);color:var(--yellow)">Redis</span>
+      <!-- Charts row -->
+      <div class="chart-grid">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Request History</span>
+            <span class="badge badge-accent">Live</span>
+          </div>
+          <div class="card-body" style="height:220px;position:relative">
+            <canvas id="chart-history"></canvas>
+          </div>
         </div>
-        <div class="card-body">
-          <div class="stat-row">
-            <span class="stat-label">Cache Hits</span>
-            <span class="stat-value" style="color:var(--green)" id="cache-hits">–</span>
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Provider Distribution</span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Cache Misses</span>
-            <span class="stat-value" style="color:var(--yellow)" id="cache-misses">–</span>
+          <div class="card-body" style="height:220px;position:relative;display:flex;align-items:center;justify-content:center">
+            <canvas id="chart-providers" style="max-height:180px;max-width:180px"></canvas>
+            <div id="chart-providers-empty" style="display:none;color:var(--text-3);font-size:13px">No data yet</div>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Stored Entries</span>
-            <span class="stat-value" id="cache-stored">–</span>
-          </div>
-          <div class="progress-wrap">
-            <div class="progress-meta">
-              <span>Hit rate</span>
-              <span id="cache-rate-label">0%</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill" id="cache-rate-bar" style="width:0%;background:linear-gradient(90deg,#eab308,#f59e0b)"></div>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Request Breakdown</span></div>
+          <div class="card-body">
+            <div class="stat-row"><span class="stat-label">Total</span><span class="stat-value" id="rb-total">–</span></div>
+            <div class="stat-row"><span class="stat-label">Successful</span><span class="stat-value" style="color:var(--green)" id="rb-success">–</span></div>
+            <div class="stat-row"><span class="stat-label">Failed</span><span class="stat-value" style="color:var(--red)" id="rb-failed">–</span></div>
+            <div class="progress-wrap">
+              <div class="progress-meta"><span>Success rate</span><span id="rb-rate-lbl">0%</span></div>
+              <div class="progress-track"><div class="progress-fill" id="rb-rate-bar" style="width:0%;background:var(--green)"></div></div>
             </div>
           </div>
         </div>
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Cache Statistics</span><span class="badge badge-gray">Redis</span></div>
+          <div class="card-body">
+            <div class="stat-row"><span class="stat-label">Hits</span><span class="stat-value" style="color:var(--green)" id="cache-hits">–</span></div>
+            <div class="stat-row"><span class="stat-label">Misses</span><span class="stat-value" style="color:var(--yellow)" id="cache-misses">–</span></div>
+            <div class="stat-row"><span class="stat-label">Stored Entries</span><span class="stat-value" id="cache-stored">–</span></div>
+            <div class="progress-wrap">
+              <div class="progress-meta"><span>Hit rate</span><span id="cache-rate-lbl">0%</span></div>
+              <div class="progress-track"><div class="progress-fill" id="cache-rate-bar" style="width:0%;background:var(--yellow)"></div></div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <!-- Provider Status Table -->
-    <div class="section-header" style="margin-top:8px">
-      <span class="section-title">Provider Status</span>
-    </div>
-    <div class="card" style="margin-bottom:24px">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Provider</th>
-              <th>Health</th>
-              <th>Keys (active / total)</th>
-              <th>Requests</th>
-              <th>Success Rate</th>
-              <th>Models</th>
-            </tr>
-          </thead>
-          <tbody id="provider-rows">
-            <tr><td colspan="6" style="padding:32px;text-align:center;color:var(--text-muted)">
-              <svg style="display:inline;margin-bottom:8px;opacity:0.4" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg><br>Loading provider data…
-            </td></tr>
-          </tbody>
-        </table>
+      <!-- Provider table -->
+      <div class="section-hd" style="margin-top:8px">
+        <span class="section-label">Provider Status</span>
       </div>
-    </div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Provider</th><th>Health</th><th>Keys (active/total)</th>
+              <th>Requests</th><th>Success Rate</th><th>Top Models</th>
+            </tr></thead>
+            <tbody id="provider-rows">
+              <tr><td colspan="6" style="padding:28px;text-align:center;color:var(--text-3)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-    <!-- Key-Level Details -->
-    <div class="section-header">
-      <span class="section-title">API Key Details</span>
-    </div>
-    <div id="key-details-section"></div>
+      <!-- Key details accordion -->
+      <div class="section-hd">
+        <span class="section-label">API Key Details</span>
+      </div>
+      <div id="key-details"></div>
 
-  </main>
-
-  <footer>
-    <span class="footer-left">Arbiter &mdash; Intelligent LLM Gateway</span>
-    <span class="footer-right" id="footer-time">–</span>
-  </footer>
+    </main>
+    <footer class="page-footer">Arbiter — Intelligent LLM Gateway</footer>
+  </div>
 </div>
 
 <script>
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  function statusBadge(status) {
-    const map = {
-      healthy:     ['badge-green',  'Healthy'],
-      degraded:    ['badge-yellow', 'Degraded'],
-      unavailable: ['badge-red',    'Unavailable'],
-    };
-    const [cls, label] = map[status] || ['badge-gray', 'Unknown'];
-    return `<span class="badge ${cls}"><span class="badge-dot"></span>${label}</span>`;
+const HISTORY_KEY = 'arbiter_req_history';
+let histChart = null, provChart = null;
+
+function getThemeColors() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    text2:  s.getPropertyValue('--text-2').trim(),
+    text3:  s.getPropertyValue('--text-3').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    accent: s.getPropertyValue('--accent-br').trim(),
+    green:  s.getPropertyValue('--green').trim(),
+    yellow: s.getPropertyValue('--yellow').trim(),
+    red:    s.getPropertyValue('--red').trim(),
+    blue:   s.getPropertyValue('--blue').trim(),
+  };
+}
+
+function initCharts() {
+  const c = getThemeColors();
+  Chart.defaults.color = c.text3;
+  Chart.defaults.borderColor = c.border;
+  Chart.defaults.font.family = 'Inter';
+  Chart.defaults.font.size = 11;
+
+  // Line chart
+  const histCtx = document.getElementById('chart-history').getContext('2d');
+  histChart = new Chart(histCtx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Successful', data: [], borderColor: c.green, backgroundColor: c.green + '20', fill: true, tension: 0.4, pointRadius: 3 },
+      { label: 'Failed',     data: [], borderColor: c.red,   backgroundColor: c.red   + '12', fill: true, tension: 0.4, pointRadius: 3 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 8, usePointStyle: true } } },
+      scales: {
+        x: { grid: { color: c.border }, ticks: { maxTicksLimit: 8 } },
+        y: { grid: { color: c.border }, beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+
+  // Doughnut chart
+  const provCtx = document.getElementById('chart-providers').getContext('2d');
+  const COLORS = [c.accent, c.green, c.yellow, c.blue, c.red, '#a78bfa', '#f97316', '#06b6d4'];
+  provChart = new Chart(provCtx, {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: COLORS, borderWidth: 2, borderColor: 'transparent' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { boxWidth: 8, usePointStyle: true, padding: 8 } } },
+      cutout: '65%',
+    },
+  });
+}
+
+function updateHistoryChart(req) {
+  const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  history.push({ t: now, s: req.success || 0, f: req.failed || 0 });
+  if (history.length > 20) history.shift();
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+
+  histChart.data.labels = history.map(h => h.t);
+  histChart.data.datasets[0].data = history.map(h => h.s);
+  histChart.data.datasets[1].data = history.map(h => h.f);
+  histChart.update('none');
+}
+
+function updateProviderChart(providers) {
+  const withReqs = providers.filter(p => (p.requests && p.requests.total > 0));
+  const empty = document.getElementById('chart-providers-empty');
+  if (!withReqs.length) {
+    document.getElementById('chart-providers').style.display = 'none';
+    empty.style.display = 'block'; return;
+  }
+  document.getElementById('chart-providers').style.display = 'block';
+  empty.style.display = 'none';
+  provChart.data.labels = withReqs.map(p => p.name);
+  provChart.data.datasets[0].data = withReqs.map(p => (p.requests && p.requests.total) || 0);
+  provChart.update('none');
+}
+
+function setStatus(online) {
+  const pill = document.getElementById('status-pill');
+  const dot  = document.getElementById('status-dot');
+  const lbl  = document.getElementById('status-label');
+  pill.className = 'status-pill ' + (online ? 'online' : 'offline');
+  dot.className  = 'status-dot pulse';
+  lbl.textContent = online ? 'Live' : 'Offline';
+  document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function render(data) {
+  const req = data.requests || {}, cache = data.cache || {}, provs = data.providers || [];
+
+  // KPIs
+  document.getElementById('kpi-total').textContent   = (req.total != null ? req.total : 0).toLocaleString();
+  document.getElementById('kpi-success').textContent = (req.success_rate != null ? req.success_rate : 0) + '%';
+  document.getElementById('kpi-cache').textContent   = (cache.hit_rate != null ? cache.hit_rate : 0) + '%';
+  document.getElementById('kpi-cached').textContent  = (cache.cached_responses != null ? cache.cached_responses : 0).toLocaleString();
+  document.getElementById('kpi-total-sub').textContent   = req.total === 1 ? '1 request' : ((req.total||0).toLocaleString() + ' requests');
+  document.getElementById('kpi-success-sub').textContent = ((req.success||0).toLocaleString()) + ' succeeded';
+
+  // Breakdown
+  document.getElementById('rb-total').textContent   = (req.total   || 0).toLocaleString();
+  document.getElementById('rb-success').textContent = (req.success || 0).toLocaleString();
+  document.getElementById('rb-failed').textContent  = (req.failed  || 0).toLocaleString();
+  const sr = req.success_rate || 0;
+  document.getElementById('rb-rate-lbl').textContent = sr + '%';
+  document.getElementById('rb-rate-bar').style.width = sr + '%';
+
+  // Cache
+  document.getElementById('cache-hits').textContent   = (cache.hits   || 0).toLocaleString();
+  document.getElementById('cache-misses').textContent = (cache.misses || 0).toLocaleString();
+  document.getElementById('cache-stored').textContent = (cache.cached_responses || 0).toLocaleString();
+  const hr = cache.hit_rate || 0;
+  document.getElementById('cache-rate-lbl').textContent = hr + '%';
+  document.getElementById('cache-rate-bar').style.width = hr + '%';
+
+  // Charts
+  updateHistoryChart(req);
+  updateProviderChart(provs);
+
+  // Provider table
+  const tbody = document.getElementById('provider-rows');
+  if (!provs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:28px;text-align:center;color:var(--text-3)">No providers configured</td></tr>';
+  } else {
+    tbody.innerHTML = provs.map(function(p) {
+      const total = (p.requests && p.requests.total) || 0;
+      const models = p.models || [];
+      const chips = models.slice(0,2).map(function(m) {
+        return '<span class="model-chip">' + m.split('/').pop() + '</span>';
+      }).join('');
+      const extra = models.length > 2 ? '<span style="font-size:10px;color:var(--text-3);align-self:center">+' + (models.length-2) + '</span>' : '';
+      const rateColor = p.success_rate >= 90 ? 'var(--green)' : p.success_rate >= 50 ? 'var(--yellow)' : 'var(--red)';
+      return '<tr>' +
+        '<td style="font-weight:600;text-transform:capitalize">' + p.name + '</td>' +
+        '<td>' + statusBadge(p.status) + '</td>' +
+        '<td><strong>' + p.active_keys + '</strong> <span style="color:var(--text-3)">/ ' + p.total_keys + '</span></td>' +
+        '<td style="font-variant-numeric:tabular-nums">' + total.toLocaleString() + '</td>' +
+        '<td style="font-weight:600;color:' + rateColor + '">' + p.success_rate + '%</td>' +
+        '<td><div style="display:flex;flex-wrap:wrap;gap:2px">' + chips + extra + '</div></td>' +
+        '</tr>';
+    }).join('');
   }
 
-  function keyBadgeCls(status) {
-    return { active: 'badge-green', limited: 'badge-yellow', failed: 'badge-red', exhausted: 'badge-red' }[status] || 'badge-gray';
-  }
+  // Key details accordion
+  const kd = document.getElementById('key-details');
+  kd.innerHTML = provs.map(function(p) {
+    const keysHtml = (!p.keys || !p.keys.length)
+      ? '<div style="padding:16px 18px;color:var(--text-3);font-size:13px">No keys configured</div>'
+      : '<div class="table-wrap"><table><thead><tr><th>Key Hash</th><th>Status</th><th>Avail. Score</th><th>RPM</th><th>TPM</th><th>Daily Tokens</th></tr></thead><tbody>' +
+        p.keys.map(function(k) {
+          const bclass = k.status === 'active' ? 'badge-green' : k.status === 'limited' ? 'badge-yellow' : 'badge-red';
+          return '<tr>' +
+            '<td style="font-family:monospace;font-size:11px;color:var(--text-3)">' + k.hash + '</td>' +
+            '<td><span class="badge ' + bclass + '">' + k.status + '</span></td>' +
+            '<td>' + scoreBar(k.score != null ? k.score : 0) + '</td>' +
+            '<td>' + miniBar(k.rpm.used, k.rpm.limit) + '</td>' +
+            '<td>' + miniBar(k.tpm.used, k.tpm.limit) + '</td>' +
+            '<td>' + miniBar(k.daily.used, k.daily.limit) + '</td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table></div>';
+    return '<div class="accordion-item">' +
+      '<div class="accordion-hd" onclick="toggleAccordion(this)">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-weight:600;text-transform:capitalize">' + p.name + '</span>' +
+      statusBadge(p.status) +
+      '<span style="font-size:12px;color:var(--text-3)">' + p.active_keys + '/' + p.total_keys + ' keys active</span>' +
+      '</div>' +
+      '<svg class="accordion-arrow" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
+      '</div>' +
+      '<div class="accordion-body">' + keysHtml + '</div>' +
+      '</div>';
+  }).join('');
+}
 
-  function scoreBar(score) {
-    const pct = Math.max(0, Math.min(100, Math.round((score + 1) / 2 * 100)));
-    const cls = pct >= 60 ? 'score-good' : pct >= 30 ? 'score-mid' : 'score-bad';
-    const color = pct >= 60 ? 'var(--green)' : pct >= 30 ? 'var(--yellow)' : 'var(--red)';
-    return `
-      <div class="score-bar-wrap">
-        <div class="score-track"><div class="score-fill ${cls}" style="width:${pct}%"></div></div>
-        <span style="font-size:11px;color:${color};min-width:28px">${pct}%</span>
-      </div>`;
-  }
+function toggleAccordion(hd) {
+  const body  = hd.nextElementSibling;
+  const arrow = hd.querySelector('.accordion-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
 
-  function miniBar(used, limit) {
-    if (!limit) return `<span style="color:var(--text-muted);font-size:11px">–</span>`;
-    const p = Math.min(100, Math.round(used / limit * 100));
-    const color = p < 50 ? 'var(--green)' : p < 80 ? 'var(--yellow)' : 'var(--red)';
-    return `
-      <div class="mini-bar-wrap">
-        <div class="mini-bar-meta"><span>${used.toLocaleString()}</span><span>${limit.toLocaleString()}</span></div>
-        <div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${color}"></div></div>
-      </div>`;
-  }
+async function fetchStats() {
+  try {
+    const r = await fetch('/dashboard/stats');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    render(await r.json());
+    setStatus(true);
+  } catch(e) { setStatus(false); }
+}
 
-  // ── Fetch & Render ────────────────────────────────────────────────────────────
-  async function fetchStats() {
-    try {
-      const res = await fetch('/dashboard/stats');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      render(data);
-      setStatus('online');
-    } catch (e) {
-      setStatus('offline');
-    }
-  }
-
-  function setStatus(state) {
-    const pill  = document.getElementById('status-pill');
-    const dot   = document.getElementById('status-dot');
-    const label = document.getElementById('status-label');
-    pill.className = 'status-pill ' + (state === 'online' ? 'online' : 'offline');
-    dot.className  = 'status-dot pulse';
-    label.textContent = state === 'online' ? 'Live' : 'Offline';
-    const now = new Date();
-    document.getElementById('last-update').textContent = 'Updated ' + now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    document.getElementById('footer-time').textContent = now.toLocaleString();
-  }
-
-  function render(data) {
-    const req   = data.requests  || {};
-    const cache = data.cache     || {};
-    const provs = data.providers || [];
-
-    // KPIs
-    const total = req.total ?? 0;
-    const sr    = req.success_rate ?? 0;
-    const hr    = cache.hit_rate ?? 0;
-    document.getElementById('kpi-total').textContent        = total.toLocaleString();
-    document.getElementById('kpi-total-sub').textContent    = 'all-time requests';
-    document.getElementById('kpi-success-rate').textContent = sr + '%';
-    document.getElementById('kpi-cache-rate').textContent   = hr + '%';
-    document.getElementById('kpi-cached').textContent       = (cache.cached_responses ?? 0).toLocaleString();
-
-    // Request breakdown
-    document.getElementById('rb-total').textContent   = total.toLocaleString();
-    document.getElementById('rb-success').textContent = (req.success ?? 0).toLocaleString();
-    document.getElementById('rb-failed').textContent  = (req.failed  ?? 0).toLocaleString();
-    document.getElementById('rb-rate-label').textContent = sr + '%';
-    document.getElementById('rb-rate-bar').style.width   = sr + '%';
-
-    // Cache
-    document.getElementById('cache-hits').textContent   = (cache.hits   ?? 0).toLocaleString();
-    document.getElementById('cache-misses').textContent = (cache.misses ?? 0).toLocaleString();
-    document.getElementById('cache-stored').textContent = (cache.cached_responses ?? 0).toLocaleString();
-    document.getElementById('cache-rate-label').textContent = hr + '%';
-    document.getElementById('cache-rate-bar').style.width   = hr + '%';
-
-    // Provider table
-    const tbody = document.getElementById('provider-rows');
-    if (!provs.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--text-muted)">No providers configured</td></tr>';
-    } else {
-      tbody.innerHTML = provs.map(p => `
-        <tr>
-          <td style="font-weight:600;text-transform:capitalize;color:var(--text-primary)">${p.name}</td>
-          <td>${statusBadge(p.status)}</td>
-          <td>
-            <span style="color:var(--text-primary);font-weight:600">${p.active_keys}</span>
-            <span style="color:var(--text-muted)"> / ${p.total_keys}</span>
-          </td>
-          <td style="font-variant-numeric:tabular-nums">${(p.requests?.total ?? 0).toLocaleString()}</td>
-          <td>
-            <span style="font-weight:600;color:${p.success_rate >= 90 ? 'var(--green)' : p.success_rate >= 50 ? 'var(--yellow)' : 'var(--red)'}">
-              ${p.success_rate}%
-            </span>
-          </td>
-          <td>
-            <div style="display:flex;flex-wrap:wrap;gap:3px">
-              ${(p.models || []).slice(0, 3).map(m => `<span class="model-tag">${m}</span>`).join('')}
-              ${(p.models || []).length > 3 ? `<span style="font-size:10px;color:var(--text-muted);align-self:center">+${p.models.length - 3}</span>` : ''}
-            </div>
-          </td>
-        </tr>
-      `).join('');
-    }
-
-    // Key Details
-    const section = document.getElementById('key-details-section');
-    if (!provs.length) { section.innerHTML = ''; return; }
-
-    section.innerHTML = provs.map(p => `
-      <div class="provider-detail-card">
-        <div class="provider-detail-header">
-          <span class="provider-name">${p.name}</span>
-          ${statusBadge(p.status)}
-        </div>
-        ${!p.keys?.length
-          ? '<div style="padding:20px;color:var(--text-muted);font-size:13px">No API keys configured.</div>'
-          : `<div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Key Hash</th>
-                    <th>Status</th>
-                    <th>Avail. Score</th>
-                    <th>RPM Used/Limit</th>
-                    <th>TPM Used/Limit</th>
-                    <th>Daily Tokens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${p.keys.map(k => `
-                    <tr>
-                      <td style="font-family:monospace;font-size:11px;color:var(--text-secondary)">${k.hash}</td>
-                      <td><span class="badge ${keyBadgeCls(k.status)}">${k.status}</span></td>
-                      <td>${scoreBar(k.score ?? 0)}</td>
-                      <td>${miniBar(k.rpm.used, k.rpm.limit)}</td>
-                      <td>${miniBar(k.tpm.used, k.tpm.limit)}</td>
-                      <td>${miniBar(k.daily.used, k.daily.limit)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>`
-        }
-      </div>
-    `).join('');
-  }
-
-  // ── Bootstrap ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  initCharts();
   fetchStats();
-  setInterval(fetchStats, 10_000);
+  setInterval(fetchStats, 10000);
+});
 </script>
 </body>
 </html>

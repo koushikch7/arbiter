@@ -13,6 +13,13 @@ _STATIC_DIR = os.path.join(
 )
 
 
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+    "CDN-Cache-Control": "no-store",
+}
+
+
 @router.get("/api-docs", response_class=HTMLResponse, summary="Interactive API documentation")
 async def api_docs() -> HTMLResponse:
     """Serve the interactive API docs page."""
@@ -20,7 +27,7 @@ async def api_docs() -> HTMLResponse:
     try:
         with open(path, "r", encoding="utf-8") as f:
             html_content = f.read()
-        return HTMLResponse(content=html_content, status_code=200)
+        return HTMLResponse(content=html_content, status_code=200, headers=_NO_CACHE_HEADERS)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>API docs page not found</h1>", status_code=404)
 
@@ -32,7 +39,7 @@ async def dashboard(request: Request) -> HTMLResponse:
     try:
         with open(static_path, "r", encoding="utf-8") as f:
             html_content = f.read()
-        return HTMLResponse(content=html_content, status_code=200)
+        return HTMLResponse(content=html_content, status_code=200, headers=_NO_CACHE_HEADERS)
     except FileNotFoundError:
         return HTMLResponse(
             content="<h1>Dashboard not found</h1>", status_code=404

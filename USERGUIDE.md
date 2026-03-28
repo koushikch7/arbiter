@@ -17,8 +17,11 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 9. [Image Generation](#image-generation)
 10. [Settings Dashboard](#settings-dashboard)
 11. [Modal GPU Deployment](#tab-modal-gpu-deploy)
-12. [Best Practices](#best-practices)
-13. [Troubleshooting](#troubleshooting)
+12. [Chat Playground](#chat-playground)
+13. [Log Viewer](#log-viewer)
+14. [CF Workers & Modal in the Gateway](#cf-workers--modal-in-the-gateway)
+15. [Best Practices](#best-practices)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -201,13 +204,132 @@ Deploy open-weight models (LLaMA, Mistral, etc.) to Modal.com GPU instances dire
 6. Once deployed, the endpoint is registered as a gateway provider
 
 **Cost tips:**
-- Containers auto-shutdown after idle (`container_idle_timeout = 300s`)
+- Containers auto-shutdown after idle (`scaledown_window = 300s`)
 - Model weights are cached in a `modal.Volume` — subsequent cold starts are faster
 - Use A10G for models up to ~13B; A100 for 70B+ models
 
 ### Tab: Cache
 - View hit rate, total hits/misses, and cached entry count
 - **Clear All Cache** — deletes all `arbiter:cache:*` keys from Redis (irreversible)
+
+---
+
+## Chat Playground
+
+Navigate to `/playground` (or click **Playground** in the sidebar).
+
+### Endpoint selector
+
+The dropdown is grouped into four categories that auto-populate at load time:
+
+| Group | Source | How routed |
+|---|---|---|
+| **Gateway Providers** | `/v1/models` (standard providers) | `POST /v1/chat/completions?vendor={name}` |
+| **Cloudflare Workers** | Active workers from CF registry | `POST /v1/chat/completions` with `model: cfworker/{name}` |
+| **Modal Deployments** | Active deployments from Redis | Direct `POST {endpoint_url}/v1/chat/completions` |
+| **Modal Endpoints** | Registered Modal endpoints | Direct call to stored URL |
+
+### Config panel
+
+- **System prompt** — prepended as a `system` message
+- **Temperature** — slider 0.0–2.0
+- **Max tokens** — leave blank for provider default
+
+### Usage
+
+1. Select an endpoint from the dropdown
+2. Optionally set system prompt / temperature
+3. Type a message and press **Enter** (or click Send)
+4. Each assistant reply shows a latency badge (ms)
+5. Press **Shift+Enter** to insert a newline in your message
+
+---
+
+## Log Viewer
+
+Navigate to `/logs` (or click **Logs** in the sidebar).
+
+The log viewer displays all application logs captured since startup — up to 5,000 records are kept in a circular in-memory buffer.
+
+### Filters
+
+| Control | Description |
+|---|---|
+| **Level pills** | Toggle DEBUG / INFO / WARNING / ERROR / CRITICAL (inclusive above selected) |
+| **Logger** | Filter by module name prefix (e.g. `app.api`, `app.routing`) |
+| **Search** | Full-text search in the formatted message (300 ms debounce) |
+| **Tail** | Show only the last N records after other filters |
+| **Limit** | Max records displayed: 100 / 200 / 500 / 1000 / 5000 |
+| **Sort** | Newest first / Oldest first |
+
+### Auto-refresh
+
+Select a refresh interval (2 s / 5 s / 10 s / 30 s) for live-tail monitoring. A pulse indicator appears when auto-refresh is active.
+
+### Export
+
+- **Download** — saves the current view as a `.txt` file
+- **Copy** — copies all visible log lines to clipboard
+- **Clear** — wipes the in-memory buffer (not reversible)
+
+### REST API
+
+```bash
+# Fetch last 50 ERROR+ records
+GET /logs/records?level=ERROR&limit=50
+
+# Search for a keyword, newest first
+GET /logs/records?q=rate+limit&newest_first=true
+
+# Tail the last 20 lines from app.api.*
+GET /logs/records?logger_name=app.api&tail=20
+
+# List all logger names
+GET /logs/loggers
+
+# Clear buffer
+DELETE /logs/clear
+```
+
+---
+
+## CF Workers & Modal in the Gateway
+
+Deployed CF Workers and Modal endpoints are automatically available as models in the gateway — no extra configuration needed.
+
+### Using a CF Worker via `/v1/chat/completions`
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "cfworker/my-worker-name",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+The gateway looks up `my-worker-name` in the CF worker registry, finds its `workers.dev` URL, and proxies the request directly.
+
+### Using a Modal deployment via `/v1/chat/completions`
+
+Modal deployments also appear in `/v1/models` as `modal/{name}`. You can route to them the same way:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "modal/my-llama",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+> For Modal, the Playground routes directly to the endpoint URL for lower latency. Routing via the gateway uses the registered URL stored in Redis.
+
+### Discovering available models
+
+```bash
+curl http://localhost:8000/v1/models | jq '.data[] | select(.owned_by | test("cloudflare-worker|modal"))'
+```
 
 ---
 

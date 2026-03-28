@@ -6,7 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.5.0] – 2026-03-28 (Latest)
+## [1.6.0] – 2026-03-28 (Latest)
+
+### 🛠️ CF Workers — Stale-Delete Fix
+- **Fixed stale workers after deletion**: After a successful DELETE, a Redis deletion marker (`arbiter:cf:deleting:{name}`, 120s TTL) is set. `list_workers` checks this set and suppresses those workers during the Cloudflare API propagation delay (up to 2 minutes).
+
+### 🔀 CF Workers & Modal — Gateway Routing
+- **`cfworker/{name}` model prefix**: Any request to `/v1/chat/completions` with `model: cfworker/<worker-name>` is intercepted before the IntelligentRouter and proxied directly to that worker's `workers.dev` URL via httpx.
+- **Virtual models in `/v1/models`**: Active CF workers are exposed as `cfworker/{name}` (owned_by `cloudflare-worker`) and active Modal deployments as `modal/{name}` (owned_by `modal`). Clients can pick these in any OpenAI-compatible tool.
+
+### 🎮 Chat Playground (`/playground`)
+- New full-screen chat UI reachable at `/playground` and from the sidebar.
+- **Endpoint selector** — grouped dropdown across: Gateway Providers, Cloudflare Workers (live from registry), Modal Deployments (live from registry), Modal Endpoints (registered).
+- **Config panel** — system prompt, temperature slider, max tokens.
+- **Routing logic per endpoint type:**
+  - `cfworker:` → `POST /v1/chat/completions` with `model: cfworker/{name}` (goes through gateway auth)
+  - `modal:` with URL → direct `POST {url}/v1/chat/completions`
+  - `gateway:` → `POST /v1/chat/completions?vendor={name}`
+- **Latency badge** on every assistant message.
+- Keyboard shortcut: Enter to send, Shift+Enter for newline.
+
+### 📋 Log Viewer (`/logs`)
+- New in-memory log viewer at `/logs` with real-time access to all application logs.
+- **`LogBuffer`** Python logging handler (thread-safe deque, max 5,000 records) attached to root logger at startup — captures every module's output.
+- **Filters**: level (DEBUG/INFO/WARNING/ERROR/CRITICAL), logger name prefix, text search (300ms debounce), time range (since/until).
+- **Controls**: tail (last N), limit (100–5000), sort newest/oldest, auto-refresh (2s–30s), copy to clipboard, download as `.txt`, clear buffer.
+- **REST API**: `GET /logs/records`, `GET /logs/loggers`, `DELETE /logs/clear`.
+
+### 🔧 Bug Fixes
+- Fixed `DeprecationError: container_idle_timeout` → renamed to `scaledown_window` in Modal vLLM template (deprecated 2025-02-24).
+- Modal token auto-loaded from `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` env vars; cached to Redis on first use.
+
+### 📚 Documentation
+- Updated CHANGELOG, README, DEVELOPER.md, USERGUIDE.md with all Phase 3 features.
+
+---
+
+## [1.5.0] – 2026-03-28
 
 ### 🛠️ Cloudflare Workers — List & Delete Fixes
 

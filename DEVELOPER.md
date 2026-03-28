@@ -41,6 +41,15 @@ Client Request
     │
     ▼
 ┌─────────────────────────────────────────┐
+│  cfworker/ Early Intercept              │
+│  - If model starts with "cfworker/"     │
+│  - Look up URL in arbiter:cf:workers    │
+│  - Proxy directly via httpx             │
+│  - Return response (bypasses router)    │
+└─────────────────────────────────────────┘
+    │ Not a cfworker/ model
+    ▼
+┌─────────────────────────────────────────┐
 │  Cache Lookup (Redis)                   │
 │  - SHA256(model + messages)             │
 │  - Only if temp ≤ 0.3                   │
@@ -301,9 +310,27 @@ Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2
 | `GET` | `/dashboard/stats` | Dashboard stats (JSON) |
 | `GET` | `/api-docs` | Interactive API documentation (HTML) |
 | `GET` | `/settings` | Settings control panel (HTML) |
+| `GET` | `/playground` | Chat playground — test any endpoint (HTML) |
+| `GET` | `/logs` | Real-time log viewer (HTML) |
+| `GET` | `/logs/records` | Fetch log records (filterable, pageable) |
+| `GET` | `/logs/loggers` | List all logger names seen in buffer |
+| `DELETE` | `/logs/clear` | Clear the in-memory log buffer |
 | `GET` | `/health` | Health check |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/redoc` | ReDoc |
+
+**`GET /logs/records` query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `level` | string | DEBUG | Minimum level: DEBUG / INFO / WARNING / ERROR / CRITICAL |
+| `logger_name` | string | — | Filter by logger name prefix (e.g. `app.api`) |
+| `since` | float | — | Unix epoch lower bound |
+| `until` | float | — | Unix epoch upper bound |
+| `q` | string | — | Full-text search in formatted message |
+| `tail` | int | 0 | Return only the last N records after filters |
+| `limit` | int | 200 | Max records returned (max 5000) |
+| `newest_first` | bool | true | Sort order |
 
 ### Redis Key Schema
 
@@ -321,8 +348,12 @@ Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2
 | `arbiter:runtime:keys:{provider}` | JSON | Runtime-added keys |
 | `arbiter:runtime:disabled:{provider}` | String | Provider disabled flag |
 | `arbiter:cf:workers:registry` | JSON | Cloudflare worker registry (provisioning state + metadata) |
+| `arbiter:cf:deleting:{name}` | String (120s TTL) | Deletion marker — suppresses worker from list during CF propagation delay |
+| `arbiter:cf:workers` | JSON | Active CF workers with URLs (used for gateway routing) |
 | `arbiter:modal:deploy:{id}:logs` | List | Streaming deploy log lines from `modal deploy` subprocess |
 | `arbiter:modal:deploy:{id}:status` | JSON | Deployment status: pending/running/failed/complete |
+| `arbiter:modal:deployments` | JSON | Active Modal deployments with endpoint URLs (used for gateway routing) |
+| `arbiter:modal:token` | String | Cached Modal token (id:secret) — loaded from env or set via UI |
 
 ---
 

@@ -107,10 +107,27 @@ Try Gemini (large context required):
 ### ✅ Modal.com One-Click vLLM Deploy
 - **Deploy open-weight models** on Modal GPU infrastructure (A10G, A100, H100) directly from the Settings UI
 - **Live log streaming** — deploy logs streamed from the `modal deploy` subprocess in real time
-- **Cost-efficient** — uses `container_idle_timeout` so containers shut down when idle; `modal.Volume` caches model weights
+- **Cost-efficient** — uses `scaledown_window` so containers shut down when idle; `modal.Volume` caches model weights
 - **Pre-flight check** — `GET /modal/deploy/check` verifies CLI installation and token before attempting a deploy
 - **Gateway integration** — deployed endpoints are registered as a provider and usable via `/v1/chat/completions`
 - **Admin endpoints** — `/modal/deploy/*` routes
+
+### ✅ Chat Playground (`/playground`)
+- **Interactive chat UI** for testing every endpoint — CF workers, Modal deployments, and all gateway providers
+- **Endpoint selector** grouped by type: Gateway Providers, Cloudflare Workers, Modal Deployments
+- **Per-endpoint routing**: CF workers route through the gateway (`cfworker/{name}`), Modal deployments hit the endpoint directly, providers go through `/v1/chat/completions`
+- **Config panel** — system prompt, temperature, max tokens; latency badge on each response
+
+### ✅ Real-Time Log Viewer (`/logs`)
+- **In-memory log buffer** — last 5,000 records from all modules captured automatically
+- **Filters**: level, logger name, full-text search, time range (since/until), tail, limit
+- **Auto-refresh** (2 s / 5 s / 10 s / 30 s), sort newest/oldest, download as `.txt`, copy to clipboard
+- **API**: `GET /logs/records`, `GET /logs/loggers`, `DELETE /logs/clear`
+
+### ✅ CF Workers & Modal — Gateway Routing
+- **`cfworker/{name}` model prefix** — send `model: cfworker/my-worker` to `/v1/chat/completions` to proxy directly to that worker's `workers.dev` URL
+- **Virtual models in `/v1/models`** — active CF workers (`cfworker/{name}`) and Modal deployments (`modal/{name}`) appear in the model list for easy selection
+- **Stale-delete fix** — Redis deletion marker (120 s TTL) suppresses workers during Cloudflare API propagation delay after deletion
 
 ### ✅ API Key Validation (all providers)
 - **Auto-validation on key add** — every key is tested immediately after being saved to the gateway
@@ -137,6 +154,7 @@ Gateway starts successfully **even without Redis**:
                   │  /v1/chat/completions               │
                   │  /v1/images/generations             │
                   │  /dashboard · /api-docs · /settings │
+                  │  /playground · /logs                │
                   │  /api/providers/* (key mgmt)        │
                   │  /cloudflare/workers/* (mgr)        │
                   │  /modal/deploy/* (GPU deploy)       │
@@ -304,6 +322,9 @@ open http://localhost:8000/dashboard
 | `COHERE_API_KEYS` | (empty) | Comma-separated Cohere keys |
 | `HUGGINGFACE_API_KEYS` | (empty) | Comma-separated HuggingFace tokens |
 | `POLLINATIONS_API_KEYS` | (empty) | Leave empty (free, no key needed) |
+| **Modal** | | |
+| `MODAL_TOKEN_ID` | (empty) | Modal token ID (from `modal token new`) — auto-loaded at startup |
+| `MODAL_TOKEN_SECRET` | (empty) | Modal token secret — auto-loaded at startup |
 
 ### Rate Limits
 
@@ -403,29 +424,22 @@ OpenAI-compatible chat completion endpoint.
 
 ### GET `/v1/models`
 
-List available models.
+List available models. Includes standard provider models **plus** virtual models for active CF Workers and Modal deployments.
 
 **Response:**
 ```json
 {
   "object": "list",
   "data": [
-    {
-      "id": "gemini-2.5-flash-lite",
-      "object": "model",
-      "created": 1700000000,
-      "owned_by": "gemini"
-    },
-    {
-      "id": "llama-3.3-70b-instruct:free",
-      "object": "model",
-      "created": 1700000000,
-      "owned_by": "openrouter"
-    }
-    ...
+    {"id": "gemini-2.5-flash-lite", "object": "model", "created": 1700000000, "owned_by": "gemini"},
+    {"id": "llama-3.3-70b-instruct:free", "object": "model", "created": 1700000000, "owned_by": "openrouter"},
+    {"id": "cfworker/my-worker", "object": "model", "created": 1700000000, "owned_by": "cloudflare-worker"},
+    {"id": "modal/my-llama", "object": "model", "created": 1700000000, "owned_by": "modal"}
   ]
 }
 ```
+
+Use `model: cfworker/<name>` to route a request directly to a deployed CF Worker. Use `model: modal/<name>` for a Modal deployment registered in the gateway.
 
 ### GET `/health`
 

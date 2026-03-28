@@ -8,9 +8,16 @@ GET    /cloudflare/workers                  List workers (live from CF + Redis m
 POST   /cloudflare/workers                  Create + enable workers.dev + register in gateway
 DELETE /cloudflare/workers/{name}           Delete worker from CF + remove from registry
 GET    /cloudflare/workers/{name}/analytics Worker stats (local counters + CF metadata)
+POST   /cloudflare/validate                 Validate token permissions (AI, Scripts, Subdomain)
 
 Credentials: first Cloudflare key from env OR from runtime Redis store.
 Key format:  account_id|api_token
+
+Required token permissions (use "Edit Cloudflare Workers" template):
+  - Workers AI > Execute              (for AI inference)
+  - Workers Scripts > Edit            (for create / delete worker scripts)
+  - Workers Routes > Edit             (for enabling workers.dev subdomain)
+  - Account > Workers Scripts Read    (for listing scripts — included in above)
 """
 
 from __future__ import annotations
@@ -31,6 +38,10 @@ router = APIRouter(prefix="/cloudflare", tags=["Cloudflare Workers AI"])
 
 _CF_API        = "https://api.cloudflare.com/client/v4"
 _REDIS_WORKERS = "arbiter:cf:workers"          # JSON dict  name → {url,model,created_on,...}
+
+# Grace period: newly created workers won't be cleaned up for this many seconds.
+# CF API propagation can take up to ~30 seconds.
+_PROVISION_GRACE_SECS = 120
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +95,10 @@ class CreateWorkerRequest(BaseModel):
     description: Optional[str] = None
 
 
+class ValidateKeyBody(BaseModel):
+    key: Optional[str] = None  # If omitted, uses the first configured key
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -108,14 +123,15 @@ async def _get_credentials(request: Request) -> tuple[str, str]:
     return parts[0].strip(), parts[1].strip()
 
 
+def _parse_raw_key(raw: str) -> tuple[str, str]:
+    parts = raw.split("|", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError("Key must be in 'account_id|api_token' format")
+    return parts[0].strip(), parts[1].strip()
+
+
 def _hdrs(token: str) -> dict:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-
-async def _cf_get(url: str, token: str) -> dict:
-    async with httpx.AsyncClient(timeout=30.0) as c:
-        r = await c.get(url, headers={"Authorization": f"Bearer {token}"})
-    return r
 
 
 async def _load_worker_registry(redis) -> dict:
@@ -130,6 +146,24 @@ async def _load_worker_registry(redis) -> dict:
 
 async def _save_worker_registry(redis, registry: dict) -> None:
     await redis.set(_REDIS_WORKERS, json.dumps(registry))
+
+
+def _registry_age_secs(meta: dict) -> float:
+    """Return how many seconds ago this registry entry was created. Returns inf if unknown."""
+    created = meta.get("created_on", "")
+    if not created:
+        return float("inf")
+    try:
+        import email.utils
+        # Handle both ISO 8601 (our format) and CF's RFC2822 format
+        if "T" in created:
+            import datetime
+            t = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
+            return (datetime.datetime.now(datetime.timezone.utc) - t).total_seconds()
+        ts = email.utils.parsedate_to_datetime(created).timestamp()
+        return time.time() - ts
+    except Exception:
+        return float("inf")
 
 
 async def _fetch_account_subdomain(account_id: str, token: str) -> Optional[str]:
@@ -170,7 +204,11 @@ async def _enable_workers_dev(account_id: str, script_name: str, token: str) -> 
 
 @router.get("/models", summary="List Workers AI text-generation models")
 async def list_cf_models(request: Request) -> JSONResponse:
-    """Fetch available Cloudflare Workers AI text-generation models."""
+    """
+    Fetch available Cloudflare Workers AI text-generation models.
+
+    Requires token permission: **Workers AI > Execute**
+    """
     account_id, api_token = await _get_credentials(request)
     url = f"{_CF_API}/accounts/{account_id}/ai/models/search?task=Text+Generation"
 
@@ -202,8 +240,15 @@ async def list_cf_models(request: Request) -> JSONResponse:
 @router.get("/workers", summary="List Cloudflare Workers (live + registry)")
 async def list_workers(request: Request) -> JSONResponse:
     """
-    Return all worker scripts from Cloudflare + merge with local registry metadata
-    (model, URL, integration status).
+    Return all worker scripts from Cloudflare API merged with local registry metadata.
+
+    Newly created workers that haven't propagated to the CF API yet are included
+    with status='provisioning' from the local registry.
+
+    Workers deleted externally (not in CF API, older than grace period) are cleaned
+    from the registry automatically.
+
+    Requires token permission: **Workers Scripts > Read** (included in Edit template)
     """
     account_id, api_token = await _get_credentials(request)
     url = f"{_CF_API}/accounts/{account_id}/workers/scripts"
@@ -220,7 +265,10 @@ async def list_workers(request: Request) -> JSONResponse:
 
     cf_data  = resp.json()
     cf_list  = cf_data.get("result", [])
-    registry = await _load_worker_registry(request.app.state.redis)
+    redis    = request.app.state.redis
+    registry = await _load_worker_registry(redis)
+
+    cf_names = {w.get("id") or w.get("script_name") or w.get("name", "") for w in cf_list}
 
     # Merge CF live data with local registry metadata
     merged = []
@@ -228,24 +276,50 @@ async def list_workers(request: Request) -> JSONResponse:
         name = w.get("id") or w.get("script_name") or w.get("name", "")
         meta = registry.get(name, {})
         merged.append({
-            "name":        name,
-            "created_on":  w.get("created_on", ""),
-            "modified_on": w.get("modified_on", ""),
-            "model":       meta.get("model", ""),
-            "worker_url":  meta.get("url", ""),
+            "name":              name,
+            "status":            "active",
+            "created_on":        w.get("created_on", ""),
+            "modified_on":       w.get("modified_on", ""),
+            "model":             meta.get("model", ""),
+            "worker_url":        meta.get("url", ""),
             "subdomain_enabled": bool(meta.get("url")),
-            "description": meta.get("description", ""),
-            "requests_total": meta.get("requests_total", 0),
+            "description":       meta.get("description", ""),
+            "requests_total":    meta.get("requests_total", 0),
         })
+        # If found in CF, mark registry entry as active (remove provisioning status)
+        if name in registry and registry[name].get("status") == "provisioning":
+            registry[name]["status"] = "active"
 
-    # Workers in registry but not in CF (deleted externally — clean up)
-    cf_names = {w.get("id") or w.get("script_name") or w.get("name", "") for w in cf_list}
-    stale = [n for n in registry if n not in cf_names]
-    if stale:
-        for s in stale:
-            del registry[s]
-        await _save_worker_registry(request.app.state.redis, registry)
-        logger.info("Cleaned up stale workers from registry: %s", stale)
+    # Include provisioning workers from registry not yet visible in CF API
+    registry_modified = False
+    for name, meta in list(registry.items()):
+        if name in cf_names:
+            continue  # already included above
+        age = _registry_age_secs(meta)
+        if age < _PROVISION_GRACE_SECS:
+            # Still within grace period — show as provisioning
+            merged.append({
+                "name":              name,
+                "status":            "provisioning",
+                "created_on":        meta.get("created_on", ""),
+                "modified_on":       "",
+                "model":             meta.get("model", ""),
+                "worker_url":        meta.get("url", ""),
+                "subdomain_enabled": bool(meta.get("url")),
+                "description":       meta.get("description", ""),
+                "requests_total":    meta.get("requests_total", 0),
+            })
+        else:
+            # Older than grace period and not in CF — truly stale, clean up
+            del registry[name]
+            registry_modified = True
+            logger.info("Cleaned up stale worker from registry: %s (age=%.0fs)", name, age)
+
+    if registry_modified:
+        await _save_worker_registry(redis, registry)
+
+    # Sort by created_on descending (newest first)
+    merged.sort(key=lambda w: w.get("created_on", ""), reverse=True)
 
     return JSONResponse(content={"success": True, "result": merged, "count": len(merged)})
 
@@ -256,8 +330,13 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
     Create a Cloudflare Worker backed by Workers AI, enable its workers.dev
     subdomain, and register it in the Arbiter gateway.
 
-    After creation, the worker is usable via Arbiter's /v1/chat/completions
-    endpoint using provider=cloudflare with the specified model.
+    After creation, the worker is immediately visible in the list as 'provisioning'
+    and transitions to 'active' once the CF API propagates it (typically < 30s).
+
+    Requires token permissions:
+    - **Workers AI > Execute** (for AI binding)
+    - **Workers Scripts > Edit** (for script upload)
+    - **Workers Routes > Edit** (for enabling workers.dev)
     """
     account_id, api_token = await _get_credentials(request)
 
@@ -292,8 +371,16 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
             raise HTTPException(502, f"Cloudflare API unreachable: {exc}")
 
     if resp.status_code not in (200, 201):
-        raise HTTPException(resp.status_code,
-                            f"Worker creation failed: {resp.text[:500]}")
+        detail = resp.text[:500]
+        # Try to extract useful error from CF JSON response
+        try:
+            err = resp.json()
+            msgs = " | ".join(e.get("message", "") for e in err.get("errors", []))
+            if msgs:
+                detail = msgs
+        except Exception:
+            pass
+        raise HTTPException(resp.status_code, f"Worker creation failed: {detail}")
 
     # Enable workers.dev subdomain
     subdomain_ok = await _enable_workers_dev(account_id, script_name, api_token)
@@ -303,20 +390,20 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
     worker_url = (f"https://{script_name}.{subdomain}.workers.dev"
                   if subdomain else None)
 
-    # Persist to registry
+    # Persist to registry immediately so it appears in the list during CF propagation
     redis    = request.app.state.redis
     registry = await _load_worker_registry(redis)
     registry[script_name] = {
-        "model":        model_id,
-        "url":          worker_url or "",
-        "description":  body.description or "",
-        "created_on":   time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "model":          model_id,
+        "url":            worker_url or "",
+        "description":    body.description or "",
+        "created_on":     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "requests_total": 0,
+        "status":         "provisioning",   # set to active once CF API confirms it
     }
     await _save_worker_registry(redis, registry)
 
     # Hot-reload Cloudflare provider so the model is in the active list
-    # (model is already in CloudflareProvider.models list but this keeps pools in sync)
     try:
         from app.api.keys_api import _reload_provider
         await _reload_provider("cloudflare", request)
@@ -326,10 +413,10 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
     return JSONResponse(
         status_code=201,
         content={
-            "success":          True,
-            "name":             script_name,
-            "model":            model_id,
-            "worker_url":       worker_url,
+            "success":           True,
+            "name":              script_name,
+            "model":             model_id,
+            "worker_url":        worker_url,
             "subdomain_enabled": subdomain_ok,
             "gateway_info": {
                 "message": (
@@ -345,7 +432,14 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
 
 @router.delete("/workers/{script_name}", summary="Delete a Cloudflare Worker")
 async def delete_worker(script_name: str, request: Request) -> JSONResponse:
-    """Delete the worker from Cloudflare and remove it from the local registry."""
+    """
+    Delete the worker script from Cloudflare and remove it from the local registry.
+
+    Requires token permission: **Workers Scripts > Edit**
+
+    If the Cloudflare deletion fails (e.g. 403 Forbidden), the registry entry is
+    NOT removed and the error is returned to the caller.
+    """
     account_id, api_token = await _get_credentials(request)
     url = f"{_CF_API}/accounts/{account_id}/workers/scripts/{script_name}"
 
@@ -356,8 +450,20 @@ async def delete_worker(script_name: str, request: Request) -> JSONResponse:
             raise HTTPException(502, f"Cloudflare API unreachable: {exc}")
 
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code,
-                            f"Worker deletion failed: {resp.text[:300]}")
+        # Extract CF error message
+        detail = resp.text[:300]
+        try:
+            err = resp.json()
+            msgs = " | ".join(e.get("message", "") for e in err.get("errors", []))
+            if msgs:
+                detail = msgs
+            if resp.status_code == 403:
+                detail = f"Permission denied: {msgs or 'token needs Workers Scripts > Edit permission'}"
+            elif resp.status_code == 404:
+                detail = f"Worker '{script_name}' not found in Cloudflare (may have been deleted already)"
+        except Exception:
+            pass
+        raise HTTPException(resp.status_code, detail)
 
     # Remove from registry
     redis    = request.app.state.redis
@@ -368,11 +474,152 @@ async def delete_worker(script_name: str, request: Request) -> JSONResponse:
     return JSONResponse(content={"success": True, "deleted": script_name})
 
 
+@router.post("/validate", summary="Validate Cloudflare API token permissions")
+async def validate_cf_key(body: ValidateKeyBody, request: Request) -> JSONResponse:
+    """
+    Check which Cloudflare permissions the configured (or provided) API token has.
+
+    Tests performed:
+    - **Workers Scripts list** — `GET /accounts/{id}/workers/scripts`
+      Requires: Workers Scripts > Read (included in Edit template)
+    - **Workers AI models** — `GET /accounts/{id}/ai/models/search`
+      Requires: Workers AI > Execute
+    - **Workers Subdomain** — `GET /accounts/{id}/workers/subdomain`
+      Requires: Workers Routes > Read (included in Edit template)
+
+    Script write access (create/delete) is implied if scripts list succeeds and
+    you used the "Edit Cloudflare Workers" token template. It cannot be verified
+    without performing a write operation.
+
+    Returns a permission matrix with status codes and descriptions.
+    """
+    # Resolve key: use provided key or fall back to configured key
+    if body.key:
+        try:
+            account_id, api_token = _parse_raw_key(body.key)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    else:
+        account_id, api_token = await _get_credentials(request)
+
+    checks: list[dict] = []
+
+    async with httpx.AsyncClient(timeout=15.0) as c:
+
+        # 1. Workers Scripts list
+        try:
+            r = await c.get(
+                f"{_CF_API}/accounts/{account_id}/workers/scripts",
+                headers={"Authorization": f"Bearer {api_token}"},
+                params={"per_page": 1},
+            )
+            ok = r.status_code == 200
+            checks.append({
+                "name":        "Workers Scripts Read",
+                "permission":  "Workers Scripts > Edit (or Read)",
+                "ok":          ok,
+                "http_status": r.status_code,
+                "note":        "Required to list and manage worker scripts" if ok
+                               else _cf_perm_hint(r),
+                "required_for": ["List workers", "Create worker", "Delete worker"],
+            })
+        except Exception as exc:
+            checks.append({"name": "Workers Scripts Read", "ok": False,
+                            "http_status": 0, "note": str(exc),
+                            "required_for": ["List workers", "Create worker", "Delete worker"]})
+
+        # 2. Workers AI (inference)
+        try:
+            r = await c.get(
+                f"{_CF_API}/accounts/{account_id}/ai/models/search",
+                headers={"Authorization": f"Bearer {api_token}"},
+                params={"task": "Text Generation", "per_page": 1},
+            )
+            ok = r.status_code == 200
+            checks.append({
+                "name":        "Workers AI Execute",
+                "permission":  "Workers AI > Execute",
+                "ok":          ok,
+                "http_status": r.status_code,
+                "note":        "AI inference is available" if ok else _cf_perm_hint(r),
+                "required_for": ["AI inference in worker", "List AI models"],
+            })
+        except Exception as exc:
+            checks.append({"name": "Workers AI Execute", "ok": False,
+                            "http_status": 0, "note": str(exc),
+                            "required_for": ["AI inference in worker", "List AI models"]})
+
+        # 3. Workers Subdomain (workers.dev routing)
+        try:
+            r = await c.get(
+                f"{_CF_API}/accounts/{account_id}/workers/subdomain",
+                headers={"Authorization": f"Bearer {api_token}"},
+            )
+            ok = r.status_code == 200
+            subdomain = None
+            if ok:
+                try:
+                    subdomain = (r.json().get("result") or {}).get("subdomain")
+                except Exception:
+                    pass
+            checks.append({
+                "name":        "Workers Subdomain",
+                "permission":  "Workers Routes > Edit",
+                "ok":          ok,
+                "http_status": r.status_code,
+                "subdomain":   subdomain,
+                "note":        (f"workers.dev subdomain: {subdomain}" if subdomain
+                                else "Subdomain access OK" if ok
+                                else _cf_perm_hint(r)),
+                "required_for": ["Enable workers.dev routing for created workers"],
+            })
+        except Exception as exc:
+            checks.append({"name": "Workers Subdomain", "ok": False,
+                            "http_status": 0, "note": str(exc),
+                            "required_for": ["Enable workers.dev routing"]})
+
+    all_ok = all(c["ok"] for c in checks)
+
+    return JSONResponse(content={
+        "success":     True,
+        "account_id":  account_id,
+        "all_ok":      all_ok,
+        "checks":      checks,
+        "recommendation": (
+            "All required permissions confirmed. This token can create, delete, and run Workers AI workers."
+            if all_ok else
+            "Some permissions are missing. Use the 'Edit Cloudflare Workers' token template at "
+            "https://dash.cloudflare.com/profile/api-tokens to create a token with all required permissions."
+        ),
+    })
+
+
+def _cf_perm_hint(resp: httpx.Response) -> str:
+    """Return a helpful message based on the CF API error response."""
+    if resp.status_code == 403:
+        try:
+            msgs = " | ".join(e.get("message", "") for e in resp.json().get("errors", []))
+            return f"Permission denied — {msgs or 'token is missing required permission'}"
+        except Exception:
+            return "Permission denied — token is missing required permission"
+    if resp.status_code == 401:
+        return "Authentication failed — check that the API token is correct"
+    if resp.status_code == 404:
+        return "Account not found — check that the Account ID is correct"
+    try:
+        msgs = " | ".join(e.get("message", "") for e in resp.json().get("errors", []))
+        return msgs or f"HTTP {resp.status_code}"
+    except Exception:
+        return f"HTTP {resp.status_code}"
+
+
 @router.get("/workers/{script_name}/analytics",
             summary="Worker analytics (local counters + metadata)")
 async def worker_analytics(script_name: str, request: Request) -> JSONResponse:
     """
     Return usage stats for a worker: local gateway request counter + CF metadata.
+
+    Requires token permission: **Workers Scripts > Read**
     """
     account_id, api_token = await _get_credentials(request)
     redis    = request.app.state.redis
@@ -397,30 +644,31 @@ async def worker_analytics(script_name: str, request: Request) -> JSONResponse:
     # Count requests tracked by our gateway (cloudflare provider RPM/daily counters)
     import hashlib
     from app.api.keys_api import _merged_keys
-    cf_keys     = await _merged_keys(redis, "cloudflare")
-    first_key   = cf_keys[0] if cf_keys else ""
-    h           = hashlib.md5(first_key.encode()).hexdigest()[:10] if first_key else ""
-    daily_used  = int(await redis.get(f"cloudflare:{h}:daily") or 0)
-    rpm_used    = int(await redis.get(f"cloudflare:{h}:rpm")   or 0)
+    cf_keys    = await _merged_keys(redis, "cloudflare")
+    first_key  = cf_keys[0] if cf_keys else ""
+    h          = hashlib.md5(first_key.encode()).hexdigest()[:10] if first_key else ""
+    daily_used = int(await redis.get(f"cloudflare:{h}:daily") or 0)
+    rpm_used   = int(await redis.get(f"cloudflare:{h}:rpm")   or 0)
 
     return JSONResponse(content={
-        "name":          script_name,
-        "model":         meta.get("model", ""),
-        "worker_url":    meta.get("url", ""),
-        "description":   meta.get("description", ""),
-        "created_on":    meta.get("created_on", ""),
+        "name":           script_name,
+        "model":          meta.get("model", ""),
+        "worker_url":     meta.get("url", ""),
+        "description":    meta.get("description", ""),
+        "created_on":     meta.get("created_on", ""),
+        "status":         meta.get("status", "active"),
         "requests_total": meta.get("requests_total", 0),
-        "cf_metadata":   {
+        "cf_metadata":    {
             "id":          cf_info.get("id", script_name),
             "modified_on": cf_info.get("modified_on", ""),
             "etag":        cf_info.get("etag", ""),
         },
-        "gateway_usage": {
+        "gateway_usage":  {
             "cloudflare_daily_tokens": daily_used,
             "cloudflare_rpm":          rpm_used,
             "note": "Counts all Cloudflare AI requests through this gateway today",
         },
-        "dashboard_url": (
+        "dashboard_url":  (
             f"https://dash.cloudflare.com/{account_id}/workers/services/view/{script_name}"
         ),
     })

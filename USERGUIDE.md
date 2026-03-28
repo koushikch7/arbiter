@@ -16,8 +16,9 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 8. [Managing API Keys via UI](#managing-api-keys-via-ui)
 9. [Image Generation](#image-generation)
 10. [Settings Dashboard](#settings-dashboard)
-11. [Best Practices](#best-practices)
-12. [Troubleshooting](#troubleshooting)
+11. [Modal GPU Deployment](#tab-modal-gpu-deploy)
+12. [Best Practices](#best-practices)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -55,8 +56,18 @@ Each provider card shows:
 2. Go to **Workers & Pages** — this activates the Workers AI free tier
 3. Find your **Account ID** in the right sidebar of the Workers overview page
 4. Go to **Profile → API Tokens → Create Token**
-5. Use the "Cloudflare Workers AI" template (or add `AI Gateway: Read` permission)
+5. Create a **Custom Token** with these permissions:
+   - **Workers Scripts: Edit** — required to create and delete Worker scripts
+   - **Workers AI: Execute** — required to run AI inference
+   - **Account: Read** — required to list Workers subdomain info
 6. In the API Keys tab, add the key as: `<Account_ID>|<API_Token>`
+
+> **Token Permission Validation:** After adding your key, Arbiter automatically tests three permissions and shows you a green ✅ or red ❌ for each:
+> - **Workers Scripts (list)** — needed to show the workers list and create/delete workers
+> - **Workers AI (execute)** — needed to run inference through your workers
+> - **Workers Subdomain** — needed to generate the correct worker URL
+>
+> Click **Validate Permissions** on the Cloudflare provider card at any time to re-check.
 
 ### Runtime API (programmatic)
 
@@ -169,8 +180,30 @@ Live image generator — see [Image Generation](#image-generation).
 ### Tab: CF Workers
 Deploy and manage Cloudflare Workers that expose an OpenAI-compatible endpoint backed by Workers AI.
 - **List deployed workers** with creation date and copy URL button
+- **Provisioning state** — newly created workers show "◌ Provisioning…" while Cloudflare's API propagates (can take 2–30 seconds); the list auto-refreshes every 4 seconds until all workers go active
 - **Create new worker** — pick a model from the Cloudflare model list
-- **Delete workers** you no longer need
+- **Delete workers** — optimistic UI (row dims immediately); reverts if deletion fails
+
+### Tab: Modal GPU Deploy
+Deploy open-weight models (LLaMA, Mistral, etc.) to Modal.com GPU instances directly from the UI.
+
+**Prerequisites:**
+1. Install the Modal CLI: `pip install modal`
+2. Authenticate: `modal setup` (opens browser for OAuth)
+3. Return to Settings → Modal GPU tab — the gateway shows a warning banner if CLI or token is missing
+
+**Deployment steps:**
+1. Go to **Settings → Modal GPU** tab
+2. Enter your Modal API token in the account section
+3. Select a model (e.g., `meta-llama/Llama-3.1-8B-Instruct`)
+4. Choose GPU type (A10G for smaller models, A100/H100 for larger)
+5. Click **Deploy** — logs stream in real time
+6. Once deployed, the endpoint is registered as a gateway provider
+
+**Cost tips:**
+- Containers auto-shutdown after idle (`container_idle_timeout = 300s`)
+- Model weights are cached in a `modal.Volume` — subsequent cold starts are faster
+- Use A10G for models up to ~13B; A100 for 70B+ models
 
 ### Tab: Cache
 - View hit rate, total hits/misses, and cached entry count

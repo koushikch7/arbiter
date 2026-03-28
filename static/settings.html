@@ -602,6 +602,11 @@
             <span style="font-size:11px;background:rgba(99,102,241,0.15);color:#6366f1;padding:2px 8px;border-radius:12px;font-weight:600">BETA</span>
           </div>
 
+          <!-- CLI status banner -->
+          <div id="modal-cli-status" style="display:none;background:rgba(244,129,32,0.10);border:1px solid rgba(244,129,32,0.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#f48120;margin-bottom:14px">
+            <strong>Prerequisites missing:</strong>
+          </div>
+
           <div class="grid-2" style="align-items:start;margin-bottom:14px">
             <!-- Account Token -->
             <div class="card">
@@ -892,6 +897,10 @@ function buildProviderCard(p) {
   }
 
   // Add key form
+  var validateBtn = (p.name === 'cloudflare' && p.key_count > 0)
+    ? '<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;margin-top:6px" onclick="validateKey(\'' + p.name + '\',null)">Validate Permissions</button>'
+    : '';
+
   var addFormHtml = p.name !== 'pollinations' ? (
     '<div class="add-key-row">' +
     '<input type="password" id="key-input-' + p.name + '" class="form-control" ' +
@@ -902,7 +911,8 @@ function buildProviderCard(p) {
     ' Add Key</button>' +
     '</div>' +
     '<div style="font-size:11px;color:var(--text-3);margin-top:6px">Format: <code>' + p.key_format + '</code>' +
-    (p.signup_url ? ' · <a href="' + p.signup_url + '" target="_blank" style="color:var(--accent)">Get key ↗</a>' : '') + '</div>'
+    (p.signup_url ? ' · <a href="' + p.signup_url + '" target="_blank" style="color:var(--accent)">Get key ↗</a>' : '') + '</div>' +
+    validateBtn
   ) : '';
 
   div.innerHTML =
@@ -936,9 +946,11 @@ function buildProviderCard(p) {
 }
 
 async function addKey(providerName) {
-  var inp = document.getElementById('key-input-' + providerName);
-  var key = inp.value.trim();
+  var inp    = document.getElementById('key-input-' + providerName);
+  var resEl  = document.getElementById('test-result-' + providerName);
+  var key    = inp.value.trim();
   if (!key) { toast('Please enter a key', 'error'); return; }
+  if (resEl) { resEl.innerHTML = '<span style="color:var(--text-3)">Saving…</span>'; }
   try {
     var r = await fetch('/api/providers/' + providerName + '/keys', {
       method: 'POST',
@@ -947,11 +959,60 @@ async function addKey(providerName) {
     });
     var data = await r.json();
     if (!r.ok) throw new Error(data.detail || 'Error');
+    var savedKey = key;
     inp.value = '';
     toast('Key added: ' + data.masked, 'success');
     await loadProviders();
+    // Auto-validate after adding (provider-specific)
+    if (resEl) { resEl.innerHTML = '<span style="color:var(--text-3)">Validating permissions…</span>'; }
+    await validateKey(providerName, savedKey, resEl);
   } catch(e) {
     toast('Failed to add key: ' + e.message, 'error');
+    if (resEl) resEl.innerHTML = '';
+  }
+}
+
+async function validateKey(providerName, key, resEl) {
+  if (!resEl) resEl = document.getElementById('test-result-' + providerName);
+  if (!resEl) return;
+  try {
+    if (providerName === 'cloudflare') {
+      // Detailed permission check
+      var r = await fetch('/cloudflare/validate', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({key: key || null}),
+      });
+      var d = await r.json();
+      if (!r.ok) { resEl.innerHTML = '<span style="color:var(--danger)">Validation error: ' + (d.detail || r.status) + '</span>'; return; }
+      var rows = d.checks.map(function(c) {
+        return '<div style="display:flex;align-items:center;gap:6px;margin-top:5px">' +
+          '<span style="font-size:13px">' + (c.ok ? '✅' : '❌') + '</span>' +
+          '<div>' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text-1)">' + c.name + '</div>' +
+          '<div style="font-size:11px;color:var(--text-3)">' + (c.permission || '') + ' — ' + (c.note || '') + '</div>' +
+          '</div></div>';
+      }).join('');
+      var allOk = d.all_ok;
+      resEl.innerHTML =
+        '<div style="margin-top:8px;padding:10px;border-radius:6px;background:' + (allOk ? 'rgba(0,200,100,0.07)' : 'rgba(244,129,32,0.07)') + ';border:1px solid ' + (allOk ? 'rgba(0,200,100,0.2)' : 'rgba(244,129,32,0.2)') + '">' +
+        '<div style="font-weight:600;font-size:12px;color:' + (allOk ? '#00c864' : '#f48120') + ';margin-bottom:6px">' +
+        (allOk ? '✅ All permissions confirmed' : '⚠ Some permissions missing') + '</div>' +
+        rows +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:8px">' + (d.recommendation || '') + '</div>' +
+        '</div>';
+    } else {
+      // Generic test for other providers
+      var r2 = await fetch('/api/providers/' + providerName + '/test', {method:'POST'});
+      var d2 = await r2.json();
+      if (d2.ok) {
+        resEl.innerHTML = '<div style="margin-top:6px;font-size:12px;color:var(--success)">✅ Connection verified — latency: ' + d2.latency_ms + 'ms</div>';
+      } else {
+        resEl.innerHTML = '<div style="margin-top:6px;font-size:12px;color:var(--danger)">❌ Test failed: ' + (d2.error || 'unknown error') + '</div>';
+      }
+    }
+  } catch(e) {
+    resEl.innerHTML = '<div style="margin-top:6px;font-size:12px;color:var(--danger)">Validation error: ' + e.message + '</div>';
   }
 }
 
@@ -1289,13 +1350,14 @@ async function generateImages() {
 }
 
 // ── Cloudflare Workers Tab ───────────────────────────────────────────────────
+var _workersPollTimer = null;
+
 async function loadWorkers() {
   var el = document.getElementById('workers-list');
   if (!el) return;
   el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>';
   try {
-    // Force no-cache so we always get the live list from Cloudflare
-    var r = await fetch('/cloudflare/workers', {cache: 'no-store', headers: {'Cache-Control': 'no-cache'}});
+    var r = await fetch('/cloudflare/workers', {cache: 'no-store', headers: {'Cache-Control': 'no-cache, no-store'}});
     if (!r.ok) {
       var err = await r.json().catch(function() { return {}; });
       throw new Error((err.detail || 'HTTP ' + r.status) + ' — check Cloudflare API keys in Settings → API Keys');
@@ -1306,22 +1368,32 @@ async function loadWorkers() {
       el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3)">No workers deployed yet. Create one →</div>';
       return;
     }
+
     el.innerHTML = result.map(function(w) {
-      var name       = w.name || '';
-      var model      = w.model || '';
-      var url        = w.worker_url || '';
-      var created    = w.created_on ? new Date(w.created_on).toLocaleString() : '';
-      var integrated = w.subdomain_enabled;
-      var statusBadge = integrated
-        ? '<span style="background:rgba(0,200,100,0.12);color:#00c864;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">● Active</span>'
-        : '<span style="background:rgba(200,50,50,0.12);color:#e05;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">○ No route</span>';
+      var name     = w.name || '';
+      var model    = w.model || '';
+      var url      = w.worker_url || '';
+      var created  = w.created_on ? new Date(w.created_on).toLocaleString() : '';
+      var wStatus  = w.status || 'active';
+      var isProvisioning = wStatus === 'provisioning';
+
+      var statusBadge;
+      if (isProvisioning) {
+        statusBadge = '<span style="background:rgba(244,129,32,0.15);color:#f48120;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">◌ Provisioning…</span>';
+      } else if (w.subdomain_enabled) {
+        statusBadge = '<span style="background:rgba(0,200,100,0.12);color:#00c864;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">● Active</span>';
+      } else {
+        statusBadge = '<span style="background:rgba(200,50,50,0.12);color:#e05;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">○ No route</span>';
+      }
 
       var urlRow = url
         ? '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">' +
           '<code style="font-size:10px;color:var(--text-3);background:var(--surface-3);padding:1px 5px;border-radius:3px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + url + '</code>' +
-          '<button class="btn btn-ghost" style="font-size:10px;padding:2px 6px" onclick="navigator.clipboard.writeText(\'' + url + '\')">Copy</button>' +
+          '<button class="btn btn-ghost" style="font-size:10px;padding:2px 6px" onclick="navigator.clipboard.writeText(\'' + url + '\').then(function(){toast(\'URL copied\',\'success\')})">Copy</button>' +
           '</div>'
-        : '<div style="font-size:11px;color:var(--warning);margin-top:3px">workers.dev not enabled</div>';
+        : (isProvisioning
+            ? '<div style="font-size:11px;color:#f48120;margin-top:3px">↺ Waiting for CF API propagation…</div>'
+            : '<div style="font-size:11px;color:var(--warning);margin-top:3px">workers.dev not enabled — token may lack Workers Routes > Edit permission</div>');
 
       var modelRow = model
         ? '<div style="font-size:11px;color:var(--text-2);margin-top:2px">Model: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px;font-size:10px">' + model + '</code></div>'
@@ -1335,16 +1407,34 @@ async function loadWorkers() {
         statusBadge +
         '</div>' +
         (created ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">Created ' + created + '</div>' : '') +
-        modelRow +
-        urlRow +
+        modelRow + urlRow +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0">' +
-        '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="showWorkerAnalytics(\'' + name + '\')">Analytics</button>' +
-        '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px;color:var(--danger)" onclick="deleteWorker(\'' + name + '\')">Delete</button>' +
+        (isProvisioning ? '' : '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="showWorkerAnalytics(\'' + name + '\')">Analytics</button>') +
+        '<button class="btn btn-ghost" style="font-size:10px;padding:2px 8px;color:var(--danger)" onclick="deleteWorker(\'' + name + '\')" id="del-btn-' + name + '">' +
+        (isProvisioning ? 'Cancel' : 'Delete') +
+        '</button>' +
         '</div>' +
         '</div>' +
         '</div>';
     }).join('');
+
+    // If any workers are still provisioning, keep polling every 3s
+    var hasProvisioning = result.some(function(w) { return w.status === 'provisioning'; });
+    if (hasProvisioning && !_workersPollTimer) {
+      _workersPollTimer = setInterval(function() {
+        loadWorkers().then(function() {
+          var el2 = document.getElementById('workers-list');
+          if (el2 && !el2.innerHTML.includes('Provisioning')) {
+            clearInterval(_workersPollTimer);
+            _workersPollTimer = null;
+          }
+        });
+      }, 3000);
+    } else if (!hasProvisioning && _workersPollTimer) {
+      clearInterval(_workersPollTimer);
+      _workersPollTimer = null;
+    }
   } catch(e) {
     el.innerHTML = '<div style="padding:16px;color:var(--danger);font-size:12px">⚠ ' + e.message + '</div>';
   }
@@ -1399,35 +1489,59 @@ async function createWorker() {
         '<div style="font-weight:600;color:#00c864;margin-bottom:6px">✓ Worker deployed &amp; integrated!</div>' +
         '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">Name: <strong>' + data.name + '</strong></div>' +
         '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">Model: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">' + data.model + '</code></div>' +
-        (workerUrl ? '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">URL: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">' + workerUrl + '</code> <button class="btn btn-ghost" style="font-size:10px;padding:1px 5px" onclick="navigator.clipboard.writeText(\'' + workerUrl + '\')">Copy</button></div>' : '') +
-        '<div style="font-size:11px;color:var(--text-2);margin-bottom:2px">workers.dev: ' + (subEnabled ? '<span style="color:#00c864">enabled</span>' : '<span style="color:#f0a">check Cloudflare dashboard</span>') + '</div>' +
+        (workerUrl ? '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">URL: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px;word-break:break-all">' + workerUrl + '</code> <button class="btn btn-ghost" style="font-size:10px;padding:1px 5px" onclick="navigator.clipboard.writeText(\'' + workerUrl + '\').then(function(){toast(\'Copied\',\'success\')})">Copy</button></div>' : '<div style="font-size:11px;color:#f48120;margin-bottom:4px">workers.dev URL pending — token may need Workers Routes > Edit permission</div>') +
+        '<div style="font-size:11px;color:var(--text-2);margin-bottom:2px">Routing: ' + (subEnabled ? '<span style="color:#00c864">workers.dev enabled</span>' : '<span style="color:#f48120">check Cloudflare dashboard or add Workers Routes permission</span>') + '</div>' +
         '<div style="font-size:11px;color:var(--text-3);margin-top:6px">Use via gateway: <code style="background:var(--surface-3);padding:1px 4px;border-radius:3px">provider=cloudflare model=' + data.model + '</code></div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:4px">↺ Worker is provisioning — it will appear in the list in a few seconds.</div>' +
         '</div>';
     }
     document.getElementById('cf-name').value = '';
-    // Refresh list after a short delay (CF API takes a moment to reflect new scripts)
-    setTimeout(function() { loadWorkers(); }, 1500);
+    // Reload immediately — worker is in registry as "provisioning", will appear right away
+    await loadWorkers();
+    // Start polling to catch when CF API reflects it (provisioning → active)
+    if (!_workersPollTimer) {
+      _workersPollTimer = setInterval(function() {
+        loadWorkers();
+      }, 4000);
+      setTimeout(function() {
+        if (_workersPollTimer) { clearInterval(_workersPollTimer); _workersPollTimer = null; }
+      }, 60000); // stop polling after 60s max
+    }
   } catch(e) {
-    toast('Create failed: ' + e.message, 'error');
     if (res) {
       res.style.display = 'block';
       res.innerHTML = '<div style="background:rgba(220,50,50,0.08);border:1px solid rgba(220,50,50,0.3);border-radius:6px;padding:10px;font-size:12px;color:var(--danger)">⚠ ' + e.message + '</div>';
     }
+    toast('Create failed: ' + e.message, 'error');
   }
   if (sp) sp.style.display = 'none';
 }
 
 async function deleteWorker(name) {
-  if (!confirm('Delete worker "' + name + '" from Cloudflare?')) return;
+  if (!confirm('Delete worker "' + name + '" from Cloudflare?\n\nThis is permanent and cannot be undone.')) return;
+  // Optimistic UI update — remove immediately
+  var row = document.querySelector('[id="del-btn-' + name + '"]');
+  if (row) {
+    var parent = row.closest('[style*="border-bottom"]');
+    if (parent) parent.style.opacity = '0.4';
+    row.disabled = true;
+    row.textContent = 'Deleting…';
+  }
   try {
     var r    = await fetch('/cloudflare/workers/' + encodeURIComponent(name), {method:'DELETE'});
     var data = await r.json();
-    if (!r.ok) throw new Error(data.detail || 'Error ' + r.status);
+    if (!r.ok) {
+      // Revert optimistic update
+      if (row) { row.disabled = false; row.textContent = 'Delete'; }
+      if (parent) parent.style.opacity = '';
+      throw new Error(data.detail || 'Error ' + r.status);
+    }
     toast('Worker deleted: ' + name, 'success');
-    // Refresh after brief delay
-    setTimeout(function() { loadWorkers(); }, 800);
+    // Refresh the list (worker is gone from registry now)
+    await loadWorkers();
   } catch(e) {
     toast('Delete failed: ' + e.message, 'error');
+    await loadWorkers();
   }
 }
 
@@ -1544,7 +1658,24 @@ var _deployPollTimer = null;
 var _deployModels    = [];
 
 async function loadModalDeployTab() {
-  await Promise.all([checkModalToken(), loadDeployModels(), loadDeployments()]);
+  await Promise.all([checkModalCliStatus(), checkModalToken(), loadDeployModels(), loadDeployments()]);
+}
+
+async function checkModalCliStatus() {
+  try {
+    var r = await fetch('/modal/deploy/check', {cache:'no-store'});
+    var d = await r.json();
+    var banner = document.getElementById('modal-cli-status');
+    if (!banner) return;
+    if (d.ready) {
+      banner.style.display = 'none';
+    } else {
+      banner.style.display = 'block';
+      banner.innerHTML = d.issues.map(function(issue) {
+        return '<div style="margin-bottom:4px">⚠ ' + issue + '</div>';
+      }).join('');
+    }
+  } catch(e) { /* ignore */ }
 }
 
 async function checkModalToken() {

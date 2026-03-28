@@ -6,7 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.3.0] – 2026-03-28 (Latest)
+## [1.5.0] – 2026-03-28 (Latest)
+
+### 🛠️ Cloudflare Workers — List & Delete Fixes
+
+- **Fixed stale cleanup race condition**: Newly created workers are now stored in Redis with `status: "provisioning"`. The list endpoint respects a 120-second grace period so workers won't be incorrectly removed from the registry while the CF API is still propagating them.
+- **Provisioning state visible in UI**: Workers show a "◌ Provisioning…" badge immediately after creation and auto-refresh every 3 seconds until CF confirms the worker.
+- **Improved delete**: Optimistic UI update hides the worker immediately on successful DELETE; detailed CF API error messages (including 403 permission denied) are shown in a toast.
+- **Better error messages**: CF API errors now extract the human-readable `errors[].message` from the JSON response body, not the raw HTTP body.
+- **Workers sorted newest first**: Deployed workers list is now sorted by `created_on` descending.
+
+### 🔑 API Key Validation (all providers)
+
+- **New endpoint: `POST /cloudflare/validate`** — Checks three Cloudflare token permissions without side effects:
+  - `Workers Scripts Read` → listing and managing worker scripts
+  - `Workers AI Execute` → AI inference
+  - `Workers Subdomain` → enabling workers.dev routing
+  - Returns a permission matrix with HTTP status codes, notes, and recommendations.
+- **Auto-validate on key add**: When a Cloudflare key is added in Settings → API Keys, the UI automatically runs permission validation and displays a ✅/❌ matrix per permission.
+- **Validate button**: Existing Cloudflare keys can be re-validated anytime via the "Validate Permissions" button on the provider card.
+- **Generic test on add**: Other providers (Gemini, Groq, etc.) run the existing `POST /api/providers/{name}/test` probe immediately after a key is saved, showing latency and a sample response.
+
+### 🚀 Modal.com — One-Click vLLM Deploy
+
+- **New endpoints:**
+  - `POST /modal/deploy` — Start a background deployment (returns `deploy_id` immediately)
+  - `GET /modal/deploy` — List all deployments with status
+  - `GET /modal/deploy/{id}` — Deployment status + live log lines (poll every 2s)
+  - `DELETE /modal/deploy/{id}` — Stop Modal app + remove from gateway pool
+  - `POST /modal/deploy/account` — Save Modal account token (ak-id:secret)
+  - `GET /modal/deploy/account` — Check token status
+  - `GET /modal/deploy/models` — Curated catalog (10 models, T4→A100-80GB)
+  - `GET /modal/deploy/check` — Verify Modal CLI availability + token configured
+- **Pre-flight check**: `POST /modal/deploy` now validates `modal` CLI is in PATH before starting; returns a clear 400 error with install instructions if missing.
+- **CLI status banner**: Modal GPU tab shows a warning banner if `modal` CLI is not found or no account token is configured.
+- **Cost-optimised vLLM template**: `modal.Volume` weight caching, `@modal.concurrent`, `container_idle_timeout`, `gpu_memory_utilization=0.90`.
+- **Auto-registration**: On deployment success, the endpoint URL is automatically registered in the Modal endpoint pool and gateway key pool — no manual step.
+- **Live log streaming**: Deployment logs streamed to Redis; frontend polls `GET /modal/deploy/{id}` every 2s.
+
+### 📚 Documentation
+
+- Updated `CHANGELOG.md` with all v1.4 and v1.5 changes
+- `DEVELOPER.md` — new API endpoints documented
+- Cloudflare `cloudflare_manager.py` docstring updated with required token permissions
+- `modal_deploy.py` docstring documents all routes and deployment flow
+
+---
+
+## [1.4.0] – 2026-03-28
+
+### 🔧 Infrastructure & Provider Additions
+
+- Added **Modal.com** provider (`app/providers/modal_provider.py`) — serverless GPU inference
+- Added **Modal Manager** (`app/api/modal_manager.py`) — endpoint registration CRUD
+- Added **Modal Deploy** (`app/api/modal_deploy.py`) — vLLM one-click deploy backend
+- Added `modal>=0.73.0` to `requirements.txt`
+- `app/main.py` — registers `modal_router` and `modal_deploy_router`
+- `app/config.py` — added `MODAL_API_KEYS` setting
+- `app/key_management/key_pool.py` — added Modal provider limits
+- `app/middleware/auth.py` — exempt `/modal/*` paths
+
+### ☁️ Cloudflare Workers — Integration Fixes
+
+- `cloudflare_manager.py` rewritten with `async _get_credentials(request)` reading from Redis runtime keys
+- `create_worker` now enables workers.dev subdomain via `POST /scripts/{name}/subdomain`
+- Fetches actual `.workers.dev` URL from account subdomain endpoint
+- Auto-removes workers deleted externally (stale registry cleanup)
+- Hot-reloads `cloudflare` provider after worker creation
+
+### 🎨 Settings UI — CF Workers & Modal GPU tabs
+
+- CF Workers: model dropdown from live CF API, analytics button, URL display with copy, active/no-route badge
+- Modal GPU: endpoint registration, test, delete; vLLM deployment template
+- Models tab: fixed blank model names (was treating `{model, context_window}` dict as array)
+
+---
+
+## [1.3.0] – 2026-03-28
 
 ### ✨ Runtime API Key Management (no restart required)
 

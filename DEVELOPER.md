@@ -132,7 +132,7 @@ arbiter/
 │   │   ├── __init__.py
 │   │   └── schemas.py                # OpenAI-compatible Pydantic models
 │   │
-│   ├── providers/                    # Vendor adapters (8 total)
+│   ├── providers/                    # Vendor adapters (9 total)
 │   │   ├── __init__.py
 │   │   ├── base.py                   # BaseProvider abstract class
 │   │   ├── gemini.py                 # Google Gemini (4 models)
@@ -142,7 +142,8 @@ arbiter/
 │   │   ├── openrouter.py             # OpenRouter (7 free models)
 │   │   ├── cohere_provider.py        # Cohere (4 models)
 │   │   ├── huggingface.py            # HuggingFace (4 models)
-│   │   └── pollinations.py           # Pollinations.ai (3 free models)
+│   │   ├── pollinations.py           # Pollinations.ai (3 free models)
+│   │   └── modal_provider.py         # Modal.com vLLM GPU provider
 │   │
 │   ├── routing/                      # Routing logic
 │   │   ├── __init__.py
@@ -168,7 +169,9 @@ arbiter/
 │       ├── settings_api.py           # GET/POST/DELETE /settings/routing, /settings/cache
 │       ├── keys_api.py               # GET/POST/DELETE /api/providers/* (runtime key mgmt)
 │       ├── image_api.py              # POST /v1/images/generations (Pollinations)
-│       └── cloudflare_manager.py     # Workers AI management endpoints
+│       ├── cloudflare_manager.py     # Workers AI management + validate endpoint
+│       ├── modal_manager.py          # Modal account/model info endpoints
+│       └── modal_deploy.py           # Modal vLLM one-click deploy endpoints
 │
 ├── static/                            # Static assets (served at /static/)
 │   ├── arbiter.css                   # Shared design system (light/dark theme, components)
@@ -233,8 +236,62 @@ arbiter/
 |---|---|---|
 | `GET`    | `/cloudflare/models` | List available Workers AI text-generation models |
 | `POST`   | `/cloudflare/workers` | Create a Worker `{"name": "...", "model": "@cf/..."}` |
-| `GET`    | `/cloudflare/workers` | List deployed workers |
+| `GET`    | `/cloudflare/workers` | List deployed workers (includes provisioning state) |
 | `DELETE` | `/cloudflare/workers/{name}` | Delete a deployed worker |
+| `POST`   | `/cloudflare/validate` | Validate CF API token permissions — returns permission matrix |
+
+**`POST /cloudflare/validate` body (optional):**
+```json
+{ "key": "account_id|api_token" }
+```
+Omit body to validate the currently configured key. Response:
+```json
+{
+  "all_ok": false,
+  "checks": [
+    {"name": "Workers Scripts (list)", "permission": "Workers Scripts:Read", "ok": true, "required_for": "list/create/delete workers"},
+    {"name": "Workers AI (models)", "permission": "Workers AI:Execute", "ok": false, "http_status": 403, "note": "Token lacks AI Execute permission", "required_for": "Workers AI inference"},
+    {"name": "Workers Subdomain", "permission": "Workers Subdomain:Read", "ok": true, "required_for": "worker URL generation"}
+  ],
+  "recommendation": "Add Workers AI:Execute permission to your API token"
+}
+```
+
+### Modal.com GPU Deployment
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`    | `/modal/deploy/check` | Check Modal CLI availability and token configuration |
+| `POST`   | `/modal/deploy` | Start a vLLM deployment on Modal GPU |
+| `GET`    | `/modal/deploy/{deploy_id}` | Get deployment status and logs |
+| `GET`    | `/modal/deploy` | List all active deployments |
+| `DELETE` | `/modal/deploy/{deploy_id}` | Stop/delete a deployment |
+| `GET`    | `/modal/account` | Get Modal account info |
+| `GET`    | `/modal/models` | List available GPU models for deployment |
+
+**`GET /modal/deploy/check` response:**
+```json
+{
+  "cli_found": true,
+  "cli_path": "/usr/local/bin/modal",
+  "token_configured": true,
+  "token_id_masked": "ak-xxxx...****",
+  "ready": true,
+  "issues": []
+}
+```
+
+**`POST /modal/deploy` body:**
+```json
+{
+  "model_id": "meta-llama/Llama-3.1-8B-Instruct",
+  "gpu": "A10G",
+  "num_gpus": 1,
+  "max_model_len": 8192,
+  "deployment_name": "my-llm"
+}
+```
+Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2 seconds.
 
 ### UI & Monitoring
 
@@ -263,6 +320,9 @@ arbiter/
 | `arbiter:config:models:{provider}` | JSON | Custom model hierarchy |
 | `arbiter:runtime:keys:{provider}` | JSON | Runtime-added keys |
 | `arbiter:runtime:disabled:{provider}` | String | Provider disabled flag |
+| `arbiter:cf:workers:registry` | JSON | Cloudflare worker registry (provisioning state + metadata) |
+| `arbiter:modal:deploy:{id}:logs` | List | Streaming deploy log lines from `modal deploy` subprocess |
+| `arbiter:modal:deploy:{id}:status` | JSON | Deployment status: pending/running/failed/complete |
 
 ---
 

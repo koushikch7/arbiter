@@ -100,8 +100,23 @@ Try Gemini (large context required):
 ### ✅ Cloudflare Workers AI Manager
 - **Create Workers** — Provision new Workers AI instances from the gateway
 - **List Models** — View available Cloudflare models
-- **List/Delete Workers** — Manage deployed Workers
+- **List/Delete Workers** — Manage deployed Workers with provisioning-state awareness (120s grace period for CF API propagation)
+- **Permission validation** — `POST /cloudflare/validate` returns a full permission matrix showing which of Scripts Read / Workers AI Execute / Subdomain access your token has
 - **Admin endpoints** — `/cloudflare/workers/*` routes
+
+### ✅ Modal.com One-Click vLLM Deploy
+- **Deploy open-weight models** on Modal GPU infrastructure (A10G, A100, H100) directly from the Settings UI
+- **Live log streaming** — deploy logs streamed from the `modal deploy` subprocess in real time
+- **Cost-efficient** — uses `container_idle_timeout` so containers shut down when idle; `modal.Volume` caches model weights
+- **Pre-flight check** — `GET /modal/deploy/check` verifies CLI installation and token before attempting a deploy
+- **Gateway integration** — deployed endpoints are registered as a provider and usable via `/v1/chat/completions`
+- **Admin endpoints** — `/modal/deploy/*` routes
+
+### ✅ API Key Validation (all providers)
+- **Auto-validation on key add** — every key is tested immediately after being saved to the gateway
+- **Cloudflare permission matrix** — shows which of the three required permissions (Scripts Read, Workers AI Execute, Subdomain) are available for your token
+- **Other providers** — latency probe via `POST /api/providers/{name}/test`, reports pass/fail and round-trip time
+- **Manual validate button** — re-test any configured Cloudflare key on demand
 
 ### ✅ In-Memory Redis Fallback
 Gateway starts successfully **even without Redis**:
@@ -124,6 +139,7 @@ Gateway starts successfully **even without Redis**:
                   │  /dashboard · /api-docs · /settings │
                   │  /api/providers/* (key mgmt)        │
                   │  /cloudflare/workers/* (mgr)        │
+                  │  /modal/deploy/* (GPU deploy)       │
                   └─────────────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
@@ -138,7 +154,7 @@ Gateway starts successfully **even without Redis**:
 ┌──────────────────────────────────────────────────────────┐
 │  Gemini │ Groq │ Cloudflare │ Cerebras │ OpenRouter    │
 │  Provider  Adapter  Workers AI  Inference  + Cohere     │
-│        HuggingFace  │  Pollinations                     │
+│        HuggingFace  │  Pollinations  │  Modal vLLM      │
 └──────────────────────────────────────────────────────────┘
     │
     ▼

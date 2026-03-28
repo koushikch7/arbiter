@@ -588,12 +588,61 @@ async def list_deployments(request: Request) -> JSONResponse:
     return JSONResponse(content={"deployments": list(deployments.values())})
 
 
+@router.get("/check", summary="Check Modal CLI availability")
+async def check_modal_cli(request: Request) -> JSONResponse:
+    """
+    Verify that the Modal CLI is installed and account token is configured.
+
+    Returns:
+    - `cli_found`: True if `modal` binary is in PATH
+    - `cli_path`: full path to the modal binary
+    - `token_configured`: True if an account token is stored
+    """
+    import shutil
+    cli_path = shutil.which("modal")
+    redis = request.app.state.redis
+    token_raw = await redis.get(_KEY_TOKEN)
+    token_ok = False
+    token_masked = None
+    if token_raw:
+        try:
+            tid, _ = _parse_token(token_raw)
+            token_ok = True
+            token_masked = tid[:8] + "..." if len(tid) > 8 else tid
+        except Exception:
+            pass
+    return JSONResponse(content={
+        "cli_found":        bool(cli_path),
+        "cli_path":         cli_path or None,
+        "token_configured": token_ok,
+        "token_id_masked":  token_masked,
+        "ready":            bool(cli_path) and token_ok,
+        "issues": (
+            (["Modal CLI not found — run: pip install modal && modal setup"] if not cli_path else []) +
+            (["No account token — set it in Settings → Modal GPU tab"] if not token_ok else [])
+        ),
+    })
+
+
 @router.post("", summary="Deploy a vLLM model on Modal", status_code=202)
 async def start_deployment(body: DeployBody, request: Request) -> JSONResponse:
     """
     Generate and deploy an optimised vLLM inference script on Modal.
     Returns immediately with a deploy_id — poll GET /modal/deploy/{id} for status.
+
+    Requires:
+    - Modal CLI installed (`pip install modal && modal setup`)
+    - Account token saved via POST /modal/deploy/account
     """
+    import shutil
+    # Pre-flight: check modal CLI is available
+    if not shutil.which("modal"):
+        raise HTTPException(
+            400,
+            "Modal CLI not found in PATH. Install it: pip install modal && modal setup\n"
+            "Then set your token in Settings → Modal GPU tab."
+        )
+
     redis = request.app.state.redis
 
     # Get token

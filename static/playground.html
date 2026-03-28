@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Playground — Arbiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <script src="/static/arbiter.js"></script>
+  <style>
+    .pg-layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; height: calc(100vh - 120px); }
+    .pg-sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+    .pg-chat   { display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+
+    /* Config panel */
+    .config-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .config-card h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.05em; color: var(--text-muted); margin: 0 0 10px; }
+    .config-row { margin-bottom: 10px; }
+    .config-row label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .config-row select, .config-row input[type=number], .config-row input[type=range] {
+      width: 100%; font-size: 12px; padding: 5px 8px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
+      outline: none;
+    }
+    .config-row select:focus, .config-row input:focus { border-color: var(--accent); }
+    .temp-row { display: flex; align-items: center; gap: 8px; }
+    .temp-row input[type=range] { flex: 1; padding: 0; }
+    .temp-val { font-size: 12px; font-family: 'JetBrains Mono'; color: var(--accent); min-width: 30px; }
+
+    /* Endpoint info */
+    .ep-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+    .ep-badge.cfworker  { background: rgba(244,129,32,.12); color: #f48120; }
+    .ep-badge.modal     { background: rgba(58,163,242,.12); color: #3aa3f2; }
+    .ep-badge.gateway   { background: rgba(46,204,113,.12); color: #2ecc71; }
+    .ep-badge.direct    { background: rgba(188,40,237,.12); color: #bc28ed; }
+    .ep-url { font-size: 10px; font-family: 'JetBrains Mono'; color: var(--text-muted); word-break: break-all; margin-top: 4px; }
+
+    /* Chat messages */
+    .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .chat-msg { display: flex; gap: 10px; animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    .chat-msg.user { flex-direction: row-reverse; }
+    .msg-bubble {
+      max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .chat-msg.user .msg-bubble { background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px; }
+    .chat-msg.assistant .msg-bubble { background: var(--surface-2); color: var(--text-primary); border-radius: 12px 12px 12px 2px; }
+    .chat-msg.system .msg-bubble { background: rgba(240,185,11,.08); color: var(--text-muted); font-size: 11px; border-radius: 8px; font-style: italic; }
+    .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; text-align: right; }
+    .chat-msg.user .msg-meta { text-align: left; }
+    .msg-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 2px; }
+    .msg-avatar.user-av { background: var(--accent); color: #fff; }
+    .msg-avatar.ai-av { background: var(--surface-3); }
+
+    /* Input bar */
+    .chat-input-bar { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; }
+    .chat-input-bar textarea {
+      flex: 1; resize: none; min-height: 40px; max-height: 140px; padding: 8px 12px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--text-primary); font-size: 13px; font-family: inherit; outline: none;
+      line-height: 1.5; overflow-y: auto;
+    }
+    .chat-input-bar textarea:focus { border-color: var(--accent); }
+    .send-btn {
+      padding: 10px 16px; background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+      display: flex; align-items: center; gap: 6px; height: 40px;
+    }
+    .send-btn:hover { opacity: .9; }
+    .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* Thinking indicator */
+    .thinking-dots span { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin: 0 2px; animation: dot 1.2s ease-in-out infinite; }
+    .thinking-dots span:nth-child(2) { animation-delay: .2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes dot { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+
+    /* Latency badge */
+    .latency-badge { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 10px; font-family: 'JetBrains Mono'; background: var(--surface-3); color: var(--text-muted); margin-left: 6px; }
+
+    /* Empty state */
+    .chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); padding: 32px; text-align: center; }
+    .chat-empty svg { opacity: .3; }
+    .chat-empty p { font-size: 13px; margin: 0; }
+    .chat-empty small { font-size: 11px; }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Sidebar nav -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">A</div>
+      <span class="sidebar-brand-name">Arbiter</span>
+      <span class="sidebar-brand-ver">v1.1</span>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="sidebar-section">Main</span>
+      <a href="/dashboard" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="/api-docs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        API Documentation
+      </a>
+      <a href="/settings" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+      <a href="/settings" onclick="localStorage.setItem('arbiter-settings-tab','images')" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Image Generation
+      </a>
+      <a href="/playground" class="nav-item active">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Playground
+      </a>
+      <a href="/logs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
+        Logs
+      </a>
+      <div class="sidebar-divider"></div>
+      <span class="sidebar-section">Developer</span>
+      <a href="/docs" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        Swagger UI
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+      <a href="/redoc" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        ReDoc
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="sidebar-toggle" onclick="toggleSidebar()">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="topbar-title">Playground</h1>
+      <div class="topbar-actions">
+        <button class="btn btn-sm btn-ghost" onclick="clearChat()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          Clear
+        </button>
+        <button class="btn btn-sm btn-ghost" onclick="loadEndpoints()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div class="content-inner" style="padding-bottom:0">
+      <div class="pg-layout">
+
+        <!-- Left config panel -->
+        <div class="pg-sidebar">
+
+          <div class="config-card">
+            <h4>Endpoint</h4>
+            <div class="config-row">
+              <label>Provider / Endpoint</label>
+              <select id="ep-select" onchange="onEndpointChange()">
+                <option value="">Loading…</option>
+              </select>
+            </div>
+            <div id="ep-info" style="display:none">
+              <div id="ep-type-badge"></div>
+              <div class="ep-url" id="ep-url-display"></div>
+            </div>
+          </div>
+
+          <div class="config-card">
+            <h4>Parameters</h4>
+            <div class="config-row">
+              <label>System prompt</label>
+              <textarea id="system-prompt" rows="3" style="width:100%;resize:vertical;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary);font-family:inherit" placeholder="You are a helpful assistant."></textarea>
+            </div>
+            <div class="config-row">
+              <label>Temperature <span class="temp-val" id="temp-val">0.7</span></label>
+              <div class="temp-row">
+                <input type="range" id="temperature" min="0" max="2" step="0.05" value="0.7" oninput="document.getElementById('temp-val').textContent=parseFloat(this.value).toFixed(2)">
+              </div>
+            </div>
+            <div class="config-row">
+              <label>Max tokens</label>
+              <input type="number" id="max-tokens" value="512" min="1" max="8192" step="1">
+            </div>
+          </div>
+
+          <div class="config-card" id="system-info-card" style="display:none">
+            <h4>Current Endpoint</h4>
+            <div id="system-info-body" style="font-size:11px;color:var(--text-muted);line-height:1.8"></div>
+          </div>
+
+        </div><!-- pg-sidebar -->
+
+        <!-- Chat area -->
+        <div class="pg-chat">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-empty" id="chat-empty">
+              <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <p>Select an endpoint and start chatting</p>
+              <small>Supports CF Workers, Modal deployments, and all gateway providers</small>
+            </div>
+          </div>
+          <div class="chat-input-bar">
+            <textarea id="chat-input" placeholder="Type a message… (Shift+Enter for new line, Enter to send)"
+              onkeydown="handleKey(event)" rows="1" oninput="autoResize(this)"></textarea>
+            <button class="send-btn" id="send-btn" onclick="sendMessage()">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Send
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+// ── State ─────────────────────────────────────────────────────────────────────
+var _messages = [];         // {role, content}
+var _endpoints = [];        // {id, label, type, url, model, vendor, note}
+var _sending   = false;
+
+// ── Endpoint loading ──────────────────────────────────────────────────────────
+async function loadEndpoints() {
+  _endpoints = [];
+  var sel = document.getElementById('ep-select');
+  sel.innerHTML = '';
+
+  try {
+    // 1. Gateway providers (active only)
+    var r = await fetch('/api/providers', {cache:'no-store'});
+    var providers = await r.json();
+    var activeProviders = providers.filter(function(p) { return p.configured && !p.disabled; });
+    if (activeProviders.length) {
+      var og = document.createElement('optgroup');
+      og.label = 'Gateway Providers';
+      activeProviders.forEach(function(p) {
+        var id = 'gateway:' + p.name;
+        _endpoints.push({
+          id: id, label: p.label, type: 'gateway',
+          vendor: p.name, model: (p.models||[])[0] || '',
+          note: p.key_count + ' key(s)',
+        });
+        var opt = document.createElement('option');
+        opt.value = id; opt.textContent = p.label;
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
+    }
+
+    // 2. CF Workers (active ones with URL)
+    try {
+      var r2 = await fetch('/cloudflare/workers', {cache:'no-store'});
+      var cfData = await r2.json();
+      var workers = (cfData.result || []).filter(function(w) {
+        return w.status === 'active' && w.worker_url;
+      });
+      if (workers.length) {
+        var og2 = document.createElement('optgroup');
+        og2.label = 'Cloudflare Workers';
+        workers.forEach(function(w) {
+          var id = 'cfworker:' + w.name;
+          _endpoints.push({
+            id: id, label: 'CF: ' + w.name, type: 'cfworker',
+            url: w.worker_url, model: 'cfworker/' + w.name,
+            cf_model: w.model, note: w.model,
+          });
+          var opt = document.createElement('option');
+          opt.value = id; opt.textContent = 'CF Worker: ' + w.name;
+          og2.appendChild(opt);
+        });
+        sel.appendChild(og2);
+      }
+    } catch(e) {}
+
+    // 3. Modal deployments (active)
+    try {
+      var r3 = await fetch('/modal/deploy', {cache:'no-store'});
+      var mData = await r3.json();
+      var deps = (mData.deployments || []).filter(function(d) {
+        return d.status === 'active' && d.url;
+      });
+      if (deps.length) {
+        var og3 = document.createElement('optgroup');
+        og3.label = 'Modal Deployments';
+        deps.forEach(function(d) {
+          var id = 'modal:' + d.deploy_id;
+          _endpoints.push({
+            id: id, label: 'Modal: ' + d.name, type: 'modal',
+            url: d.url, model: d.model_id, vendor: 'modal',
+            note: d.gpu + ' | ' + d.model_id,
+          });
+          var opt = document.createElement('option');
+          opt.value = id; opt.textContent = 'Modal: ' + d.name + ' (' + d.model_id.split('/').pop() + ')';
+          og3.appendChild(opt);
+        });
+        sel.appendChild(og3);
+      }
+    } catch(e) {}
+
+    // 4. Registered Modal endpoints
+    try {
+      var r4 = await fetch('/modal/endpoints', {cache:'no-store'});
+      var epData = await r4.json();
+      var regEps = (Array.isArray(epData) ? epData : []).filter(function(e) { return e.url; });
+      if (regEps.length) {
+        var og4 = document.createElement('optgroup');
+        og4.label = 'Modal Endpoints (registered)';
+        regEps.forEach(function(e) {
+          var id = 'modalep:' + e.name;
+          _endpoints.push({
+            id: id, label: 'Modal EP: ' + e.name, type: 'modal',
+            url: e.url, model: (e.models||[])[0] || 'default',
+            note: e.url,
+          });
+          var opt = document.createElement('option');
+          opt.value = id; opt.textContent = 'Modal Endpoint: ' + e.name;
+          og4.appendChild(opt);
+        });
+        sel.appendChild(og4);
+      }
+    } catch(e) {}
+
+  } catch(e) {
+    sel.innerHTML = '<option value="">Error loading endpoints</option>';
+    return;
+  }
+
+  if (!sel.options.length) {
+    sel.innerHTML = '<option value="">No active endpoints found</option>';
+    return;
+  }
+
+  // Restore last selection
+  var last = localStorage.getItem('pg-endpoint');
+  if (last) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === last) { sel.selectedIndex = i; break; }
+    }
+  }
+  onEndpointChange();
+}
+
+function onEndpointChange() {
+  var sel = document.getElementById('ep-select');
+  var val = sel.value;
+  localStorage.setItem('pg-endpoint', val);
+
+  var ep = _endpoints.find(function(e) { return e.id === val; });
+  var infoEl = document.getElementById('ep-info');
+  var badgeEl = document.getElementById('ep-type-badge');
+  var urlEl   = document.getElementById('ep-url-display');
+  var siCard  = document.getElementById('system-info-card');
+  var siBody  = document.getElementById('system-info-body');
+
+  if (!ep) { infoEl.style.display = 'none'; siCard.style.display = 'none'; return; }
+  infoEl.style.display = 'block';
+
+  var typeLabel = {gateway:'Gateway', cfworker:'CF Worker', modal:'Modal', direct:'Direct'};
+  badgeEl.innerHTML = '<span class="ep-badge ' + ep.type + '">' + (typeLabel[ep.type]||ep.type) + '</span>';
+  urlEl.textContent = ep.url || ('Gateway /' + (ep.vendor||'') + ' provider');
+
+  siCard.style.display = 'block';
+  var lines = [];
+  if (ep.model)    lines.push('<b>Model:</b> ' + escHtml(ep.model));
+  if (ep.cf_model) lines.push('<b>CF Model:</b> ' + escHtml(ep.cf_model));
+  if (ep.note)     lines.push('<b>Info:</b> ' + escHtml(ep.note));
+  lines.push('<b>Route:</b> ' + (ep.url ? 'Direct HTTP' : 'Via Arbiter Gateway'));
+  siBody.innerHTML = lines.join('<br>');
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+async function sendMessage() {
+  if (_sending) return;
+  var input   = document.getElementById('chat-input');
+  var content = input.value.trim();
+  if (!content) return;
+
+  var sel = document.getElementById('ep-select');
+  var ep  = _endpoints.find(function(e) { return e.id === sel.value; });
+  if (!ep) { showToast('Select an endpoint first', 'error'); return; }
+
+  _sending = true;
+  document.getElementById('send-btn').disabled = true;
+  input.value = '';
+  autoResize(input);
+
+  // Add user message
+  _messages.push({role:'user', content:content});
+  renderMessages();
+  appendThinking();
+
+  var systemPrompt = document.getElementById('system-prompt').value.trim();
+  var temperature  = parseFloat(document.getElementById('temperature').value);
+  var maxTokens    = parseInt(document.getElementById('max-tokens').value, 10);
+
+  var msgs = [];
+  if (systemPrompt) msgs.push({role:'system', content:systemPrompt});
+  msgs = msgs.concat(_messages);
+
+  var t0 = performance.now();
+  try {
+    var result = await _callEndpoint(ep, msgs, temperature, maxTokens);
+    var latency = Math.round(performance.now() - t0);
+    removeThinking();
+    _messages.push({role:'assistant', content: result.text});
+    renderMessages(result.text, latency, result.model);
+  } catch(err) {
+    removeThinking();
+    var errMsg = '⚠️ Error: ' + (err.message || String(err));
+    _messages.push({role:'assistant', content: errMsg});
+    renderMessages(errMsg, null, null);
+    showToast(err.message || String(err), 'error');
+  }
+
+  _sending = false;
+  document.getElementById('send-btn').disabled = false;
+  input.focus();
+}
+
+async function _callEndpoint(ep, messages, temperature, maxTokens) {
+  var payload = { messages: messages, temperature: temperature, max_tokens: maxTokens };
+
+  if (ep.type === 'cfworker') {
+    // Route via gateway using cfworker/ model prefix
+    payload.model = ep.model;
+    var r = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
+      throw new Error(errData.detail || r.statusText);
+    }
+    var data = await r.json();
+    return {
+      text:  data.choices[0].message.content,
+      model: data.model || ep.model,
+    };
+
+  } else if (ep.type === 'modal' && ep.url) {
+    // Call Modal endpoint directly
+    var r = await fetch(ep.url.replace(/\/$/, '') + '/v1/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({}, payload, {model: ep.model})),
+    });
+    if (!r.ok) {
+      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
+      throw new Error('Modal: ' + (errData.detail || errData.error || r.statusText));
+    }
+    var data = await r.json();
+    return {
+      text:  data.choices[0].message.content,
+      model: data.model || ep.model,
+    };
+
+  } else {
+    // Gateway routing (standard providers + modal via gateway)
+    payload.model = ep.model;
+    var qs = ep.vendor ? '?vendor=' + encodeURIComponent(ep.vendor) : '';
+    var r = await fetch('/v1/chat/completions' + qs, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
+      throw new Error(errData.detail || r.statusText);
+    }
+    var data = await r.json();
+    return {
+      text:  data.choices[0].message.content,
+      model: data.model || ep.model,
+    };
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderMessages(lastAssistantText, latencyMs, modelUsed) {
+  var container = document.getElementById('chat-messages');
+  var empty     = document.getElementById('chat-empty');
+
+  if (_messages.length === 0) {
+    empty.style.display = 'flex';
+    container.querySelectorAll('.chat-msg').forEach(function(el) { el.remove(); });
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Rebuild all messages
+  container.querySelectorAll('.chat-msg, .msg-detail').forEach(function(el) { el.remove(); });
+
+  _messages.forEach(function(msg, idx) {
+    var isUser = msg.role === 'user';
+    var isLast = idx === _messages.length - 1;
+    var div = document.createElement('div');
+    div.className = 'chat-msg ' + msg.role;
+
+    var avatar = isUser
+      ? '<div class="msg-avatar user-av">U</div>'
+      : '<div class="msg-avatar ai-av">🤖</div>';
+
+    var metaHtml = '';
+    if (!isUser && isLast && latencyMs != null) {
+      metaHtml = '<div class="msg-meta">' +
+        (modelUsed ? escHtml(modelUsed) + ' ' : '') +
+        '<span class="latency-badge">' + latencyMs + 'ms</span></div>';
+    }
+
+    div.innerHTML = avatar +
+      '<div><div class="msg-bubble">' + escHtml(msg.content) + '</div>' + metaHtml + '</div>';
+    container.appendChild(div);
+  });
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendThinking() {
+  var container = document.getElementById('chat-messages');
+  var div = document.createElement('div');
+  div.className = 'chat-msg assistant';
+  div.id = 'thinking-msg';
+  div.innerHTML = '<div class="msg-avatar ai-av">🤖</div><div class="msg-bubble"><div class="thinking-dots"><span></span><span></span><span></span></div></div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeThinking() {
+  var el = document.getElementById('thinking-msg');
+  if (el) el.remove();
+}
+
+function clearChat() {
+  _messages = [];
+  renderMessages();
+  document.getElementById('chat-empty').style.display = 'flex';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  initTheme();
+  loadEndpoints();
+});
+</script>
+</body>
+</html>

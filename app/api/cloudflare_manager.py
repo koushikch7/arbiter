@@ -38,6 +38,7 @@ router = APIRouter(prefix="/cloudflare", tags=["Cloudflare Workers AI"])
 
 _CF_API        = "https://api.cloudflare.com/client/v4"
 _REDIS_WORKERS = "arbiter:cf:workers"          # JSON dict  name → {url,model,created_on,...}
+_REDIS_DELETING_PFX = "arbiter:cf:deleting:"   # name → "1"  (TTL=120s)
 
 # Grace period: newly created workers won't be cleaned up for this many seconds.
 # CF API propagation can take up to ~30 seconds.
@@ -269,11 +270,19 @@ async def list_workers(request: Request) -> JSONResponse:
     registry = await _load_worker_registry(redis)
 
     cf_names = {w.get("id") or w.get("script_name") or w.get("name", "") for w in cf_list}
+    # Collect names that are currently being deleted (CF propagation delay)
+    deleting = set()
+    for name_candidate in list(cf_names):
+        if await redis.get(f"{_REDIS_DELETING_PFX}{name_candidate}"):
+            deleting.add(name_candidate)
+    cf_names -= deleting
 
     # Merge CF live data with local registry metadata
     merged = []
     for w in cf_list:
         name = w.get("id") or w.get("script_name") or w.get("name", "")
+        if name in deleting:
+            continue
         meta = registry.get(name, {})
         merged.append({
             "name":              name,
@@ -470,6 +479,8 @@ async def delete_worker(script_name: str, request: Request) -> JSONResponse:
     registry = await _load_worker_registry(redis)
     registry.pop(script_name, None)
     await _save_worker_registry(redis, registry)
+    # Mark as deleting so list_workers skips it during CF propagation delay (up to 2 min)
+    await redis.set(f"{_REDIS_DELETING_PFX}{script_name}", "1", ex=120)
 
     return JSONResponse(content={"success": True, "deleted": script_name})
 

@@ -65,6 +65,17 @@ async def settings_page() -> HTMLResponse:
         return HTMLResponse(content="<h1>Settings page not found</h1>", status_code=404)
 
 
+@router.get("/playground", response_class=HTMLResponse, summary="Chat playground")
+async def playground_page() -> HTMLResponse:
+    """Serve the interactive chat playground."""
+    path = os.path.join(_STATIC_DIR, "playground.html")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE_HEADERS)
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Playground page not found</h1>", status_code=404)
+
+
 @router.get("/dashboard/stats", summary="Dashboard stats JSON")
 async def dashboard_stats(request: Request) -> JSONResponse:
     """Return JSON stats for the dashboard."""

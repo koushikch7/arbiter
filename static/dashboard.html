@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arbiter – Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5' },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { background: #0f172a; }
+    .card  { background: #1e293b; border: 1px solid #334155; }
+    .badge-green  { background: #14532d; color: #4ade80; }
+    .badge-yellow { background: #713f12; color: #facc15; }
+    .badge-red    { background: #7f1d1d; color: #f87171; }
+    .badge-gray   { background: #1e293b; color: #94a3b8; }
+    .stat-num { font-size: 2rem; font-weight: 700; color: #e2e8f0; }
+    .progress-bar { height: 6px; border-radius: 9999px; background: #334155; }
+    .progress-fill { height: 6px; border-radius: 9999px; transition: width 0.4s ease; }
+    @keyframes pulse-dot { 0%,100%{opacity:1}50%{opacity:.4} }
+    .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+  </style>
+</head>
+<body class="dark min-h-screen text-slate-300 font-sans">
+
+  <!-- Top Nav -->
+  <nav class="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">G</div>
+      <span class="text-slate-100 font-semibold text-lg">Arbiter</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <div id="status-dot" class="flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-slate-500 pulse-dot" id="dot"></span>
+        <span id="status-label" class="text-sm">Connecting…</span>
+      </div>
+      <span class="text-xs text-slate-500" id="last-update">–</span>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+    <!-- Top KPI cards -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="card rounded-xl p-5">
+        <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Total Requests</p>
+        <div class="stat-num" id="kpi-total">–</div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Success Rate</p>
+        <div class="stat-num" id="kpi-success-rate">–</div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Cache Hit Rate</p>
+        <div class="stat-num" id="kpi-cache-rate">–</div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Cached Responses</p>
+        <div class="stat-num" id="kpi-cached">–</div>
+      </div>
+    </section>
+
+    <!-- Request / Cache breakdown -->
+    <section class="grid md:grid-cols-2 gap-4">
+      <div class="card rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-slate-200 mb-4">Request Breakdown</h2>
+        <div class="space-y-3" id="req-breakdown">
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Total</span><span id="rb-total" class="text-slate-200 font-medium">–</span></div>
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Successful</span><span id="rb-success" class="text-green-400 font-medium">–</span></div>
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Failed</span><span id="rb-failed" class="text-red-400 font-medium">–</span></div>
+        </div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-slate-200 mb-4">Cache Statistics</h2>
+        <div class="space-y-3">
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Hits</span><span id="cache-hits" class="text-green-400 font-medium">–</span></div>
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Misses</span><span id="cache-misses" class="text-yellow-400 font-medium">–</span></div>
+          <div class="flex justify-between text-sm"><span class="text-slate-400">Stored Responses</span><span id="cache-stored" class="text-slate-200 font-medium">–</span></div>
+          <div class="mt-2">
+            <div class="flex justify-between text-xs mb-1"><span class="text-slate-500">Hit rate</span><span id="cache-rate-label" class="text-slate-400">0%</span></div>
+            <div class="progress-bar"><div class="progress-fill bg-indigo-500" id="cache-rate-bar" style="width:0%"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Provider table -->
+    <section class="card rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-200">Provider Status</h2>
+        <span class="text-xs text-slate-500">Auto-refreshes every 10s</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-slate-500 uppercase tracking-widest border-b border-slate-700">
+              <th class="px-5 py-3 text-left">Provider</th>
+              <th class="px-5 py-3 text-left">Status</th>
+              <th class="px-5 py-3 text-left">Accounts (active/total)</th>
+              <th class="px-5 py-3 text-left">Requests</th>
+              <th class="px-5 py-3 text-left">Success Rate</th>
+              <th class="px-5 py-3 text-left">Models</th>
+            </tr>
+          </thead>
+          <tbody id="provider-rows">
+            <tr><td colspan="6" class="px-5 py-6 text-center text-slate-500">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Key details per provider -->
+    <section id="key-details-section" class="space-y-4"></section>
+
+  </main>
+
+  <footer class="text-center text-xs text-slate-600 py-6">
+    Arbiter &bull; Built with FastAPI &bull; <span id="footer-time"></span>
+  </footer>
+
+  <script>
+    // ── helpers ───────────────────────────────────────────────────────────────
+    function badge(status) {
+      const map = {
+        healthy:     ['badge-green',  '● Healthy'],
+        degraded:    ['badge-yellow', '◐ Degraded'],
+        unavailable: ['badge-red',    '○ Unavailable'],
+      };
+      const [cls, label] = map[status] || ['badge-gray', '? Unknown'];
+      return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}">${label}</span>`;
+    }
+
+    function keyBadge(status) {
+      const map = {
+        active:    'badge-green',
+        limited:   'badge-yellow',
+        failed:    'badge-red',
+        exhausted: 'badge-red',
+      };
+      return map[status] || 'badge-gray';
+    }
+
+    function scoreBar(score) {
+      // score is -1 to 1; treat ≤0 as 0%
+      const pct = Math.max(0, Math.round(score * 100));
+      const color = pct >= 60 ? 'bg-green-500' : pct >= 30 ? 'bg-yellow-500' : 'bg-red-500';
+      return `
+        <div class="flex items-center gap-2">
+          <div class="w-16 progress-bar">
+            <div class="progress-fill ${color}" style="width:${pct}%"></div>
+          </div>
+          <span class="text-xs ${pct >= 60 ? 'text-green-400' : pct >= 30 ? 'text-yellow-400' : 'text-red-400'}">${pct}%</span>
+        </div>`;
+    }
+
+    function pct(used, limit) {
+      if (!limit) return 0;
+      return Math.min(100, Math.round(used / limit * 100));
+    }
+
+    function barColor(p) {
+      if (p < 50) return 'bg-green-500';
+      if (p < 80) return 'bg-yellow-500';
+      return 'bg-red-500';
+    }
+
+    function miniBar(used, limit) {
+      const p = pct(used, limit);
+      const color = barColor(p);
+      return `
+        <div class="w-20">
+          <div class="flex justify-between text-xs mb-0.5">
+            <span>${used}</span><span class="text-slate-500">${limit}</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill ${color}" style="width:${p}%"></div></div>
+        </div>`;
+    }
+
+    // ── fetch & render ────────────────────────────────────────────────────────
+    async function fetchStats() {
+      try {
+        const res = await fetch('/dashboard/stats');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        render(data);
+        setStatus('online');
+      } catch (e) {
+        setStatus('offline');
+        console.error('Stats fetch error:', e);
+      }
+    }
+
+    function setStatus(state) {
+      const dot   = document.getElementById('dot');
+      const label = document.getElementById('status-label');
+      if (state === 'online') {
+        dot.className   = 'w-2.5 h-2.5 rounded-full bg-green-400 pulse-dot';
+        label.textContent = 'Online';
+        label.className   = 'text-sm text-green-400';
+      } else {
+        dot.className   = 'w-2.5 h-2.5 rounded-full bg-red-500 pulse-dot';
+        label.textContent = 'Offline';
+        label.className   = 'text-sm text-red-400';
+      }
+      document.getElementById('last-update').textContent =
+        'Updated ' + new Date().toLocaleTimeString();
+      document.getElementById('footer-time').textContent =
+        new Date().toLocaleString();
+    }
+
+    function render(data) {
+      const req   = data.requests   || {};
+      const cache = data.cache      || {};
+      const provs = data.providers  || [];
+
+      // KPI cards
+      document.getElementById('kpi-total').textContent        = (req.total ?? 0).toLocaleString();
+      document.getElementById('kpi-success-rate').textContent = (req.success_rate ?? 0) + '%';
+      document.getElementById('kpi-cache-rate').textContent   = (cache.hit_rate   ?? 0) + '%';
+      document.getElementById('kpi-cached').textContent       = (cache.cached_responses ?? 0).toLocaleString();
+
+      // Request breakdown
+      document.getElementById('rb-total').textContent   = (req.total   ?? 0).toLocaleString();
+      document.getElementById('rb-success').textContent = (req.success ?? 0).toLocaleString();
+      document.getElementById('rb-failed').textContent  = (req.failed  ?? 0).toLocaleString();
+
+      // Cache
+      document.getElementById('cache-hits').textContent   = (cache.hits   ?? 0).toLocaleString();
+      document.getElementById('cache-misses').textContent = (cache.misses ?? 0).toLocaleString();
+      document.getElementById('cache-stored').textContent = (cache.cached_responses ?? 0).toLocaleString();
+      const hr = cache.hit_rate ?? 0;
+      document.getElementById('cache-rate-label').textContent = hr + '%';
+      document.getElementById('cache-rate-bar').style.width   = hr + '%';
+
+      // Provider table
+      const tbody = document.getElementById('provider-rows');
+      if (!provs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-6 text-center text-slate-500">No providers configured</td></tr>';
+      } else {
+        tbody.innerHTML = provs.map(p => `
+          <tr class="border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
+            <td class="px-5 py-4 font-medium text-slate-200 capitalize">${p.name}</td>
+            <td class="px-5 py-4">${badge(p.status)}</td>
+            <td class="px-5 py-4">
+              <span class="text-slate-200 font-medium">${p.active_keys}</span>
+              <span class="text-slate-500"> / ${p.total_keys}</span>
+            </td>
+            <td class="px-5 py-4">
+              <span class="text-slate-200">${(p.requests?.total ?? 0).toLocaleString()}</span>
+            </td>
+            <td class="px-5 py-4">
+              <span class="${p.success_rate >= 90 ? 'text-green-400' : p.success_rate >= 50 ? 'text-yellow-400' : 'text-red-400'} font-medium">
+                ${p.success_rate}%
+              </span>
+            </td>
+            <td class="px-5 py-4">
+              <div class="flex flex-wrap gap-1">
+                ${(p.models || []).slice(0, 3).map(m =>
+                  `<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">${m}</span>`
+                ).join('')}
+                ${(p.models || []).length > 3
+                  ? `<span class="text-xs text-slate-500">+${p.models.length - 3} more</span>`
+                  : ''}
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      // Key detail cards
+      const section = document.getElementById('key-details-section');
+      if (!provs.length) { section.innerHTML = ''; return; }
+
+      section.innerHTML = `
+        <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-widest">Key-Level Details</h2>
+        ${provs.map(p => `
+          <div class="card rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 flex items-center gap-3">
+              <span class="font-semibold text-slate-200 capitalize">${p.name}</span>
+              ${badge(p.status)}
+            </div>
+            ${!p.keys || !p.keys.length
+              ? '<p class="px-5 py-4 text-slate-500 text-sm">No keys configured</p>'
+              : `<div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-xs text-slate-500 uppercase border-b border-slate-700">
+                        <th class="px-5 py-2 text-left">Account (hash)</th>
+                        <th class="px-5 py-2 text-left">Status</th>
+                        <th class="px-5 py-2 text-left">Avail. Score</th>
+                        <th class="px-5 py-2 text-left">RPM</th>
+                        <th class="px-5 py-2 text-left">TPM</th>
+                        <th class="px-5 py-2 text-left">Daily tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${p.keys.map(k => `
+                        <tr class="border-b border-slate-800">
+                          <td class="px-5 py-2 font-mono text-slate-400 text-xs">${k.hash}</td>
+                          <td class="px-5 py-2">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${keyBadge(k.status)}">
+                              ${k.status}
+                            </span>
+                          </td>
+                          <td class="px-5 py-2">${scoreBar(k.score ?? 0)}</td>
+                          <td class="px-5 py-2">${miniBar(k.rpm.used, k.rpm.limit)}</td>
+                          <td class="px-5 py-2">${miniBar(k.tpm.used, k.tpm.limit)}</td>
+                          <td class="px-5 py-2">${miniBar(k.daily.used, k.daily.limit)}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>`
+            }
+          </div>
+        `).join('')}
+      `;
+    }
+
+    // ── bootstrap ─────────────────────────────────────────────────────────────
+    fetchStats();
+    setInterval(fetchStats, 10_000);
+  </script>
+</body>
+</html>

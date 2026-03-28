@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arbiter – API Docs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5' },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { background: #0f172a; }
+    .card  { background: #1e293b; border: 1px solid #334155; }
+    .code-block { background: #0f172a; border: 1px solid #334155; font-family: 'Courier New', monospace; font-size: 0.8rem; }
+    .tab-btn { transition: all 0.2s; }
+    .tab-btn.active { background: #4f46e5; color: #fff; }
+    .tab-btn:not(.active) { color: #94a3b8; }
+    .tab-btn:not(.active):hover { background: #1e293b; color: #e2e8f0; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .method-badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+    .method-get    { background: #065f46; color: #34d399; }
+    .method-post   { background: #1e3a5f; color: #60a5fa; }
+    .method-delete { background: #7f1d1d; color: #f87171; }
+    .provider-row:hover { background: #1e293b; }
+    .status-ok  { background: #14532d; color: #4ade80; }
+    .status-key { background: #713f12; color: #facc15; }
+    .status-free{ background: #1e3a5f; color: #60a5fa; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    select, input, textarea {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      width: 100%;
+      outline: none;
+    }
+    select:focus, input:focus, textarea:focus { border-color: #6366f1; }
+    input[type="range"] { padding: 0; background: transparent; border: none; }
+    .send-btn {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .send-btn:hover { background: #4338ca; }
+    .send-btn:disabled { background: #334155; cursor: not-allowed; }
+    .spinner { display: none; border: 3px solid #334155; border-top: 3px solid #6366f1; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="dark min-h-screen text-slate-300 font-sans">
+
+  <!-- Top Nav -->
+  <nav class="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">G</div>
+      <span class="text-slate-100 font-semibold text-lg">Arbiter</span>
+      <span class="text-slate-500 text-sm">– API Documentation</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-200 transition">Dashboard</a>
+      <a href="/docs" class="text-sm text-slate-400 hover:text-slate-200 transition">Swagger</a>
+      <a href="/redoc" class="text-sm text-slate-400 hover:text-slate-200 transition">ReDoc</a>
+    </div>
+  </nav>
+
+  <!-- Tab Bar -->
+  <div class="border-b border-slate-700 px-6 flex gap-2 pt-2">
+    <button class="tab-btn active rounded-t-lg px-4 py-2 text-sm font-medium" onclick="switchTab('overview')">Overview</button>
+    <button class="tab-btn rounded-t-lg px-4 py-2 text-sm font-medium" onclick="switchTab('auth')">Authentication</button>
+    <button class="tab-btn rounded-t-lg px-4 py-2 text-sm font-medium" onclick="switchTab('endpoints')">Endpoints</button>
+    <button class="tab-btn rounded-t-lg px-4 py-2 text-sm font-medium" onclick="switchTab('playground')">Playground</button>
+    <button class="tab-btn rounded-t-lg px-4 py-2 text-sm font-medium" onclick="switchTab('providers')">Providers</button>
+  </div>
+
+  <main class="max-w-6xl mx-auto px-6 py-8">
+
+    <!-- ── OVERVIEW TAB ─────────────────────────────────────────────── -->
+    <div id="tab-overview" class="tab-panel active">
+      <h1 class="text-2xl font-bold text-slate-100 mb-2">Arbiter</h1>
+      <p class="text-slate-400 mb-6">
+        An intelligent, OpenAI-compatible API gateway that routes requests across multiple free-tier LLM providers
+        with automatic key rotation, rate-limit tracking, and response caching.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="card rounded-xl p-5">
+          <div class="text-indigo-400 font-semibold mb-1">Base URL</div>
+          <code class="text-slate-300 text-sm">http://localhost:8000</code>
+        </div>
+        <div class="card rounded-xl p-5">
+          <div class="text-indigo-400 font-semibold mb-1">API Version</div>
+          <code class="text-slate-300 text-sm">v1.0.0</code>
+        </div>
+        <div class="card rounded-xl p-5">
+          <div class="text-indigo-400 font-semibold mb-1">Protocol</div>
+          <code class="text-slate-300 text-sm">OpenAI-compatible REST</code>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-3">Quick Start</h2>
+        <pre class="code-block rounded-lg p-4 text-green-400">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-gateway-key" \
+  -d '{
+    "model": "gemini-2.5-flash-lite",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</pre>
+      </div>
+
+      <div class="card rounded-xl p-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-3">Features</h2>
+        <ul class="space-y-2 text-slate-400">
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> OpenAI-compatible <code>/v1/chat/completions</code> endpoint</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> 8 providers: Gemini, Groq, Cerebras, Cloudflare, OpenRouter, Cohere, HuggingFace, Pollinations</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Intelligent routing based on model name, token count, and content type</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Automatic key rotation with weighted scoring across multiple accounts</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Response caching for deterministic requests (temperature &le; 0.3)</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Vendor/model override via query parameters</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Optional Cloudflare Access JWT authentication</li>
+          <li class="flex items-start gap-2"><span class="text-indigo-400 mt-0.5">&#10003;</span> Cloudflare Workers AI management API</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── AUTH TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-auth" class="tab-panel">
+      <h1 class="text-2xl font-bold text-slate-100 mb-6">Authentication</h1>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-3">Bearer Token Auth</h2>
+        <p class="text-slate-400 mb-4">
+          When <code class="text-indigo-300">GATEWAY_API_KEYS</code> is set, all protected endpoints require a
+          <code class="text-indigo-300">Authorization: Bearer &lt;key&gt;</code> header.
+          If the environment variable is empty, authentication is disabled.
+        </p>
+        <pre class="code-block rounded-lg p-4 text-slate-300">Authorization: Bearer your-gateway-key</pre>
+        <p class="text-slate-500 text-sm mt-3">
+          Multiple keys can be provided as a comma-separated list in <code>GATEWAY_API_KEYS</code>.
+        </p>
+      </div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-3">Exempt Paths (No Auth Required)</h2>
+        <div class="space-y-2">
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/health</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/docs</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/redoc</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/openapi.json</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/api-docs</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/dashboard</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/dashboard/stats</code></div>
+          <div class="flex items-center gap-3"><span class="method-badge method-get">GET</span><code class="text-slate-300">/v1/models</code></div>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-3">Error Response</h2>
+        <p class="text-slate-400 mb-3">When auth fails, the gateway returns HTTP 401:</p>
+        <pre class="code-block rounded-lg p-4 text-red-400">{
+  "error": {
+    "message": "Invalid API key",
+    "type": "authentication_error",
+    "code": 401
+  }
+}</pre>
+      </div>
+    </div>
+
+    <!-- ── ENDPOINTS TAB ─────────────────────────────────────────────── -->
+    <div id="tab-endpoints" class="tab-panel">
+      <h1 class="text-2xl font-bold text-slate-100 mb-6">Endpoints</h1>
+
+      <!-- Chat Completions -->
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="method-badge method-post">POST</span>
+          <code class="text-slate-100 font-semibold">/v1/chat/completions</code>
+        </div>
+        <p class="text-slate-400 mb-4">Create a chat completion. OpenAI-compatible request/response format.</p>
+
+        <div class="mb-4">
+          <div class="text-slate-500 text-xs uppercase tracking-wide mb-2">Query Parameters</div>
+          <div class="space-y-2">
+            <div class="flex gap-3 items-start">
+              <code class="text-indigo-300 text-sm min-w-[120px]">vendor</code>
+              <span class="text-slate-400 text-sm">Force a specific provider: <code>gemini</code>, <code>groq</code>, <code>cerebras</code>, <code>cloudflare</code>, <code>openrouter</code>, <code>cohere</code>, <code>huggingface</code>, <code>pollinations</code></span>
+            </div>
+            <div class="flex gap-3 items-start">
+              <code class="text-indigo-300 text-sm min-w-[120px]">force_model</code>
+              <span class="text-slate-400 text-sm">Override the model ID (e.g. <code>llama3.1-8b</code>). Overrides the body <code>model</code> field.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="text-slate-500 text-xs uppercase tracking-wide mb-2">Request Body</div>
+          <pre class="code-block rounded-lg p-4 text-slate-300">{
+  "model": "gemini-2.5-flash-lite",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 512,
+  "top_p": 1.0
+}</pre>
+        </div>
+
+        <div>
+          <div class="text-slate-500 text-xs uppercase tracking-wide mb-2">Response</div>
+          <pre class="code-block rounded-lg p-4 text-green-400">{
+  "id": "chatcmpl-abc12345",
+  "object": "chat.completion",
+  "created": 1711234567,
+  "model": "gemini-2.5-flash-lite",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you today?"},
+    "finish_reason": "stop"
+  }],
+  "usage": {
+    "prompt_tokens": 24,
+    "completion_tokens": 12,
+    "total_tokens": 36
+  }
+}</pre>
+        </div>
+      </div>
+
+      <!-- Models -->
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="method-badge method-get">GET</span>
+          <code class="text-slate-100 font-semibold">/v1/models</code>
+        </div>
+        <p class="text-slate-400 mb-4">List all available models across all configured providers.</p>
+        <pre class="code-block rounded-lg p-4 text-green-400">{
+  "object": "list",
+  "data": [
+    {"id": "gemini-2.5-flash-lite", "object": "model", "owned_by": "gemini"},
+    {"id": "llama-3.1-8b-instant",  "object": "model", "owned_by": "groq"},
+    ...
+  ]
+}</pre>
+      </div>
+
+      <!-- Health -->
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="method-badge method-get">GET</span>
+          <code class="text-slate-100 font-semibold">/health</code>
+        </div>
+        <p class="text-slate-400 mb-4">Gateway health check. Always accessible without auth.</p>
+        <pre class="code-block rounded-lg p-4 text-green-400">{
+  "status": "ok",
+  "redis": "connected",
+  "providers": ["gemini", "groq", "cerebras"],
+  "version": "1.0.0"
+}</pre>
+      </div>
+
+      <!-- Cloudflare Workers -->
+      <div class="card rounded-xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-slate-100 mb-4">Cloudflare Workers AI Management</h2>
+
+        <div class="space-y-4">
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="method-badge method-get">GET</span>
+              <code class="text-slate-100">/cloudflare/models</code>
+            </div>
+            <p class="text-slate-400 text-sm">List available Workers AI text-generation models.</p>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="method-badge method-post">POST</span>
+              <code class="text-slate-100">/cloudflare/workers</code>
+            </div>
+            <p class="text-slate-400 text-sm mb-2">Create a new AI Worker with a specified model binding.</p>
+            <pre class="code-block rounded-lg p-3 text-slate-300 text-xs">{"name": "my-ai-worker", "model": "@cf/meta/llama-3.1-8b-instruct", "description": "My AI worker"}</pre>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="method-badge method-get">GET</span>
+              <code class="text-slate-100">/cloudflare/workers</code>
+            </div>
+            <p class="text-slate-400 text-sm">List all existing workers in the account.</p>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="method-badge method-delete">DELETE</span>
+              <code class="text-slate-100">/cloudflare/workers/{script_name}</code>
+            </div>
+            <p class="text-slate-400 text-sm">Delete a specific worker script.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PLAYGROUND TAB ────────────────────────────────────────────── -->
+    <div id="tab-playground" class="tab-panel">
+      <h1 class="text-2xl font-bold text-slate-100 mb-6">API Playground</h1>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Left: Request Builder -->
+        <div class="space-y-4">
+          <div class="card rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">Request</h2>
+
+            <!-- Gateway Key -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">Gateway API Key (optional)</label>
+              <input type="password" id="pg-gateway-key" placeholder="Leave empty if auth is disabled" />
+            </div>
+
+            <!-- Provider -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">Provider (vendor override)</label>
+              <select id="pg-vendor">
+                <option value="">Auto (intelligent routing)</option>
+                <option value="gemini">Gemini</option>
+                <option value="groq">Groq</option>
+                <option value="cerebras">Cerebras</option>
+                <option value="cloudflare">Cloudflare Workers AI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="cohere">Cohere</option>
+                <option value="huggingface">HuggingFace</option>
+                <option value="pollinations">Pollinations</option>
+              </select>
+            </div>
+
+            <!-- Model -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">Model</label>
+              <select id="pg-model">
+                <option value="">Loading models…</option>
+              </select>
+            </div>
+
+            <!-- Temperature -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">
+                Temperature: <span id="pg-temp-val">0.7</span>
+              </label>
+              <input type="range" id="pg-temp" min="0" max="2" step="0.05" value="0.7"
+                oninput="document.getElementById('pg-temp-val').textContent = this.value" />
+            </div>
+
+            <!-- Max Tokens -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">Max Tokens (blank = provider default)</label>
+              <input type="number" id="pg-max-tokens" placeholder="512" min="1" max="65536" />
+            </div>
+
+            <!-- System Prompt -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">System Prompt (optional)</label>
+              <textarea id="pg-system" rows="2" placeholder="You are a helpful assistant."></textarea>
+            </div>
+
+            <!-- User Message -->
+            <div class="mb-4">
+              <label class="text-xs text-slate-500 uppercase tracking-wide block mb-1">User Message</label>
+              <textarea id="pg-user" rows="4" placeholder="Type your message here…"></textarea>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <button class="send-btn" id="pg-send" onclick="sendRequest()">Send Request</button>
+              <div class="spinner" id="pg-spinner"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Response Viewer -->
+        <div class="space-y-4">
+          <div class="card rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide">Response</h2>
+              <div id="pg-meta" class="text-xs text-slate-500 flex gap-4"></div>
+            </div>
+
+            <!-- Rendered Text -->
+            <div class="mb-4">
+              <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Assistant Reply</div>
+              <div id="pg-reply"
+                class="min-h-[80px] rounded-lg p-3 text-slate-300 text-sm"
+                style="background:#0f172a; border:1px solid #334155; white-space:pre-wrap;">
+                Response will appear here…
+              </div>
+            </div>
+
+            <!-- Raw JSON -->
+            <div>
+              <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Raw JSON</div>
+              <pre id="pg-raw"
+                class="code-block rounded-lg p-3 text-slate-400 text-xs max-h-64 overflow-y-auto">–</pre>
+            </div>
+          </div>
+
+          <!-- Usage / Stats -->
+          <div class="card rounded-xl p-5" id="pg-usage-card" style="display:none">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">Usage</h2>
+            <div class="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div class="text-xl font-bold text-indigo-400" id="pg-prompt-tok">–</div>
+                <div class="text-xs text-slate-500">Prompt Tokens</div>
+              </div>
+              <div>
+                <div class="text-xl font-bold text-indigo-400" id="pg-comp-tok">–</div>
+                <div class="text-xs text-slate-500">Completion Tokens</div>
+              </div>
+              <div>
+                <div class="text-xl font-bold text-indigo-400" id="pg-total-tok">–</div>
+                <div class="text-xs text-slate-500">Total Tokens</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROVIDERS TAB ─────────────────────────────────────────────── -->
+    <div id="tab-providers" class="tab-panel">
+      <h1 class="text-2xl font-bold text-slate-100 mb-6">Providers</h1>
+
+      <div class="card rounded-xl overflow-hidden mb-6">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-700 text-left text-xs text-slate-500 uppercase tracking-wide">
+              <th class="px-5 py-3">Provider</th>
+              <th class="px-5 py-3">Auth</th>
+              <th class="px-5 py-3">RPM</th>
+              <th class="px-5 py-3">TPM</th>
+              <th class="px-5 py-3">Daily</th>
+              <th class="px-5 py-3">Models</th>
+            </tr>
+          </thead>
+          <tbody id="provider-table">
+            <tr><td colspan="6" class="px-5 py-4 text-slate-500">Loading provider data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="card rounded-xl p-5">
+          <h2 class="text-base font-semibold text-slate-100 mb-3">Model Routing Priority</h2>
+          <ol class="space-y-1 text-slate-400 text-sm list-decimal list-inside">
+            <li>Gemini <span class="text-slate-600">– largest context, highest quality</span></li>
+            <li>Groq <span class="text-slate-600">– fastest, highest RPM</span></li>
+            <li>Cerebras <span class="text-slate-600">– 1M tokens/day free</span></li>
+            <li>Cloudflare Workers AI <span class="text-slate-600">– 300 RPM free</span></li>
+            <li>OpenRouter <span class="text-slate-600">– many free models</span></li>
+            <li>Cohere <span class="text-slate-600">– 256K context</span></li>
+            <li>HuggingFace <span class="text-slate-600">– open model selection</span></li>
+            <li>Pollinations <span class="text-slate-600">– fully anonymous, no key</span></li>
+          </ol>
+        </div>
+
+        <div class="card rounded-xl p-5">
+          <h2 class="text-base font-semibold text-slate-100 mb-3">Smart Routing Rules</h2>
+          <ul class="space-y-2 text-slate-400 text-sm">
+            <li><code class="text-indigo-300">@cf/</code> in model → Cloudflare</li>
+            <li><code class="text-indigo-300">gemini</code> in model → Gemini</li>
+            <li><code class="text-indigo-300">llama3.1-8b</code> in model → Cerebras</li>
+            <li><code class="text-indigo-300">command-r</code> in model → Cohere</li>
+            <li><code class="text-indigo-300">zephyr / qwen/qwen</code> in model → HuggingFace</li>
+            <li>Token count &gt; 100K → Gemini first</li>
+            <li>Token count &lt; 4K → Groq first (fastest)</li>
+            <li>Code keywords detected → Gemini + Groq priority</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // ── Tab switching ────────────────────────────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.currentTarget.classList.add('active');
+    }
+
+    // ── Provider data ────────────────────────────────────────────────────────
+    const PROVIDERS_INFO = [
+      { name: 'Gemini',              env: 'GEMINI_API_KEYS',      auth: 'API Key',   rpm: 5,   tpm: '250K',  daily: 100,     models: ['gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro'] },
+      { name: 'Groq',                env: 'GROQ_API_KEYS',        auth: 'API Key',   rpm: 30,  tpm: '6K',    daily: '1K',    models: ['llama-3.1-8b-instant','llama-3.3-70b-versatile','qwen/qwen3-32b'] },
+      { name: 'Cerebras',            env: 'CEREBRAS_API_KEYS',    auth: 'API Key',   rpm: 30,  tpm: '60K',   daily: '1M tok',models: ['llama3.1-8b','llama-3.3-70b','qwen-3-32b'] },
+      { name: 'Cloudflare Workers',  env: 'CLOUDFLARE_API_KEYS',  auth: 'acct|token',rpm: 300, tpm: '1M',    daily: '10K',   models: ['@cf/meta/llama-3.1-8b-instruct','@cf/google/gemma-3-12b-it'] },
+      { name: 'OpenRouter',          env: 'OPENROUTER_API_KEYS',  auth: 'API Key',   rpm: 20,  tpm: '500K',  daily: 50,      models: ['meta-llama/llama-3.3-70b-instruct:free','google/gemma-3-27b-it:free'] },
+      { name: 'Cohere',              env: 'COHERE_API_KEYS',      auth: 'API Key',   rpm: 20,  tpm: '100K',  daily: 33,      models: ['command-r7b-12-2024','command-a-03-2025'] },
+      { name: 'HuggingFace',         env: 'HUGGINGFACE_API_KEYS', auth: 'HF Token',  rpm: 10,  tpm: '50K',   daily: 500,     models: ['Qwen/Qwen2.5-7B-Instruct','HuggingFaceH4/zephyr-7b-beta'] },
+      { name: 'Pollinations',        env: '(none needed)',         auth: 'Free/Anon', rpm: 5,   tpm: '100K',  daily: '1K',    models: ['mistral','mistral-large','openai'] },
+    ];
+
+    function renderProviderTable() {
+      const tbody = document.getElementById('provider-table');
+      tbody.innerHTML = PROVIDERS_INFO.map(p => {
+        const authBadge = p.auth === 'Free/Anon'
+          ? `<span class="status-free text-xs px-2 py-0.5 rounded-full font-medium">${p.auth}</span>`
+          : `<span class="status-key text-xs px-2 py-0.5 rounded-full font-medium">${p.auth}</span>`;
+        return `
+          <tr class="provider-row border-b border-slate-800">
+            <td class="px-5 py-3 text-slate-100 font-medium">${p.name}</td>
+            <td class="px-5 py-3">${authBadge}</td>
+            <td class="px-5 py-3 text-slate-300">${p.rpm}</td>
+            <td class="px-5 py-3 text-slate-300">${p.tpm}</td>
+            <td class="px-5 py-3 text-slate-300">${p.daily}</td>
+            <td class="px-5 py-3 text-slate-400 text-xs">${p.models.map(m => `<code>${m}</code>`).join(', ')}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    // ── Playground: load models ───────────────────────────────────────────────
+    async function loadModels() {
+      const sel = document.getElementById('pg-model');
+      try {
+        const resp = await fetch('/v1/models');
+        if (!resp.ok) throw new Error('Failed');
+        const data = await resp.json();
+        sel.innerHTML = data.data.map(m =>
+          `<option value="${m.id}">[${m.owned_by || 'unknown'}] ${m.id}</option>`
+        ).join('');
+      } catch (e) {
+        sel.innerHTML = '<option value="">Could not load models — type manually</option>';
+      }
+    }
+
+    // ── Playground: send request ─────────────────────────────────────────────
+    async function sendRequest() {
+      const vendor    = document.getElementById('pg-vendor').value;
+      const model     = document.getElementById('pg-model').value;
+      const temp      = parseFloat(document.getElementById('pg-temp').value);
+      const maxTok    = document.getElementById('pg-max-tokens').value;
+      const system    = document.getElementById('pg-system').value.trim();
+      const user      = document.getElementById('pg-user').value.trim();
+      const gKey      = document.getElementById('pg-gateway-key').value.trim();
+
+      if (!user) { alert('Please enter a user message.'); return; }
+
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: user });
+
+      const body = {
+        model: model || 'gemini-2.5-flash-lite',
+        messages,
+        temperature: temp,
+      };
+      if (maxTok) body.max_tokens = parseInt(maxTok);
+
+      let url = '/v1/chat/completions';
+      const params = [];
+      if (vendor) params.push(`vendor=${encodeURIComponent(vendor)}`);
+      if (params.length) url += '?' + params.join('&');
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (gKey) headers['Authorization'] = `Bearer ${gKey}`;
+
+      // UI state
+      const btn = document.getElementById('pg-send');
+      const spinner = document.getElementById('pg-spinner');
+      const replyEl = document.getElementById('pg-reply');
+      const rawEl   = document.getElementById('pg-raw');
+      const metaEl  = document.getElementById('pg-meta');
+      const usageCard = document.getElementById('pg-usage-card');
+
+      btn.disabled = true;
+      spinner.style.display = 'block';
+      replyEl.textContent = 'Waiting for response…';
+      rawEl.textContent = '…';
+      metaEl.innerHTML = '';
+      usageCard.style.display = 'none';
+
+      const t0 = performance.now();
+      try {
+        const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+        const elapsed = Math.round(performance.now() - t0);
+        const data = await resp.json();
+
+        rawEl.textContent = JSON.stringify(data, null, 2);
+
+        if (!resp.ok) {
+          replyEl.textContent = '[Error] ' + (data.detail || JSON.stringify(data));
+          metaEl.innerHTML = `<span class="text-red-400">${resp.status} ${resp.statusText}</span> &middot; ${elapsed}ms`;
+        } else {
+          const content = data.choices?.[0]?.message?.content ?? '(empty)';
+          replyEl.textContent = content;
+          const model_used = data.model || '?';
+          metaEl.innerHTML = `<span class="text-green-400">200 OK</span> &middot; ${elapsed}ms &middot; <span class="text-indigo-300">${model_used}</span>`;
+
+          if (data.usage) {
+            document.getElementById('pg-prompt-tok').textContent = data.usage.prompt_tokens ?? '–';
+            document.getElementById('pg-comp-tok').textContent   = data.usage.completion_tokens ?? '–';
+            document.getElementById('pg-total-tok').textContent  = data.usage.total_tokens ?? '–';
+            usageCard.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        replyEl.textContent = '[Network error] ' + err.message;
+        rawEl.textContent = String(err);
+        metaEl.innerHTML = `<span class="text-red-400">Network Error</span>`;
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+      }
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    renderProviderTable();
+    loadModels();
+  </script>
+</body>
+</html>

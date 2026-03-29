@@ -7,6 +7,21 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/arbiter.css" />
   <script src="/static/arbiter.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <script>
+    // Configure marked: parse GFM, sanitize links only (no raw HTML from LLM output)
+    if (typeof marked !== 'undefined') {
+      marked.setOptions({ gfm: true, breaks: true });
+      // Override link renderer to open links in new tab safely
+      var _renderer = new marked.Renderer();
+      _renderer.link = function(href, title, text) {
+        return '<a href="' + escHtmlAttr(href||'') + '" target="_blank" rel="noopener noreferrer"' +
+               (title ? ' title="' + escHtmlAttr(title) + '"' : '') + '>' + text + '</a>';
+      };
+      marked.setOptions({ renderer: _renderer });
+    }
+    function escHtmlAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  </script>
   <style>
     .pg-layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; height: calc(100vh - 120px); }
     .pg-sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
@@ -42,11 +57,46 @@
     .chat-msg.user { flex-direction: row-reverse; }
     .msg-bubble {
       max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6;
-      white-space: pre-wrap; word-break: break-word;
+      word-break: break-word;
     }
-    .chat-msg.user .msg-bubble { background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px; }
+    .chat-msg.user .msg-bubble { background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px; white-space: pre-wrap; }
     .chat-msg.assistant .msg-bubble { background: var(--surface-2); color: var(--text); border-radius: 12px 12px 12px 2px; }
-    .chat-msg.system .msg-bubble { background: rgba(240,185,11,.08); color: var(--text-3); font-size: 11px; border-radius: 8px; font-style: italic; }
+    .chat-msg.system .msg-bubble { background: rgba(240,185,11,.08); color: var(--text-3); font-size: 11px; border-radius: 8px; font-style: italic; white-space: pre-wrap; }
+
+    /* Markdown rendered inside assistant bubbles */
+    .chat-msg.assistant .msg-bubble p { margin: 0 0 8px; }
+    .chat-msg.assistant .msg-bubble p:last-child { margin-bottom: 0; }
+    .chat-msg.assistant .msg-bubble h1,.chat-msg.assistant .msg-bubble h2,.chat-msg.assistant .msg-bubble h3,
+    .chat-msg.assistant .msg-bubble h4 { margin: 10px 0 4px; font-weight: 600; line-height: 1.3; }
+    .chat-msg.assistant .msg-bubble h1 { font-size: 15px; }
+    .chat-msg.assistant .msg-bubble h2 { font-size: 14px; }
+    .chat-msg.assistant .msg-bubble h3,.chat-msg.assistant .msg-bubble h4 { font-size: 13px; }
+    .chat-msg.assistant .msg-bubble ul,.chat-msg.assistant .msg-bubble ol { margin: 4px 0 8px; padding-left: 18px; }
+    .chat-msg.assistant .msg-bubble li { margin-bottom: 3px; }
+    .chat-msg.assistant .msg-bubble code {
+      background: var(--surface-3); padding: 1px 5px; border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    }
+    .chat-msg.assistant .msg-bubble pre {
+      background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 12px; overflow-x: auto; margin: 8px 0;
+    }
+    .chat-msg.assistant .msg-bubble pre code {
+      background: none; padding: 0; font-size: 12px; white-space: pre;
+    }
+    .chat-msg.assistant .msg-bubble blockquote {
+      border-left: 3px solid var(--accent); margin: 8px 0; padding: 4px 10px;
+      color: var(--text-2); font-style: italic;
+    }
+    .chat-msg.assistant .msg-bubble hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+    .chat-msg.assistant .msg-bubble a { color: var(--accent); text-decoration: underline; }
+    .chat-msg.assistant .msg-bubble table { border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+    .chat-msg.assistant .msg-bubble th,.chat-msg.assistant .msg-bubble td {
+      border: 1px solid var(--border); padding: 4px 8px;
+    }
+    .chat-msg.assistant .msg-bubble th { background: var(--surface-3); font-weight: 600; }
+    .chat-msg.assistant .msg-bubble strong { font-weight: 600; }
+    .chat-msg.assistant .msg-bubble em { font-style: italic; }
     .msg-meta { font-size: 10px; color: var(--text-3); margin-top: 3px; text-align: right; }
     .chat-msg.user .msg-meta { text-align: left; }
     .msg-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 2px; }
@@ -638,8 +688,11 @@ function renderMessages(lastAssistantText, latencyMs, modelUsed) {
         '<span class="latency-badge">' + latencyMs + 'ms</span></div>';
     }
 
+    var bubbleContent = isUser
+      ? escHtml(msg.content)
+      : (typeof marked !== 'undefined' ? marked.parse(msg.content) : escHtml(msg.content));
     div.innerHTML = avatar +
-      '<div><div class="msg-bubble">' + escHtml(msg.content) + '</div>' + metaHtml + '</div>';
+      '<div><div class="msg-bubble">' + bubbleContent + '</div>' + metaHtml + '</div>';
     container.appendChild(div);
   });
 

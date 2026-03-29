@@ -396,7 +396,7 @@ async function sendMessage() {
 
   var sel = document.getElementById('ep-select');
   var ep  = _endpoints.find(function(e) { return e.id === sel.value; });
-  if (!ep) { showToast('Select an endpoint first', 'error'); return; }
+  if (!ep) { toast('Select an endpoint first', 'error'); return; }
 
   _sending = true;
   document.getElementById('send-btn').disabled = true;
@@ -425,10 +425,10 @@ async function sendMessage() {
     renderMessages(result.text, latency, result.model);
   } catch(err) {
     removeThinking();
-    var errMsg = '⚠️ Error: ' + (err.message || String(err));
+    var errMsg = '⚠️ ' + (err.message || 'Request failed');
     _messages.push({role:'assistant', content: errMsg});
     renderMessages(errMsg, null, null);
-    showToast(err.message || String(err), 'error');
+    toast(err.message || 'Request failed', 'error');
   }
 
   _sending = false;
@@ -448,8 +448,8 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       body: JSON.stringify(payload),
     });
     if (!r.ok) {
-      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
-      throw new Error(errData.detail || r.statusText);
+      var errData = await r.json().catch(function() { return {}; });
+      throw new Error(errData.detail || errData.error || ('HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : '')));
     }
     var data = await r.json();
     return {
@@ -484,8 +484,8 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       body: JSON.stringify(payload),
     });
     if (!r.ok) {
-      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
-      throw new Error(errData.detail || r.statusText);
+      var errData = await r.json().catch(function() { return {}; });
+      throw new Error(errData.detail || errData.error || ('HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : '')));
     }
     var data = await r.json();
     return {

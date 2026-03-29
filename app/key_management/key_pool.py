@@ -172,24 +172,29 @@ class KeyPool:
         return best_key
 
     async def record_usage(self, key: str, tokens_used: int) -> None:
-        """Increment sliding-window RPM, TPM and daily counters for *key*."""
+        """Increment sliding-window RPM, TPM and daily counters for *key*.
+
+        daily counter tracks API *calls* (not tokens) because all per-provider
+        daily limits in PROVIDER_LIMITS are expressed as requests-per-day (RPD).
+        TPM already captures token throughput on a 60s window.
+        """
         h      = _hash_key(key)
         prefix = f"{self.provider}:{h}"
 
         pipe = self.redis.pipeline()
-        # RPM – 60 s sliding window
+        # RPM – 60 s sliding window (request count)
         pipe.incr(f"{prefix}:rpm")
         pipe.expire(f"{prefix}:rpm", 60)
-        # TPM – 60 s sliding window
+        # TPM – 60 s sliding window (token count)
         pipe.incrby(f"{prefix}:tpm", max(tokens_used, 1))
         pipe.expire(f"{prefix}:tpm", 60)
-        # Daily – 24 h window
-        pipe.incrby(f"{prefix}:daily", max(tokens_used, 1))
+        # Daily – 24 h window (request count — matches RPD limits in PROVIDER_LIMITS)
+        pipe.incr(f"{prefix}:daily")
         pipe.expire(f"{prefix}:daily", 86_400)
         await pipe.execute()
 
         logger.debug(
-            f"[{self.provider}] key={h} recorded +1 RPM, +{tokens_used} tokens"
+            f"[{self.provider}] key={h} recorded +1 RPM/daily, +{tokens_used} TPM"
         )
 
     async def mark_failed(self, key: str, cooldown_seconds: int = 300) -> None:

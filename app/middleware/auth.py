@@ -38,7 +38,10 @@ _EXEMPT_PATHS: frozenset = frozenset([
     "/v1/models", "/settings",
     "/settings/routing",       # GET config read is public
     "/v1/images/models",       # Image model list is public
+    "/v1/images/generations",  # Image generation UI (Pollinations — no tokens consumed)
     "/api/providers",          # Provider management (settings UI)
+    # UI page routes (served as HTML, same-origin from the gateway UI)
+    "/images", "/playground", "/analytics", "/logs",
 ])
 
 

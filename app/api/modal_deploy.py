@@ -240,6 +240,9 @@ image = (
         "huggingface_hub[hf_transfer]",
         "hf_transfer",
     )
+    # Pin tokenizers to 0.20.x — tokenizers>=0.21 removed all_special_tokens_extended
+    # which vLLM's get_cached_tokenizer still accesses, causing an AttributeError on startup.
+    .run_commands("pip install --quiet 'tokenizers==0.20.3'")
     .env({{
         "HF_HOME":                   "/model-cache",
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
@@ -257,7 +260,7 @@ image = (
     {secrets_arg}
 )
 @modal.concurrent(max_inputs=MAX_CONCURRENT)
-@modal.web_server(port=8000, startup_timeout=600)
+@modal.web_server(port=8000, startup_timeout=1200)  # 20 min — large models need time to download+load
 def serve():
     """
     Start vLLM\'s built-in OpenAI-compatible server on port 8000.

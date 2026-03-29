@@ -137,13 +137,35 @@ _PROVIDER_META = {
             "Sign up at modal.com ($30 free credits/month)",
             "pip install modal && modal setup",
             "modal token new  # creates ~/.modal/config.toml",
-            "Deploy an LLM app: modal deploy my_llm.py",
-            "Register the URL in Settings → Modal Endpoints",
+            "Deploy an LLM app via Settings → Modal GPU tab",
+            "Endpoint is auto-registered after successful deploy",
         ],
         "models": [
             "meta-llama/Llama-3.1-8B-Instruct",
             "meta-llama/Llama-3.3-70B-Instruct",
             "mistralai/Mistral-7B-Instruct-v0.3",
+        ],
+    },
+    "zai": {
+        "label":      "Z.ai / Zhipu AI",
+        "key_format": "API key",
+        "key_hint":   "your-zai-api-key",
+        "signup_url": "https://z.ai/manage-apikey",
+        "free":       True,
+        "models": [
+            "glm-4.7-flash", "glm-4.5-flash", "glm-z1-flash",
+        ],
+    },
+    "lightning": {
+        "label":      "Lightning.ai (LitAI)",
+        "key_format": "API key",
+        "key_hint":   "your-lightning-api-key",
+        "signup_url": "https://lightning.ai",
+        "free":       False,
+        "models": [
+            "nvidia/nemotron-3-super", "lightning-ai/gpt-oss-120b",
+            "deepseek/deepseek-v3.1", "lightning-ai/gpt-oss-20b",
+            "meta/llama-3.3-70b",
         ],
     },
 }
@@ -204,13 +226,16 @@ async def _reload_provider(name: str, request: Request) -> None:
     from app.providers.huggingface  import HuggingFaceProvider
     from app.providers.pollinations import PollinationsProvider
     from app.providers.modal_provider import ModalProvider
+    from app.providers.lightning_provider import LightningProvider
+    from app.providers.zai_provider import ZaiProvider
 
     _classes = {
         "gemini": GeminiProvider, "groq": GroqProvider,
         "openrouter": OpenRouterProvider, "cohere": CohereProvider,
         "cloudflare": CloudflareProvider, "cerebras": CerebrasProvider,
         "huggingface": HuggingFaceProvider, "pollinations": PollinationsProvider,
-        "modal": ModalProvider,
+        "modal": ModalProvider, "lightning": LightningProvider,
+        "zai": ZaiProvider,
     }
 
     redis     = request.app.state.redis
@@ -320,6 +345,10 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
     existing = await _redis_keys(redis, name)
     env_k    = settings.get_keys(name)
     if k in existing or k in env_k:
+        if name == "modal":
+            raise HTTPException(409,
+                "This endpoint is already registered. It may have been added automatically "
+                "when you deployed via the Modal GPU tab. Manage it there or delete it first.")
         raise HTTPException(409, "Key already exists")
 
     existing.append(k)

@@ -888,6 +888,10 @@ function switchTab(name, btn) {
   var panel = document.getElementById('tab-' + name);
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
+  // Stop live deployment polling when leaving modal tab
+  if (name !== 'modal' && _liveDepPollTimer) {
+    clearInterval(_liveDepPollTimer); _liveDepPollTimer = null;
+  }
   if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
   if (name === 'modal')      { loadModalEndpoints(); loadModalDeployTab(); }
   if (name === 'cache')      { loadCacheStats(); }
@@ -1729,11 +1733,18 @@ async function deleteModalEndpoint(name) {
 }
 
 // ── Modal Deploy Tab ─────────────────────────────────────────────────────────
-var _deployPollTimer = null;
-var _deployModels    = [];
+var _deployPollTimer    = null;
+var _liveDepPollTimer   = null;   // background poll while modal tab is open
+var _deployModels       = [];
 
 async function loadModalDeployTab() {
   await Promise.all([checkModalCliStatus(), checkModalToken(), loadDeployModels(), loadDeployments()]);
+  // Start live polling: refresh deployments + endpoints every 5s while modal tab is open
+  if (_liveDepPollTimer) clearInterval(_liveDepPollTimer);
+  _liveDepPollTimer = setInterval(async function() {
+    await loadDeployments();
+    await loadModalEndpoints();
+  }, 5000);
 }
 
 async function checkModalCliStatus() {
@@ -1944,6 +1955,11 @@ function openDeployLog(deployId) {
       if (['active','failed'].indexOf(d.status) !== -1) {
         clearInterval(_deployPollTimer);
         _deployPollTimer = null;
+        // On success, immediately refresh endpoint list (auto-registration just happened)
+        if (d.status === 'active') {
+          loadModalEndpoints();
+          loadDeployments();
+        }
       }
     } catch(e) { /* ignore poll errors */ }
   };

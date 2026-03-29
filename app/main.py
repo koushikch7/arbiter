@@ -20,6 +20,7 @@ from app.providers.cerebras import CerebrasProvider
 from app.providers.huggingface import HuggingFaceProvider
 from app.providers.pollinations import PollinationsProvider
 from app.providers.modal_provider import ModalProvider
+from app.providers.zai_provider import ZaiProvider
 from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
         "cerebras":     CerebrasProvider,
         "huggingface":  HuggingFaceProvider,
         "pollinations": PollinationsProvider,
+        "zai":          ZaiProvider,
         "modal":        ModalProvider,
     }
 

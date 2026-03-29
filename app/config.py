@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Cerebras Inference
     CEREBRAS_API_KEYS: str = ""
 
+    # Z.ai / Zhipu AI — GLM-4.7-Flash, GLM-4.5-Flash (free tier)
+    ZAI_API_KEYS: str = ""
+
     # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
     MODAL_API_KEYS: str = ""
     # Modal account token (used by the one-click deploy feature)
@@ -60,6 +63,7 @@ class Settings(BaseSettings):
             "huggingface":  self.HUGGINGFACE_API_KEYS,
             "cloudflare":   self.CLOUDFLARE_API_KEYS,
             "cerebras":     self.CEREBRAS_API_KEYS,
+            "zai":          self.ZAI_API_KEYS,
             "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")

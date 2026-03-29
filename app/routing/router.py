@@ -142,7 +142,19 @@ VENDOR_MODEL_HIERARCHY: Dict[str, List[Tuple[str, int]]] = {
         ("llama3.1-8b",                    8192),  # production · 30 RPM · 60K TPM · 1M/day
         ("gpt-oss-120b",                   8192),  # production · 30 RPM · 64K TPM · 1M/day
         ("qwen-3-235b-a22b-instruct-2507", 8192),  # preview · Qwen 3 235B · best reasoning
-        ("zai-glm-4.7",                    8192),  # preview · Z.ai GLM 4.7
+        ("zai-glm-4.7",                    8192),  # preview · Z.ai GLM 4.7  (Cerebras-hosted)
+        # NOTE: zai-glm-4.7 is ALSO available via the Z.ai provider directly.
+        # Both are intentionally kept: Cerebras limits + Z.ai limits = combined capacity.
+    ],
+
+    # ── Z.ai / Zhipu AI (free-tier, March 2026) ───────────────────────────────
+    # GLM-4.7-Flash and GLM-4.5-Flash are $0 (completely free).
+    # These are separate from the Cerebras-hosted zai-glm-4.7 above —
+    # different API key, different rate-limit bucket → additive capacity.
+    "zai": [
+        ("glm-4.7-flash", 128_000),  # free · fastest · general purpose
+        ("glm-4.5-flash", 128_000),  # free · balanced
+        ("glm-z1-flash",   32_000),  # free · flash reasoning
     ],
 
     # ── HuggingFace Inference Router ──────────────────────────────────────────
@@ -166,6 +178,7 @@ _DEFAULT_PROVIDER_ORDER: List[str] = [
     "gemini",
     "groq",
     "cerebras",
+    "zai",
     "cloudflare",
     "openrouter",
     "cohere",
@@ -395,6 +408,10 @@ class IntelligentRouter:
 
         if any(k in model for k in ("command-r", "command-a", "cohere")):
             return self._reorder("cohere", base_order)
+
+        # Z.ai / Zhipu GLM model names
+        if any(k in model for k in ("glm-", "glm4", "glm-z1", "zhipu", "zai-glm")):
+            return self._reorder("zai", base_order)
 
         # Pollinations model names
         if "pollinations" in model or model in ("mistral", "mistral-large", "openai", "claude"):

@@ -88,6 +88,12 @@ PROVIDER_LIMITS = {
         "tpm":   100_000,     # no published TPM; sentinel
         "daily": 1_000,       # no published daily limit; conservative sentinel
     },
+    "zai": {
+        "rpm":   10,          # free trial — concurrency-based; ~10 RPM conservative estimate
+        "tpm":   200_000,     # no published TPM limit; sentinel
+        "daily": 1_000,       # no published daily limit; conservative sentinel
+        # ↑ Update these after checking z.ai/manage-apikey/rate-limits in your dashboard
+    },
     "modal": {
         "rpm":   60,          # serverless — no hard RPM limit; conservative sentinel
         "tpm":   500_000,     # no TPM limit; sentinel

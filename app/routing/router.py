@@ -371,8 +371,11 @@ class IntelligentRouter:
         token_est = self._estimate_tokens(request)
 
         # ── Explicit vendor override ──
+        # When the caller pins a vendor, use ONLY that vendor — no cross-provider
+        # fallback.  Failing silently into Gemini when the user selected "Cohere"
+        # is confusing and misleading.
         if vendor:
-            return self._reorder(vendor, base_order)
+            return [vendor] if vendor in self.providers else []
 
         # ── Explicit model-name routing ──
         if "gemini" in model:

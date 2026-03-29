@@ -21,7 +21,7 @@ Source: https://docs.cohere.com/docs/models
 import logging
 import time
 import uuid
-from typing import List, Optional
+from typing import List
 
 import httpx
 
@@ -53,16 +53,15 @@ class CohereProvider(BaseProvider):
     default_model      = "command-r7b-12-2024"
 
     # --------------------------------------------------------------------------
-    def _build_cohere_messages(self, messages: List[Message]) -> tuple:
+    def _build_cohere_messages(self, messages: List[Message]) -> List[dict]:
         """
-        Split OpenAI messages into (system_prompt | None, cohere_messages).
+        Convert OpenAI-style messages to Cohere v2 format.
 
-        Cohere v2 Chat format:
-          messages: [{"role": "user"|"assistant", "content": str}, ...]
-        System prompt is a top-level field, not a message.
+        Cohere v2 Chat API accepts system messages directly in the messages
+        array as {"role": "system", "content": str}.  Do NOT send a top-level
+        "system" field — that causes a 422 "unknown field" error.
         """
-        system_prompt: Optional[str] = None
-        cohere_msgs: List[dict]      = []
+        cohere_msgs: List[dict] = []
 
         for msg in messages:
             role    = msg.role
@@ -73,17 +72,10 @@ class CohereProvider(BaseProvider):
                     p.get("text", "") for p in content if isinstance(p, dict)
                 )
 
-            if role == "system":
-                # Cohere accepts only one system prompt; concatenate multiples
-                system_prompt = (
-                    system_prompt + "\n" + content if system_prompt else content
-                )
-            elif role == "user":
-                cohere_msgs.append({"role": "user",      "content": content})
-            elif role == "assistant":
-                cohere_msgs.append({"role": "assistant", "content": content})
+            if role in ("system", "user", "assistant"):
+                cohere_msgs.append({"role": role, "content": content})
 
-        return system_prompt, cohere_msgs
+        return cohere_msgs
 
     # --------------------------------------------------------------------------
     async def complete(
@@ -92,7 +84,7 @@ class CohereProvider(BaseProvider):
 
         model = request.model if request.model in self.models else self.default_model
 
-        system_prompt, cohere_msgs = self._build_cohere_messages(request.messages)
+        cohere_msgs = self._build_cohere_messages(request.messages)
 
         payload: dict = {
             "model":       model,
@@ -100,8 +92,6 @@ class CohereProvider(BaseProvider):
             "temperature": request.temperature,
             "p":           request.top_p,
         }
-        if system_prompt:
-            payload["system"] = system_prompt
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
 

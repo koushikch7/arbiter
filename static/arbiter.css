@@ -392,6 +392,32 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: 
 /* ── Footer ── */
 .page-footer { padding: 20px 24px; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text-3); }
 
+/* ── Button size variants ── */
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+.btn-xs { padding: 4px 9px; font-size: 11px; }
+.btn-danger-ghost { background: transparent; color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+.btn-danger-ghost:hover { background: var(--red-dim); }
+
+/* ── Topbar title / actions aliases ── */
+.topbar-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ── Main content alias (playground/logs use main-content) ── */
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-w);
+  min-width: 0;
+  display: flex; flex-direction: column;
+  transition: margin-left var(--t);
+}
+
+/* ── Content inner (sub-layout wrapper used by playground/logs) ── */
+.content-inner { flex: 1; padding: 20px 24px; overflow-y: auto; }
+
+/* ── Tab bar — scrollable on narrow screens ── */
+.tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.tab-bar::-webkit-scrollbar { display: none; }
+
 /* ── Responsive ── */
 @media (max-width: 1024px) {
   .kpi-grid  { grid-template-columns: repeat(2, 1fr); }
@@ -400,12 +426,21 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: 
 @media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
-  .main-wrapper { margin-left: 0; }
+  .main-wrapper, .main-content { margin-left: 0; }
   .sidebar-toggle { display: flex; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .page-content { padding: 16px; }
+  .content-inner { padding: 14px 16px; }
+  /* Playground: stack config above chat on mobile */
+  .pg-layout { grid-template-columns: 1fr !important; height: auto !important; }
+  .pg-chat { height: calc(100vh - 300px); min-height: 320px; }
+  /* Topbar: hide verbose action text on small screens */
+  .topbar-right .btn-ghost span, .topbar-actions .btn-ghost span { display: none; }
 }
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: 1fr; }
+  .tab-btn { padding: 10px 12px; font-size: 12px; }
+  .topbar { padding: 0 14px 0 12px; gap: 8px; }
+  .page-title, .topbar-title { font-size: 14px; }
 }

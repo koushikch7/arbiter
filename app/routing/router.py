@@ -171,6 +171,18 @@ VENDOR_MODEL_HIERARCHY: Dict[str, List[Tuple[str, int]]] = {
         ("mistral-large", 32768),  # higher quality
         ("openai",        32768),  # GPT-based
     ],
+
+    # ── Lightning.ai (LitAI — natively hosted open-weight models) ────────────
+    # Free tier: ~37M token welcome credit on signup, then pay-per-token
+    # API: https://lightning.ai/api/v1 (OpenAI-compatible)
+    # Pricing: $0.09–$0.52/M tokens blended
+    "lightning": [
+        ("nvidia/nemotron-3-super",    256_000),  # ultra-fast, 256K ctx
+        ("lightning-ai/gpt-oss-120b",  131_072),  # flagship 120B model
+        ("deepseek/deepseek-v3.1",     164_000),  # DeepSeek V3.1, 164K ctx
+        ("lightning-ai/gpt-oss-20b",   131_072),  # efficient 20B
+        ("meta/llama-3.3-70b",         128_000),  # Llama 3.3 70B
+    ],
 }
 
 # Default provider priority (updated to include all new providers)
@@ -184,6 +196,7 @@ _DEFAULT_PROVIDER_ORDER: List[str] = [
     "cohere",
     "huggingface",
     "pollinations",
+    "lightning",
 ]
 
 
@@ -325,6 +338,17 @@ class IntelligentRouter:
                         await self._inc("requests_success")
                         await self._inc(f"provider:{provider_name}:success")
 
+                        # ── Per-model analytics tracking ──────────────────
+                        safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
+                        await self._inc(f"model:{safe_model}:requests")
+                        if tokens_used > 0:
+                            await self._incrby(f"model:{safe_model}:tokens", tokens_used)
+
+                        # ── Time-bucketed history (5-min buckets) ─────────
+                        bucket = (int(time.time()) // 300) * 300
+                        await self._inc(f"history:{bucket}:requests")
+                        await self._inc(f"history:{bucket}:success")
+
                         logger.info(
                             f"✓ {provider_name}/{model_name}  tokens={tokens_used}"
                         )
@@ -345,6 +369,10 @@ class IntelligentRouter:
                             f"✗ ProviderError {provider_name}/{model_name}: {exc}"
                         )
                         await self._inc(f"provider:{provider_name}:errors")
+                        safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
+                        await self._inc(f"model:{safe_model}:errors")
+                        bucket = (int(time.time()) // 300) * 300
+                        await self._inc(f"history:{bucket}:errors")
                         last_error = exc
                         break  # model-level error → next model in hierarchy
 
@@ -533,3 +561,11 @@ class IntelligentRouter:
             await self.redis.incr(f"arbiter:stats:{stat}")
         except Exception as exc:
             logger.debug(f"Stats increment failed ({stat}): {exc}")
+
+    async def _incrby(self, stat: str, amount: int) -> None:
+        if self.redis is None or amount <= 0:
+            return
+        try:
+            await self.redis.incrby(f"arbiter:stats:{stat}", amount)
+        except Exception as exc:
+            logger.debug(f"Stats incrby failed ({stat}): {exc}")

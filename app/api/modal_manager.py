@@ -220,25 +220,38 @@ async def get_templates() -> JSONResponse:
                 "gpu": "A10G ($0.0006/s)",
                 "monthly_estimate": "~50K requests on $30 free credits",
                 "modal_example_url": "https://modal.com/docs/examples/vllm_inference",
-                "code": '''import modal
+                "code": '''import subprocess
+import modal
 
 app = modal.App("llm-serve")
-image = modal.Image.debian_slim().pip_install("vllm")
 
-@app.function(gpu="A10G", image=image, timeout=300)
-@modal.web_endpoint(method="POST")
-async def serve(request: dict):
-    from vllm import LLM, SamplingParams
-    llm = LLM(model="meta-llama/Llama-3.1-8B-Instruct")
-    messages = request.get("messages", [])
-    prompt = " ".join(m["content"] for m in messages)
-    params = SamplingParams(temperature=request.get("temperature", 0.7),
-                            max_tokens=request.get("max_tokens", 512))
-    output = llm.generate([prompt], params)[0]
-    return {"choices": [{"message": {"role": "assistant",
-                                      "content": output.outputs[0].text},
-                          "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install("vllm>=0.8.0", "huggingface_hub[hf_transfer]", "hf_transfer")
+    .env({"HF_HOME": "/model-cache", "HF_HUB_ENABLE_HF_TRANSFER": "1"})
+)
+
+model_vol = modal.Volume.from_name("arbiter-model-cache", create_if_missing=True)
+
+@app.function(
+    gpu="A10G",
+    image=image,
+    volumes={"/model-cache": model_vol},
+    scaledown_window=300,
+    timeout=600,
+)
+@modal.concurrent(max_inputs=8)
+@modal.web_server(port=8000, startup_timeout=600)
+def serve():
+    """vLLM serves OpenAI-compatible API on port 8000."""
+    subprocess.Popen([
+        "vllm", "serve", "meta-llama/Llama-3.1-8B-Instruct",
+        "--host", "0.0.0.0", "--port", "8000",
+        "--max-model-len", "32768",
+        "--gpu-memory-utilization", "0.90",
+        "--trust-remote-code",
+        "--served-model-name", "meta-llama/Llama-3.1-8B-Instruct",
+    ])
 ''',
             },
             {
@@ -269,11 +282,13 @@ async def serve(request: dict):
             },
         ],
         "gpu_pricing": {
-            "T4":       "$0.0002/s  ($14.40/month 24/7)",
-            "A10G":     "$0.0006/s  ($43.20/month 24/7)",
-            "A100-40G": "$0.0012/s  ($86.40/month 24/7)",
-            "A100-80G": "$0.0019/s  ($136/month 24/7)",
-            "H100":     "$0.0040/s  ($288/month 24/7)",
+            "T4":       "$0.000164/s  (~$0.59/hr)",
+            "L4":       "$0.000222/s  (~$0.80/hr)",
+            "A10G":     "$0.000306/s  (~$1.10/hr)",
+            "L40S":     "$0.000542/s  (~$1.95/hr)",
+            "A100-40G": "$0.000583/s  (~$2.10/hr)",
+            "A100-80G": "$0.000694/s  (~$2.50/hr)",
+            "H100":     "$0.001097/s  (~$3.95/hr)",
             "note": "Modal is serverless — you only pay while a request is running, not idle time",
         },
         "links": {

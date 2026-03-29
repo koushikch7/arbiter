@@ -21,6 +21,7 @@ from app.providers.huggingface import HuggingFaceProvider
 from app.providers.pollinations import PollinationsProvider
 from app.providers.modal_provider import ModalProvider
 from app.providers.zai_provider import ZaiProvider
+from app.providers.lightning_provider import LightningProvider
 from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
@@ -31,6 +32,9 @@ from app.api.image_api import router as image_router
 from app.api.modal_manager import router as modal_router
 from app.api.modal_deploy import router as modal_deploy_router
 from app.api.logs_api import router as logs_router, log_buffer
+from app.api.analytics_api import router as analytics_router
+from app.api.gateway_tokens_api import router as gateway_tokens_router
+from app.api.gateway_tokens_api import load_gateway_tokens_to_state
 from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
 
 logging.basicConfig(
@@ -72,6 +76,7 @@ async def lifespan(app: FastAPI):
         "huggingface":  HuggingFaceProvider,
         "pollinations": PollinationsProvider,
         "zai":          ZaiProvider,
+        "lightning":    LightningProvider,
         "modal":        ModalProvider,
     }
 
@@ -150,6 +155,13 @@ async def lifespan(app: FastAPI):
     )
     app.state.router = intelligent_router
 
+    # Load gateway tokens from Redis into app state (for dynamic auth)
+    try:
+        await load_gateway_tokens_to_state(app)
+    except Exception as _e:
+        logger.warning(f"Could not load gateway tokens: {_e}")
+        app.state.gateway_tokens = set()
+
     logger.info(
         f"Arbiter ready. Providers: {list(providers.keys())}, "
         f"Cache TTL: {settings.CACHE_TTL}s"
@@ -175,7 +187,7 @@ app = FastAPI(
         "Cloudflare Workers AI, OpenRouter, Cohere, HuggingFace, and Pollinations "
         "with weighted key rotation, rate-limit tracking, and response caching."
     ),
-    version="1.1.0",
+    version="1.9.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -243,6 +255,8 @@ app.include_router(image_router, tags=["Images"])
 app.include_router(modal_router, tags=["Modal"])
 app.include_router(modal_deploy_router, tags=["Modal Deploy"])
 app.include_router(logs_router, tags=["Logs"])
+app.include_router(analytics_router, tags=["Analytics"])
+app.include_router(gateway_tokens_router, tags=["Gateway Tokens"])
 
 
 @app.get("/health", summary="Health check")
@@ -261,7 +275,7 @@ async def health(request: Request):
             "status": "ok" if redis_ok else "degraded",
             "redis": "connected" if redis_ok else "disconnected",
             "providers": providers,
-            "version": "1.0.0",
+            "version": "1.9.0",
         }
     )
 

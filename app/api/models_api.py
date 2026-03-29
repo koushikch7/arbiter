@@ -1,12 +1,24 @@
 import time
 import logging
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from app.models.schemas import ModelInfo, ModelsResponse
+from app.routing.router import VENDOR_MODEL_HIERARCHY
+from app.key_management.key_pool import PROVIDER_LIMITS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Which models are free-tier vs paid
+_FREE_TIER_PROVIDERS = {"gemini", "groq", "openrouter", "cohere", "cloudflare",
+                        "cerebras", "huggingface", "pollinations", "zai"}
+
+# Models known to be paid-only (not in the free hierarchy)
+_PAID_ONLY_MODELS = {
+    "gemini-2.5-pro", "gemini-3.1-pro", "command-r-plus", "gpt-4", "claude-3-opus",
+}
 
 # Static mapping of provider to owner label
 PROVIDER_OWNERS = {
@@ -82,3 +94,67 @@ async def list_models(request: Request) -> ModelsResponse:
 
     logger.debug(f"Returning {len(model_list)} models")
     return ModelsResponse(object="list", data=model_list)
+
+
+@router.get(
+    "/api/models/info",
+    summary="Model info with rate limits and free/paid status",
+)
+async def models_info(request: Request) -> JSONResponse:
+    """
+    Return per-vendor model catalog with rate limits (RPM/TPM/RPD),
+    context window, and free/paid status — used by the Playground UI
+    for intelligent model selection.
+    """
+    providers = request.app.state.providers
+    result = []
+
+    for vendor, model_list in VENDOR_MODEL_HIERARCHY.items():
+        if vendor not in providers:
+            continue  # Only return configured providers
+
+        limits = PROVIDER_LIMITS.get(vendor, {"rpm": 20, "tpm": 100_000, "daily": 1_000})
+        is_free_provider = vendor in _FREE_TIER_PROVIDERS
+
+        vendor_models = []
+        for model_id, ctx_window in model_list:
+            is_free = is_free_provider and model_id not in _PAID_ONLY_MODELS
+            # OpenRouter free models have ":free" suffix
+            if vendor == "openrouter" and ":free" not in model_id:
+                is_free = False
+
+            vendor_models.append({
+                "id":           model_id,
+                "context":      ctx_window,
+                "free":         is_free,
+                "rpm":          limits["rpm"],
+                "tpm":          limits["tpm"],
+                "rpd":          limits["daily"],
+            })
+
+        result.append({
+            "vendor":     vendor,
+            "label":      _VENDOR_LABELS.get(vendor, vendor.title()),
+            "free":       is_free_provider,
+            "rpm":        limits["rpm"],
+            "tpm":        limits["tpm"],
+            "rpd":        limits["daily"],
+            "models":     vendor_models,
+        })
+
+    return JSONResponse(content=result)
+
+
+_VENDOR_LABELS = {
+    "gemini":      "Google Gemini",
+    "groq":        "Groq",
+    "openrouter":  "OpenRouter",
+    "cohere":      "Cohere",
+    "cloudflare":  "Cloudflare Workers AI",
+    "cerebras":    "Cerebras Inference",
+    "huggingface": "HuggingFace",
+    "pollinations":"Pollinations.ai",
+    "zai":         "Z.ai / Zhipu AI",
+    "modal":       "Modal.com",
+    "lightning":   "Lightning.ai (LitAI)",
+}

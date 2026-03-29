@@ -157,7 +157,7 @@
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
         Settings
       </a>
-      <a href="/settings" onclick="localStorage.setItem('arbiter-settings-tab','images')" class="nav-item">
+      <a href="/images" class="nav-item">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         Image Generation
       </a>
@@ -168,6 +168,10 @@
       <a href="/logs" class="nav-item active">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
         Logs
+      </a>
+      <a href="/analytics" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Analytics
       </a>
       <div class="sidebar-divider"></div>
       <span class="sidebar-section">Developer</span>
@@ -341,6 +345,7 @@ var _autoTimer    = null;
 var _tailLive     = true;
 var _lastRecords  = [];
 var _debounceT    = null;
+var _expandedSeqs = new Set();   // seqs of expanded rows (survives refresh)
 
 // levels currently active (all on by default)
 var _activeLevels = new Set(['DEBUG','INFO','WARNING','ERROR','CRITICAL']);
@@ -418,8 +423,10 @@ function renderRecords(records, total, returned) {
     var ts  = r.ts_iso.replace('T', ' ').replace('Z','');
     var msg = escHtml(r.message);
     var detail = escHtml(JSON.stringify(r, null, 2));
+    var seq = r.seq != null ? String(r.seq) : String(idx);
+    var expanded = _expandedSeqs.has(seq) ? ' expanded' : '';
     return (
-      '<div class="log-row level-' + r.level + '" onclick="toggleDetail(' + idx + ')" id="row-' + idx + '">' +
+      '<div class="log-row level-' + r.level + expanded + '" onclick="toggleDetail(this,\'' + seq + '\')" id="row-' + idx + '" data-seq="' + seq + '">' +
         '<div class="log-ts">' + ts + '</div>' +
         '<div class="log-level ' + r.level + '">' + r.level + '</div>' +
         '<div class="log-logger" title="' + escHtml(r.logger) + '">' + escHtml(shortenLogger(r.logger)) + '</div>' +
@@ -432,9 +439,13 @@ function renderRecords(records, total, returned) {
   document.getElementById('log-entries').innerHTML = html;
 }
 
-function toggleDetail(idx) {
-  var row = document.getElementById('row-' + idx);
-  row.classList.toggle('expanded');
+function toggleDetail(rowEl, seq) {
+  rowEl.classList.toggle('expanded');
+  if (rowEl.classList.contains('expanded')) {
+    _expandedSeqs.add(seq);
+  } else {
+    _expandedSeqs.delete(seq);
+  }
 }
 
 function shortenLogger(name) {

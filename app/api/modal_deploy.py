@@ -67,7 +67,7 @@ MODELS = [
         "gpu":         "A10G",
         "vram_gb":     18,
         "max_model_len": 32768,
-        "cost_per_hr": 0.72,
+        "cost_per_hr": 1.10,
         "est_rpm":     60,
         "tier":        "fast",
         "notes":       "Best price/performance — recommended starting point",
@@ -79,11 +79,35 @@ MODELS = [
         "gpu":         "T4",
         "vram_gb":     8,
         "max_model_len": 32768,
-        "cost_per_hr": 0.36,
+        "cost_per_hr": 0.59,
         "est_rpm":     100,
         "tier":        "cheapest",
         "notes":       "Cheapest option — great for testing and high-volume tasks",
         "requires_hf_token": True,
+    },
+    {
+        "id":          "Qwen/Qwen2.5-7B-Instruct",
+        "label":       "Qwen 2.5 7B Instruct",
+        "gpu":         "L4",
+        "vram_gb":     16,
+        "max_model_len": 32768,
+        "cost_per_hr": 0.80,
+        "est_rpm":     80,
+        "tier":        "fast",
+        "notes":       "Strong 7B on L4 GPU — great price/performance sweet spot",
+        "requires_hf_token": False,
+    },
+    {
+        "id":          "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        "label":       "DeepSeek R1 Distill Llama 8B (Reasoning)",
+        "gpu":         "T4",
+        "vram_gb":     18,
+        "max_model_len": 16384,
+        "cost_per_hr": 0.59,
+        "est_rpm":     50,
+        "tier":        "reasoning",
+        "notes":       "Cheapest reasoning model — T4 GPU, no token needed",
+        "requires_hf_token": False,
     },
     {
         "id":          "mistralai/Mistral-7B-Instruct-v0.3",
@@ -91,22 +115,10 @@ MODELS = [
         "gpu":         "A10G",
         "vram_gb":     16,
         "max_model_len": 32768,
-        "cost_per_hr": 0.72,
+        "cost_per_hr": 1.10,
         "est_rpm":     60,
         "tier":        "fast",
         "notes":       "Strong 7B model, no token needed",
-        "requires_hf_token": False,
-    },
-    {
-        "id":          "Qwen/Qwen2.5-7B-Instruct",
-        "label":       "Qwen 2.5 7B Instruct",
-        "gpu":         "A10G",
-        "vram_gb":     16,
-        "max_model_len": 32768,
-        "cost_per_hr": 0.72,
-        "est_rpm":     60,
-        "tier":        "fast",
-        "notes":       "Excellent multilingual + coding performance",
         "requires_hf_token": False,
     },
     {
@@ -115,7 +127,7 @@ MODELS = [
         "gpu":         "A10G",
         "vram_gb":     22,
         "max_model_len": 16384,
-        "cost_per_hr": 0.72,
+        "cost_per_hr": 1.10,
         "est_rpm":     40,
         "tier":        "balanced",
         "notes":       "14B fits A10G with quantisation disabled",
@@ -127,7 +139,7 @@ MODELS = [
         "gpu":         "A10G",
         "vram_gb":     20,
         "max_model_len": 8192,
-        "cost_per_hr": 0.72,
+        "cost_per_hr": 1.10,
         "est_rpm":     50,
         "tier":        "fast",
         "notes":       "Google's efficient 9B — no token needed",
@@ -139,7 +151,7 @@ MODELS = [
         "gpu":         "A10G",
         "vram_gb":     16,
         "max_model_len": 32768,
-        "cost_per_hr": 0.72,
+        "cost_per_hr": 1.10,
         "est_rpm":     40,
         "tier":        "reasoning",
         "notes":       "Reasoning model distilled from R1 — surprisingly capable",
@@ -151,7 +163,7 @@ MODELS = [
         "gpu":         "A100-40GB",
         "vram_gb":     35,
         "max_model_len": 32768,
-        "cost_per_hr": 2.16,
+        "cost_per_hr": 2.10,
         "est_rpm":     20,
         "tier":        "reasoning",
         "notes":       "Best open reasoning model — requires A100",
@@ -163,7 +175,7 @@ MODELS = [
         "gpu":         "A100-80GB",
         "vram_gb":     70,
         "max_model_len": 32768,
-        "cost_per_hr": 3.40,
+        "cost_per_hr": 2.50,
         "est_rpm":     15,
         "tier":        "high-quality",
         "notes":       "State-of-the-art open model — requires A100 80GB",
@@ -175,7 +187,7 @@ MODELS = [
         "gpu":         "A100-80GB",
         "vram_gb":     70,
         "max_model_len": 32768,
-        "cost_per_hr": 3.40,
+        "cost_per_hr": 2.50,
         "est_rpm":     15,
         "tier":        "high-quality",
         "notes":       "Best Qwen model — requires A100 80GB",
@@ -186,7 +198,9 @@ MODELS = [
 # GPU → Modal GPU string
 _GPU_MAP = {
     "T4":        "T4",
+    "L4":        "L4",
     "A10G":      "A10G",
+    "L40S":      "L40S",
     "A100-40GB": "A100-40GB",
     "A100-80GB": "A100-80GB",
     "H100":      "H100",
@@ -201,8 +215,9 @@ _VLLM_TEMPLATE = '''\
 Auto-generated vLLM inference script — deployed by Arbiter.
 Model: {model_id}
 App:   {app_name}
+Modal 1.0+ compatible: @app.function + @modal.concurrent + @modal.web_server
 """
-import time
+import subprocess
 import modal
 
 MODEL_ID       = "{model_id}"
@@ -214,18 +229,16 @@ MAX_CONCURRENT = {concurrent_inputs}
 
 app = modal.App(APP_NAME)
 
-# Persistent volume — model weights cached across cold starts.
+# Persistent Volume — model weights cached on first cold start, reused on every subsequent one.
+# This avoids re-downloading multi-GB weights every deploy.
 model_vol = modal.Volume.from_name("arbiter-model-cache", create_if_missing=True)
 
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.debian_slim(python_version="3.12")
     .pip_install(
-        "vllm>=0.6.0",
-        "transformers>=4.44.0",
+        "vllm>=0.8.0",
         "huggingface_hub[hf_transfer]",
         "hf_transfer",
-        "fastapi>=0.110.0",
-        "uvicorn",
     )
     .env({{
         "HF_HOME":                   "/model-cache",
@@ -235,109 +248,36 @@ image = (
 
 {secret_block}
 
-@app.cls(
+@app.function(
     gpu=GPU,
     image=image,
     volumes={{"/model-cache": model_vol}},
     scaledown_window=IDLE_SECS,
-    timeout=900,
-    allow_concurrent_inputs=MAX_CONCURRENT,
+    timeout=600,
     {secrets_arg}
 )
-class VLLMServer:
-    @modal.enter()
-    def load(self):
-        """Called once per container lifecycle — keeps model in GPU memory."""
-        from vllm import LLM
-        from transformers import AutoTokenizer
-        self.llm = LLM(
-            model=MODEL_ID,
-            gpu_memory_utilization=0.90,
-            max_model_len=MAX_LEN,
-            trust_remote_code=True,
-            {quantization_line}
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_ID, trust_remote_code=True
-        )
-        self._has_chat_template = bool(getattr(self.tokenizer, "chat_template", None))
-        print("[arbiter] Model loaded: " + MODEL_ID)
-
-    def _build_prompt(self, messages):
-        if self._has_chat_template:
-            return self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-        out = ""
-        for m in messages:
-            r = m.get("role", "user")
-            c = m.get("content", "")
-            if r == "system":
-                out += c + "\\n\\n"
-            elif r == "user":
-                out += "Human: " + c + "\\n"
-            elif r == "assistant":
-                out += "Assistant: " + c + "\\n"
-        return out + "Assistant: "
-
-    @modal.asgi_app(label="{label}")
-    def web(self):
-        """Serve an OpenAI-compatible FastAPI app at /v1/chat/completions."""
-        import fastapi, time as _t, asyncio
-        from fastapi import Request
-        from fastapi.responses import JSONResponse
-
-        web_app = fastapi.FastAPI()
-        _server = self  # capture reference for inner functions
-
-        @web_app.post("/v1/chat/completions")
-        async def chat_completions(request: Request):
-            from vllm import SamplingParams
-            body = await request.json()
-            messages = body.get("messages", [])
-            if not messages:
-                return JSONResponse({{"error": "messages array is required"}}, status_code=400)
-            prompt = _server._build_prompt(messages)
-            params = SamplingParams(
-                temperature=float(body.get("temperature", 0.7)),
-                max_tokens=min(int(body.get("max_tokens", 512)), MAX_LEN // 2),
-                top_p=float(body.get("top_p", 0.95)),
-                stop=body.get("stop") or None,
-            )
-            t0 = _t.perf_counter()
-            # Run blocking vLLM call in thread executor so we don't block the event loop
-            loop = asyncio.get_event_loop()
-            outputs = await loop.run_in_executor(
-                None, lambda: _server.llm.generate([prompt], params)
-            )
-            latency  = round((_t.perf_counter() - t0) * 1000)
-            result   = outputs[0]
-            text     = result.outputs[0].text
-            finish   = result.outputs[0].finish_reason or "stop"
-            c_tokens = len(result.outputs[0].token_ids)
-            return {{
-                "id":      "chatcmpl-" + str(int(_t.time())),
-                "object":  "chat.completion",
-                "created": int(_t.time()),
-                "model":   MODEL_ID,
-                "choices": [{{
-                    "index":         0,
-                    "message":       {{"role": "assistant", "content": text}},
-                    "finish_reason": finish,
-                }}],
-                "usage": {{
-                    "prompt_tokens":     0,
-                    "completion_tokens": c_tokens,
-                    "total_tokens":      c_tokens,
-                }},
-                "x_arbiter": {{"latency_ms": latency}},
-            }}
-
-        @web_app.get("/health")
-        def health():
-            return {{"status": "ok", "model": MODEL_ID}}
-
-        return web_app
+@modal.concurrent(max_inputs=MAX_CONCURRENT)
+@modal.web_server(port=8000, startup_timeout=600)
+def serve():
+    """
+    Start vLLM\'s built-in OpenAI-compatible server on port 8000.
+    Modal routes HTTP traffic to this port.
+    Available endpoints:
+      POST /v1/chat/completions  (OpenAI-compatible)
+      GET  /v1/models
+      GET  /health
+    """
+    cmd = [
+        "vllm", "serve", MODEL_ID,
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--max-model-len", str(MAX_LEN),
+        "--gpu-memory-utilization", "0.90",
+        "--trust-remote-code",
+        "--served-model-name", MODEL_ID,
+    ]
+    {quantization_block}
+    subprocess.Popen(cmd)
 '''
 
 
@@ -717,7 +657,6 @@ async def start_deployment(body: DeployBody, request: Request) -> JSONResponse:
 
     name       = _sanitize_name(body.name or body.model_id.split("/")[-1])
     app_name   = f"arbiter-{name}"
-    label      = name
     gpu        = body.gpu or (model_meta["gpu"] if model_meta else "A10G")
     max_len    = body.max_model_len or (model_meta["max_model_len"] if model_meta else 8192)
     idle_to    = max(60, body.idle_timeout)
@@ -736,14 +675,13 @@ async def start_deployment(body: DeployBody, request: Request) -> JSONResponse:
     script = _VLLM_TEMPLATE.format(
         model_id          = body.model_id,
         app_name          = app_name,
-        label             = label,
         gpu               = _GPU_MAP.get(gpu, gpu),
         max_model_len     = max_len,
         idle_timeout      = idle_to,
         concurrent_inputs = concurrent,
         secret_block      = secret_block,
         secrets_arg       = secrets_arg,
-        quantization_line = "",
+        quantization_block = "",
     )
 
     deploy_id = f"dep-{uuid.uuid4().hex[:8]}"

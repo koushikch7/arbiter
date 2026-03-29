@@ -99,6 +99,14 @@ PROVIDER_LIMITS = {
         "tpm":   500_000,     # no TPM limit; sentinel
         "daily": 100_000,     # ~$30/month free tier estimate on typical usage
     },
+    "lightning": {
+        # Lightning.ai LitAI — pay-per-token, no documented RPM limit
+        # ~37M token welcome credit on signup
+        # Pricing: $0.09–$0.52 per million tokens
+        "rpm":   20,          # no published limit; conservative sentinel matching OpenRouter
+        "tpm":   500_000,     # no published TPM limit; sentinel
+        "daily": 1_000,       # no published daily limit; conservative sentinel
+    },
 }
 
 # Score weights

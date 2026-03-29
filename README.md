@@ -1,6 +1,6 @@
 # Arbiter – Intelligent LLM Router & Gateway
 
-A self-hosted, production-ready gateway that aggregates **8 free-tier LLM providers** behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **weighted scoring, model hierarchies, and automatic fallback**.
+A self-hosted, production-ready gateway that aggregates **9 free-tier LLM providers** behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **weighted scoring, model hierarchies, and automatic fallback**.
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.
 
@@ -20,9 +20,12 @@ Designed for **multi-agent frameworks** like OpenClaw that generate concurrent b
 - **Cerebras Inference** (4 models, 8K context) — 30 RPM, 60K TPM, 1M tokens/day
 - **OpenRouter** (7 `:free` models, 128K–131K context) — 20 RPM, 50–1,000 RPD
 - **Cohere** (4 models, 128–256K context) — 20 RPM, 33 RPD
+- **Z.ai / Zhipu AI** (3 models, 32K–128K context) — ~10 RPM free tier, GLM-4.7/4.5-Flash free
 - **HuggingFace** (4 models, 8K–32K context) — Limited free credits
 - **Pollinations.ai** (3 models, 32K context) — Completely free, no key required
+- **Lightning.ai LitAI** (5 models, 128K–256K context) — Nemotron 3 Super (256K), gpt-oss-120B, DeepSeek V3.1 (164K); ~37M token welcome credit then $0.09–$0.52/M tokens
 - **Multi-account support** — Unlimited accounts per provider with intelligent scoring
+- **Additive capacity** — Overlapping models (e.g., GLM on both Cerebras+Z.ai) sum their rate limits
 
 ### ✅ Weighted Scoring Algorithm
 Each API key is scored in **real-time** by remaining quota:
@@ -65,6 +68,13 @@ Try Gemini (large context required):
   - **Per-provider table**: Status, active accounts, request counts, success rates
   - **Per-account table**: Availability score (0–100%), RPM/TPM/daily usage bars
   - **Color-coded health**: 🟢 Healthy → 🟡 Degraded → 🔴 Unavailable
+- **Analytics Dashboard** (`/analytics`) — Deep usage analytics:
+  - **Summary KPIs**: total requests, tokens, errors, cache hits
+  - **Per-provider breakdown**: request counts, token usage, error rates
+  - **Per-model breakdown**: requests, tokens, errors per model
+  - **Request history chart**: 5-minute bucket time-series (Chart.js line chart)
+  - **Provider distribution**: doughnut chart of request share by vendor
+  - **Reset button** — clear all stats counters
 - **Interactive API Docs** (`/api-docs`) — Full playground with live request tester, provider table, authentication guide
 - **Swagger UI** (`/docs`) — Standard OpenAPI documentation
 - **JSON Stats** (`/dashboard/stats`) — Programmatic access to metrics
@@ -72,6 +82,12 @@ Try Gemini (large context required):
 ### ✅ API Authentication & Security
 - **Gateway-level authentication** — Optional `Authorization: Bearer <key>` validation
 - **Multi-key support** — Multiple gateway API keys (comma-separated in `.env`)
+- **Dynamic gateway token management** (`/settings` → Gateway Keys tab):
+  - Create named tokens with optional expiry dates from the admin UI
+  - Tokens become active immediately — no restart required
+  - Revoke or delete individual tokens without affecting others
+  - Env-var keys and UI-created tokens coexist seamlessly
+  - **API**: `GET/POST /api/gateway/tokens`, `DELETE/PATCH /api/gateway/tokens/{id}`
 - **Cloudflare Access integration** — JWT validation via Cloudflare Zero Trust
 - **JWKS caching** — 1-hour TTL for performance
 - **No API keys in logs** — Keys hashed; only first 4 chars logged
@@ -94,8 +110,11 @@ Try Gemini (large context required):
 - Shared `arbiter.css` + `arbiter.js` across all pages — consistent sidebar, topbar, components
 - **Light / dark mode** — system preference detection + manual toggle, persisted in `localStorage`
 - **Dashboard** — KPI cards, Chart.js line + doughnut charts, provider status table, key details accordion
+- **Analytics** (`/analytics`) — detailed usage charts: time-series requests, provider/model breakdown
 - **API Docs** (`/api-docs`) — 5-tab layout with live playground, provider table, endpoint reference
-- **Settings** (`/settings`) — API Keys management, routing order, model overrides, image gen, Cloudflare Workers, cache
+- **Settings** (`/settings`) — API Keys, routing, model overrides, image gen, Cloudflare Workers, cache, **Gateway Keys**
+- **Image Generation** (`/images`) — dedicated page with prompt, model selector, count, size, and seed controls
+- **Playground** (`/playground`) — vendor + model drill-down with free/paid badges and rate limit display
 
 ### ✅ Cloudflare Workers AI Manager
 - **Create Workers** — Provision new Workers AI instances from the gateway
@@ -105,15 +124,24 @@ Try Gemini (large context required):
 - **Admin endpoints** — `/cloudflare/workers/*` routes
 
 ### ✅ Modal.com One-Click vLLM Deploy
-- **Deploy open-weight models** on Modal GPU infrastructure (A10G, A100, H100) directly from the Settings UI
+- **Deploy open-weight models** on Modal GPU infrastructure (T4, L4, A10G, A100, H100) directly from the Settings UI
+- **Modal 1.0 compatible** — uses `@app.function` + `@modal.concurrent` + `@modal.web_server` + subprocess vLLM (fixed from deprecated `@app.cls` + `allow_concurrent_inputs`)
+- **vLLM's built-in OpenAI server** — serves `/v1/chat/completions` natively; no custom FastAPI wrapper needed
 - **Live log streaming** — deploy logs streamed from the `modal deploy` subprocess in real time
-- **Cost-efficient** — uses `scaledown_window` so containers shut down when idle; `modal.Volume` caches model weights
+- **Cost-efficient** — uses `scaledown_window` so containers shut down when idle; `modal.Volume` caches model weights across cold starts
+- **GPU catalog**: T4 ($0.59/hr), L4 ($0.80/hr), A10G ($1.10/hr), A100-40GB ($2.10/hr), A100-80GB ($2.50/hr), H100 ($3.95/hr)
+- **Model catalog**: Llama 3.1/3.2/3.3, Mistral 7B, Qwen 2.5 7B/14B/72B, Gemma 2 9B, DeepSeek R1 Distill, and more
 - **Pre-flight check** — `GET /modal/deploy/check` verifies CLI installation and token before attempting a deploy
 - **Gateway integration** — deployed endpoints are registered as a provider and usable via `/v1/chat/completions`
 - **Admin endpoints** — `/modal/deploy/*` routes
 
 ### ✅ Chat Playground (`/playground`)
 - **Interactive chat UI** for testing every endpoint — CF workers, Modal deployments, and all gateway providers
+- **Two-level model selection** — choose vendor, then pick a specific model with full metadata:
+  - **Free / paid badges** per model
+  - **Rate limit display** — RPM, TPM, RPD shown on selection
+  - **Context window** size per model
+  - Models loaded live from `/api/models/info` (only configured vendors shown)
 - **Endpoint selector** grouped by type: Gateway Providers, Cloudflare Workers, Modal Deployments
 - **Per-endpoint routing**: CF workers route through the gateway (`cfworker/{name}`), Modal deployments hit the endpoint directly, providers go through `/v1/chat/completions`
 - **Config panel** — system prompt, temperature, max tokens; latency badge on each response
@@ -122,6 +150,7 @@ Try Gemini (large context required):
 - **In-memory log buffer** — last 5,000 records from all modules captured automatically
 - **Filters**: level, logger name, full-text search, time range (since/until), tail, limit
 - **Auto-refresh** (2 s / 5 s / 10 s / 30 s), sort newest/oldest, download as `.txt`, copy to clipboard
+- **Expansion state preserved on refresh** — expanded log rows stay expanded even as new records load
 - **API**: `GET /logs/records`, `GET /logs/loggers`, `DELETE /logs/clear`
 
 ### ✅ CF Workers & Modal — Gateway Routing
@@ -171,8 +200,8 @@ Gateway starts successfully **even without Redis**:
     ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼
 ┌──────────────────────────────────────────────────────────┐
 │  Gemini │ Groq │ Cloudflare │ Cerebras │ OpenRouter    │
-│  Provider  Adapter  Workers AI  Inference  + Cohere     │
-│        HuggingFace  │  Pollinations  │  Modal vLLM      │
+│  Provider  Adapter  Workers AI  Inference  Cohere │ Z.ai │
+│      HuggingFace  │  Pollinations  │  Modal vLLM        │
 └──────────────────────────────────────────────────────────┘
     │
     ▼
@@ -250,6 +279,9 @@ OPENROUTER_API_KEYS=your-openrouter-key
 # Cohere  (https://dashboard.cohere.com/api-keys)
 COHERE_API_KEYS=your-cohere-key
 
+# Z.ai / Zhipu AI  (https://z.ai/manage-apikey)  — GLM-4.7-Flash is free!
+ZAI_API_KEYS=your-zai-api-key
+
 # HuggingFace  (https://huggingface.co/settings/tokens)
 HUGGINGFACE_API_KEYS=hf_your-token-here
 
@@ -320,6 +352,7 @@ open http://localhost:8000/dashboard
 | `CEREBRAS_API_KEYS` | (empty) | Comma-separated Cerebras keys |
 | `OPENROUTER_API_KEYS` | (empty) | Comma-separated OpenRouter keys |
 | `COHERE_API_KEYS` | (empty) | Comma-separated Cohere keys |
+| `ZAI_API_KEYS` | (empty) | Comma-separated Z.ai / Zhipu API keys |
 | `HUGGINGFACE_API_KEYS` | (empty) | Comma-separated HuggingFace tokens |
 | `POLLINATIONS_API_KEYS` | (empty) | Leave empty (free, no key needed) |
 | **Modal** | | |
@@ -338,6 +371,7 @@ open http://localhost:8000/dashboard
 | **Cerebras** | 30 | 60K | 1M tokens | Production tier |
 | **OpenRouter** | 20 | — | 50–1K | No credits vs with credits |
 | **Cohere** | 20 | — | 33 | ≈1,000/month |
+| **Z.ai** | ~10 | 200K | 1K | GLM-4.7-Flash free ($0) |
 | **HuggingFace** | 10 | 50K | 500 | Limited free credits |
 | **Pollinations** | 5 | 100K | 1K | Completely free ✅ |
 

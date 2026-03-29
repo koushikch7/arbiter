@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Generation — Arbiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <script src="/static/arbiter.js"></script>
+  <style>
+    /* ── Page layout ── */
+    .img-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    /* ── Controls panel ── */
+    .controls-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: sticky;
+      top: calc(var(--topbar-h) + 24px);
+    }
+    .ctrl-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .ctrl-card h4 {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-3);
+      margin: 0 0 12px;
+    }
+    .ctrl-row { margin-bottom: 12px; }
+    .ctrl-row:last-child { margin-bottom: 0; }
+    .ctrl-row label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-3);
+      margin-bottom: 5px;
+    }
+    .ctrl-row textarea,
+    .ctrl-row select,
+    .ctrl-row input[type="number"],
+    .ctrl-row input[type="text"] {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--r-sm);
+      padding: 8px 11px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--t), box-shadow var(--t);
+    }
+    .ctrl-row textarea:focus,
+    .ctrl-row select:focus,
+    .ctrl-row input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+    .ctrl-row textarea { resize: vertical; }
+    .ctrl-row select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      background-size: 16px;
+      padding-right: 30px;
+    }
+    .model-desc {
+      font-size: 11px;
+      color: var(--text-3);
+      margin-top: 5px;
+      line-height: 1.5;
+      min-height: 16px;
+    }
+
+    /* ── Count selector ── */
+    .count-selector {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    .count-btn {
+      padding: 7px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all var(--t);
+    }
+    .count-btn:hover { border-color: var(--accent); color: var(--accent-br); }
+    .count-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Toggle row ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toggle-row label {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text-2);
+      cursor: pointer;
+    }
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background var(--t), border-color var(--t);
+    }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--text-3);
+      transition: transform var(--t), background var(--t);
+    }
+    .toggle input:checked + .toggle-track {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .toggle input:checked + .toggle-track::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    /* ── Generate button ── */
+    .gen-btn {
+      width: 100%;
+      padding: 11px 16px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--r-sm);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity var(--t), background var(--t);
+    }
+    .gen-btn:hover { background: var(--accent-br); }
+    .gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .gen-btn .spinner { border-top-color: #fff; }
+
+    /* ── Image grid area ── */
+    .img-area {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .img-area-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .img-area-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .img-area-meta {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    /* ── Empty state ── */
+    .img-empty {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--r-lg);
+      padding: 64px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-3);
+      text-align: center;
+    }
+    .img-empty svg { opacity: 0.3; }
+    .img-empty p { font-size: 14px; font-weight: 500; margin: 0; color: var(--text-2); }
+    .img-empty small { font-size: 12px; color: var(--text-3); }
+
+    /* ── Error state ── */
+    .img-error {
+      background: var(--red-dim);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: var(--r-lg);
+      padding: 20px 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      color: var(--red);
+      font-size: 13px;
+    }
+    .img-error svg { flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Image grid ── */
+    .img-grid {
+      display: grid;
+      gap: 14px;
+    }
+    .img-grid.count-1 { grid-template-columns: 1fr; max-width: 600px; }
+    .img-grid.count-2 { grid-template-columns: repeat(2, 1fr); }
+    .img-grid.count-3 { grid-template-columns: repeat(3, 1fr); }
+    .img-grid.count-4 { grid-template-columns: repeat(2, 1fr); }
+
+    /* ── Image card ── */
+    .img-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: box-shadow var(--t), border-color var(--t);
+      display: flex;
+      flex-direction: column;
+    }
+    .img-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-2); }
+
+    .img-card-figure {
+      position: relative;
+      overflow: hidden;
+      background: var(--surface-3);
+      aspect-ratio: 1 / 1;
+    }
+    .img-card-figure.ar-landscape { aspect-ratio: 16 / 9; }
+    .img-card-figure.ar-portrait  { aspect-ratio: 9 / 16; }
+    .img-card-figure img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.3s ease;
+    }
+    .img-card:hover .img-card-figure img { transform: scale(1.02); }
+
+    /* Overlay actions */
+    .img-card-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0);
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      gap: 6px;
+      padding: 10px;
+      transition: background 0.2s ease;
+      opacity: 0;
+    }
+    .img-card:hover .img-card-overlay { opacity: 1; background: rgba(0,0,0,0.35); }
+    .img-overlay-btn {
+      width: 32px; height: 32px;
+      background: rgba(255,255,255,0.18);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: var(--r-sm);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .img-overlay-btn:hover { background: rgba(255,255,255,0.32); }
+
+    /* Image details footer */
+    .img-card-footer {
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .img-card-prompt {
+      font-size: 11px;
+      color: var(--text-2);
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .img-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .img-meta-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-3);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+    .img-card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .img-action-btn {
+      flex: 1;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all var(--t);
+      white-space: nowrap;
+    }
+    .img-action-btn:hover { border-color: var(--accent); color: var(--accent-br); background: var(--accent-dim); }
+
+    /* ── Loading skeleton ── */
+    .img-skeleton {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+    }
+    .skeleton-figure {
+      background: var(--surface-3);
+      aspect-ratio: 1 / 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton-figure::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, var(--surface-2) 50%, transparent 100%);
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .skeleton-footer { padding: 10px 12px; }
+    .skeleton-line {
+      height: 10px;
+      background: var(--surface-3);
+      border-radius: 4px;
+      margin-bottom: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton-line::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, var(--surface-2) 50%, transparent 100%);
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    .skeleton-line.short { width: 60%; }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .img-layout { grid-template-columns: 1fr; }
+      .controls-panel { position: static; }
+      .img-grid.count-3 { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .img-grid.count-2,
+      .img-grid.count-3,
+      .img-grid.count-4 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">A</div>
+      <span class="sidebar-brand-name">Arbiter</span>
+      <span class="sidebar-brand-ver">v1.1</span>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="sidebar-section">Main</span>
+      <a href="/dashboard" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="/api-docs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        API Documentation
+      </a>
+      <a href="/settings" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+      <a href="/images" class="nav-item active">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Image Generation
+      </a>
+      <a href="/playground" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Playground
+      </a>
+      <a href="/logs" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
+        Logs
+      </a>
+      <a href="/analytics" class="nav-item">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Analytics
+      </a>
+      <div class="sidebar-divider"></div>
+      <span class="sidebar-section">Developer</span>
+      <a href="/docs" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        Swagger UI
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+      <a href="/redoc" class="nav-item" target="_blank">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        ReDoc
+        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="main-wrapper">
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="page-title">Image Generation</h1>
+      <div class="topbar-right">
+        <button class="btn btn-sm btn-ghost" id="refresh-btn" onclick="loadModels()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh Models
+        </button>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="img-layout">
+
+        <!-- ── Left controls panel ── -->
+        <div class="controls-panel">
+
+          <!-- Prompt -->
+          <div class="ctrl-card">
+            <h4>Prompt</h4>
+            <div class="ctrl-row">
+              <label for="prompt-input">Image prompt <span style="color:var(--red)">*</span></label>
+              <textarea id="prompt-input" rows="5" placeholder="Describe the image you want to generate…"></textarea>
+            </div>
+            <div class="ctrl-row">
+              <label for="negative-prompt-input">Negative prompt <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+              <textarea id="negative-prompt-input" rows="2" placeholder="Things to avoid in the image…"></textarea>
+            </div>
+          </div>
+
+          <!-- Model & options -->
+          <div class="ctrl-card">
+            <h4>Model</h4>
+            <div class="ctrl-row">
+              <label for="model-select">Model</label>
+              <select id="model-select" onchange="onModelChange()">
+                <option value="">Loading models…</option>
+              </select>
+              <div class="model-desc" id="model-desc"></div>
+            </div>
+          </div>
+
+          <!-- Generation settings -->
+          <div class="ctrl-card">
+            <h4>Settings</h4>
+            <div class="ctrl-row">
+              <label>Number of images</label>
+              <div class="count-selector" id="count-selector">
+                <button class="count-btn active" data-count="1" onclick="setCount(1)">1</button>
+                <button class="count-btn" data-count="2" onclick="setCount(2)">2</button>
+                <button class="count-btn" data-count="3" onclick="setCount(3)">3</button>
+                <button class="count-btn" data-count="4" onclick="setCount(4)">4</button>
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label for="size-select">Size</label>
+              <select id="size-select">
+                <option value="1024x1024">1024 x 1024 (Square)</option>
+                <option value="1280x720">1280 x 720 (Landscape 16:9)</option>
+                <option value="720x1280">720 x 1280 (Portrait 9:16)</option>
+                <option value="1024x768">1024 x 768 (Landscape 4:3)</option>
+                <option value="768x1024">768 x 1024 (Portrait 3:4)</option>
+                <option value="512x512">512 x 512 (Small)</option>
+                <option value="1920x1080">1920 x 1080 (Full HD)</option>
+              </select>
+            </div>
+            <div class="ctrl-row">
+              <label for="seed-input">Seed <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">(-1 = random)</span></label>
+              <input type="number" id="seed-input" value="-1" min="-1" max="2147483647" placeholder="-1" />
+            </div>
+            <div class="ctrl-row">
+              <div class="toggle-row">
+                <label for="enhance-toggle">Enhance prompt with AI</label>
+                <label class="toggle">
+                  <input type="checkbox" id="enhance-toggle" />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Generate -->
+          <button class="gen-btn" id="gen-btn" onclick="generateImages()">
+            <span class="spinner" id="gen-spinner"></span>
+            <svg id="gen-icon" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span id="gen-label">Generate</span>
+          </button>
+
+        </div><!-- /controls-panel -->
+
+        <!-- ── Right image area ── -->
+        <div class="img-area" id="img-area">
+
+          <!-- Empty state (shown initially) -->
+          <div class="img-empty" id="img-empty">
+            <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>No images generated yet</p>
+            <small>Write a prompt on the left and click Generate to create your first image.</small>
+          </div>
+
+          <!-- Error state (hidden) -->
+          <div class="img-error" id="img-error" style="display:none">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="img-error-msg">An error occurred.</span>
+          </div>
+
+          <!-- Generation results header (hidden) -->
+          <div class="img-area-header" id="img-results-header" style="display:none">
+            <span class="img-area-title" id="img-results-title">Generated Images</span>
+            <span class="img-area-meta" id="img-results-meta"></span>
+          </div>
+
+          <!-- Image grid (populated dynamically) -->
+          <div class="img-grid count-1" id="img-grid" style="display:none"></div>
+
+        </div><!-- /img-area -->
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────────────────
+var _models      = [];      // [{id, description, ...}]
+var _count       = 1;
+var _generating  = false;
+var _lastResult  = null;    // last API response
+
+// Model descriptions fallback map
+var MODEL_DESCRIPTIONS = {
+  'flux':          'High-quality, versatile image generation.',
+  'flux-realism':  'Photorealistic output with fine detail.',
+  'flux-anime':    'Anime and manga-styled artwork.',
+  'flux-3d':       '3D render-style illustrations.',
+  'flux-cablyai':  'Creative stylized artistic images.',
+  'turbo':         'Fast generation — lower latency, slightly lower quality.',
+};
+
+// Size → aspect-ratio class for the card figure
+var SIZE_AR = {
+  '1280x720':  'ar-landscape',
+  '1920x1080': 'ar-landscape',
+  '1024x768':  'ar-landscape',
+  '720x1280':  'ar-portrait',
+  '768x1024':  'ar-portrait',
+};
+
+// ── Settings persistence ─────────────────────────────────────────────────────
+var LS_KEY = 'arbiter-img-settings';
+
+function saveSettings() {
+  try {
+    var settings = {
+      prompt:          document.getElementById('prompt-input').value,
+      negativePrompt:  document.getElementById('negative-prompt-input').value,
+      model:           document.getElementById('model-select').value,
+      count:           _count,
+      size:            document.getElementById('size-select').value,
+      seed:            document.getElementById('seed-input').value,
+      enhance:         document.getElementById('enhance-toggle').checked,
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(settings));
+  } catch(e) {}
+}
+
+function restoreSettings() {
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    var s = JSON.parse(raw);
+    if (s.prompt)         document.getElementById('prompt-input').value = s.prompt;
+    if (s.negativePrompt) document.getElementById('negative-prompt-input').value = s.negativePrompt;
+    if (s.size) {
+      var sizeEl = document.getElementById('size-select');
+      for (var i = 0; i < sizeEl.options.length; i++) {
+        if (sizeEl.options[i].value === s.size) { sizeEl.selectedIndex = i; break; }
+      }
+    }
+    if (s.seed != null)   document.getElementById('seed-input').value = s.seed;
+    if (s.enhance)        document.getElementById('enhance-toggle').checked = s.enhance;
+    if (s.count)          setCount(s.count);
+    // Model restored after models load
+    if (s.model)          document.getElementById('model-select').dataset.restore = s.model;
+  } catch(e) {}
+}
+
+// ── Model loading ─────────────────────────────────────────────────────────────
+async function loadModels() {
+  var sel = document.getElementById('model-select');
+  var refreshBtn = document.getElementById('refresh-btn');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled  = true;
+  if (refreshBtn) refreshBtn.disabled = true;
+
+  try {
+    var r = await fetch('/v1/images/models', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+
+    // Normalize: accept array of strings or array of objects
+    var modelList = [];
+    var raw = Array.isArray(data) ? data : (data.models || data.data || []);
+    raw.forEach(function(item) {
+      if (typeof item === 'string') {
+        modelList.push({ id: item, description: MODEL_DESCRIPTIONS[item] || '' });
+      } else if (item && item.id) {
+        modelList.push({ id: item.id, description: item.description || MODEL_DESCRIPTIONS[item.id] || '' });
+      }
+    });
+
+    // Fallback: if API returns nothing useful, use known models
+    if (modelList.length === 0) {
+      Object.keys(MODEL_DESCRIPTIONS).forEach(function(k) {
+        modelList.push({ id: k, description: MODEL_DESCRIPTIONS[k] });
+      });
+    }
+
+    _models = modelList;
+    sel.innerHTML = '';
+    modelList.forEach(function(m) {
+      var opt = document.createElement('option');
+      opt.value       = m.id;
+      opt.textContent = m.id;
+      sel.appendChild(opt);
+    });
+
+    // Restore saved model selection
+    var restore = sel.dataset.restore;
+    if (restore) {
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === restore) { sel.selectedIndex = i; break; }
+      }
+      delete sel.dataset.restore;
+    }
+
+    sel.disabled = false;
+    onModelChange();
+    if (refreshBtn) refreshBtn.disabled = false;
+    toast('Models loaded (' + modelList.length + ')', 'success');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Error loading models</option>';
+    sel.disabled  = false;
+    if (refreshBtn) refreshBtn.disabled = false;
+    toast('Failed to load models: ' + e.message, 'error');
+  }
+}
+
+function onModelChange() {
+  var sel   = document.getElementById('model-select');
+  var desc  = document.getElementById('model-desc');
+  var model = _models.find(function(m) { return m.id === sel.value; });
+  desc.textContent = model ? (model.description || '') : '';
+  saveSettings();
+}
+
+// ── Count selector ────────────────────────────────────────────────────────────
+function setCount(n) {
+  _count = n;
+  document.querySelectorAll('.count-btn').forEach(function(btn) {
+    btn.classList.toggle('active', parseInt(btn.dataset.count, 10) === n);
+  });
+  saveSettings();
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+async function generateImages() {
+  if (_generating) return;
+
+  var prompt = document.getElementById('prompt-input').value.trim();
+  if (!prompt) {
+    toast('Please enter a prompt.', 'error');
+    document.getElementById('prompt-input').focus();
+    return;
+  }
+
+  var model           = document.getElementById('model-select').value;
+  var negativePrompt  = document.getElementById('negative-prompt-input').value.trim() || null;
+  var size            = document.getElementById('size-select').value;
+  var seedVal         = parseInt(document.getElementById('seed-input').value, 10);
+  var seed            = (isNaN(seedVal) || seedVal === -1) ? null : seedVal;
+  var enhance         = document.getElementById('enhance-toggle').checked;
+
+  saveSettings();
+  setGenerating(true);
+  hideError();
+  showSkeletons(_count, size);
+
+  var payload = {
+    prompt:          prompt,
+    model:           model || 'flux',
+    n:               _count,
+    size:            size,
+    seed:            seed,
+    enhance:         enhance,
+    nologo:          true,
+    negative_prompt: negativePrompt,
+  };
+
+  var t0 = performance.now();
+  try {
+    var r = await fetch('/v1/images/generations', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+
+    if (!r.ok) {
+      var errBody = await r.json().catch(function() { return {}; });
+      throw new Error(errBody.detail || errBody.error || ('HTTP ' + r.status + ' ' + r.statusText));
+    }
+
+    var data = await r.json();
+    var elapsed = Math.round(performance.now() - t0);
+    _lastResult = data;
+
+    renderImages(data, prompt, model || 'flux', size, seed, elapsed);
+  } catch(e) {
+    showError(e.message || 'Generation failed. Please try again.');
+    hideGrid();
+    hideSkeletons();
+    toast('Generation failed: ' + e.message, 'error');
+  } finally {
+    setGenerating(false);
+  }
+}
+
+// ── UI state helpers ──────────────────────────────────────────────────────────
+function setGenerating(active) {
+  _generating = active;
+  var btn     = document.getElementById('gen-btn');
+  var spinner = document.getElementById('gen-spinner');
+  var icon    = document.getElementById('gen-icon');
+  var label   = document.getElementById('gen-label');
+  btn.disabled            = active;
+  spinner.style.display   = active ? 'inline-block' : 'none';
+  icon.style.display      = active ? 'none' : 'inline';
+  label.textContent       = active ? 'Generating…' : 'Generate';
+}
+
+function showError(msg) {
+  var el = document.getElementById('img-error');
+  document.getElementById('img-error-msg').textContent = msg;
+  el.style.display = 'flex';
+  document.getElementById('img-empty').style.display = 'none';
+}
+function hideError() {
+  document.getElementById('img-error').style.display = 'none';
+}
+
+function hideGrid() {
+  document.getElementById('img-grid').style.display = 'none';
+  document.getElementById('img-results-header').style.display = 'none';
+}
+
+function showSkeletons(n, size) {
+  var grid = document.getElementById('img-grid');
+  document.getElementById('img-empty').style.display = 'none';
+  document.getElementById('img-results-header').style.display = 'none';
+
+  var arClass = SIZE_AR[size] || '';
+  grid.innerHTML = '';
+  grid.className = 'img-grid count-' + n;
+  grid.style.display = 'grid';
+
+  for (var i = 0; i < n; i++) {
+    var skel = document.createElement('div');
+    skel.className = 'img-skeleton';
+    skel.innerHTML = '<div class="skeleton-figure' + (arClass ? ' ' + arClass : '') + '"></div>' +
+      '<div class="skeleton-footer">' +
+        '<div class="skeleton-line"></div>' +
+        '<div class="skeleton-line short"></div>' +
+      '</div>';
+    grid.appendChild(skel);
+  }
+}
+function hideSkeletons() {
+  // Skeletons replaced by renderImages or cleared on error
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+function renderImages(data, prompt, model, size, seed, elapsedMs) {
+  var grid   = document.getElementById('img-grid');
+  var header = document.getElementById('img-results-header');
+  var title  = document.getElementById('img-results-title');
+  var meta   = document.getElementById('img-results-meta');
+
+  var items  = (data.data || []);
+  var n      = items.length;
+  var arClass = SIZE_AR[size] || '';
+
+  // Update header
+  title.textContent = n === 1 ? '1 Image Generated' : n + ' Images Generated';
+  meta.textContent  = model + ' \u00b7 ' + size + ' \u00b7 ' + elapsedMs + 'ms';
+  header.style.display = 'flex';
+
+  // Rebuild grid
+  grid.innerHTML = '';
+  grid.className = 'img-grid count-' + n;
+  grid.style.display = n > 0 ? 'grid' : 'none';
+
+  items.forEach(function(item, idx) {
+    var url           = item.url || '';
+    var revisedPrompt = item.revised_prompt || prompt;
+    var displaySeed   = seed != null ? seed : '(random)';
+
+    var card = document.createElement('div');
+    card.className = 'img-card';
+
+    card.innerHTML =
+      '<div class="img-card-figure' + (arClass ? ' ' + arClass : '') + '">' +
+        '<img src="' + escAttr(url) + '" alt="' + escAttr(revisedPrompt.slice(0, 80)) + '" loading="lazy" />' +
+        '<div class="img-card-overlay">' +
+          '<button class="img-overlay-btn" title="Download" onclick="downloadImage(' + idx + ')">' +
+            '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+          '</button>' +
+          '<button class="img-overlay-btn" title="Open in new tab" onclick="openImage(' + idx + ')">' +
+            '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+          '</button>' +
+          '<button class="img-overlay-btn" title="Copy URL" onclick="copyUrl(' + idx + ')">' +
+            '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="img-card-footer">' +
+        '<div class="img-card-prompt">' + escHtml(revisedPrompt) + '</div>' +
+        '<div class="img-card-meta">' +
+          '<span class="img-meta-chip">' + escHtml(model) + '</span>' +
+          '<span class="img-meta-chip">' + escHtml(size) + '</span>' +
+          '<span class="img-meta-chip">seed: ' + escHtml(String(displaySeed)) + '</span>' +
+        '</div>' +
+        '<div class="img-card-actions">' +
+          '<button class="img-action-btn" onclick="downloadImage(' + idx + ')">' +
+            '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+            'Download' +
+          '</button>' +
+          '<button class="img-action-btn" onclick="openImage(' + idx + ')">' +
+            '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+            'Open' +
+          '</button>' +
+          '<button class="img-action-btn" onclick="copyUrl(' + idx + ')">' +
+            '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
+            'Copy URL' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    grid.appendChild(card);
+  });
+
+  if (n === 0) {
+    showError('No images were returned by the API.');
+  }
+}
+
+// ── Image actions ─────────────────────────────────────────────────────────────
+function getImageUrl(idx) {
+  if (!_lastResult || !_lastResult.data) return null;
+  var item = _lastResult.data[idx];
+  return item ? (item.url || null) : null;
+}
+
+async function downloadImage(idx) {
+  var url = getImageUrl(idx);
+  if (!url) { toast('Image URL not available.', 'error'); return; }
+  try {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('Fetch failed');
+    var blob = await resp.blob();
+    var ext  = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+    var a    = document.createElement('a');
+    a.href   = URL.createObjectURL(blob);
+    a.download = 'arbiter-image-' + (idx + 1) + '-' + Date.now() + '.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast('Download started.', 'success');
+  } catch(e) {
+    // Fallback: navigate directly
+    var a2 = document.createElement('a');
+    a2.href     = url;
+    a2.download = 'arbiter-image-' + (idx + 1) + '.jpg';
+    a2.target   = '_blank';
+    document.body.appendChild(a2);
+    a2.click();
+    a2.remove();
+    toast('Opening image for download…', 'info');
+  }
+}
+
+function openImage(idx) {
+  var url = getImageUrl(idx);
+  if (!url) { toast('Image URL not available.', 'error'); return; }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function copyUrl(idx) {
+  var url = getImageUrl(idx);
+  if (!url) { toast('Image URL not available.', 'error'); return; }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('URL copied to clipboard.', 'success');
+  } catch(e) {
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.opacity  = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    toast('URL copied to clipboard.', 'success');
+  }
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function escAttr(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── Keyboard shortcut: Ctrl/Cmd+Enter to generate ────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    generateImages();
+  }
+});
+
+// Auto-save on input changes
+['prompt-input', 'negative-prompt-input', 'size-select', 'seed-input', 'enhance-toggle'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', saveSettings);
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  restoreSettings();
+  loadModels();
+});
+</script>
+</body>
+</html>

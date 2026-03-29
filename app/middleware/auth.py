@@ -89,8 +89,19 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         self._allowed: frozenset = frozenset(k.strip() for k in allowed_keys if k.strip())
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Auth disabled — pass through
-        if not self._allowed:
+        # Build effective allowed set: static keys + dynamic tokens from app.state
+        dynamic: frozenset = frozenset()
+        try:
+            dynamic_set = getattr(request.app.state, "gateway_tokens", None)
+            if dynamic_set:
+                dynamic = frozenset(dynamic_set)
+        except Exception:
+            pass
+
+        effective_allowed = self._allowed | dynamic
+
+        # Auth disabled — pass through when no keys configured at all
+        if not effective_allowed:
             return await call_next(request)
 
         # Exempt paths — pass through
@@ -98,6 +109,7 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         if (path in _EXEMPT_PATHS
                 or path.startswith("/static/")
                 or path.startswith("/api/providers")
+                or path.startswith("/api/gateway")
                 or path.startswith("/modal/")
                 or path.startswith("/cloudflare/")):
             return await call_next(request)
@@ -108,7 +120,7 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
             return _error_401("Missing or invalid Authorization header")
 
         token = auth_header[len("Bearer "):].strip()
-        if token not in self._allowed:
+        if token not in effective_allowed:
             return _error_401("Invalid API key")
 
         return await call_next(request)

@@ -6,7 +6,200 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.6.0] – 2026-03-28 (Latest)
+## [1.9.0] – 2026-03-29 (Latest)
+
+### ✨ Lightning.ai Provider (LitAI)
+
+- **New provider: Lightning.ai** (`app/providers/lightning_provider.py`)
+  - OpenAI-compatible endpoint at `https://lightning.ai/api/v1`
+  - **Natively hosted open-weight models** (not available elsewhere):
+    - `nvidia/nemotron-3-super` — 256K context, ultra-fast (446 t/s)
+    - `lightning-ai/gpt-oss-120b` — flagship 120B model
+    - `deepseek/deepseek-v3.1` — 164K context
+    - `lightning-ai/gpt-oss-20b` — efficient 20B
+    - `meta/llama-3.3-70b` — 128K context
+  - **Free tier**: ~37M token welcome credit on signup; then $0.09–$0.52/M tokens
+  - **Authentication**: `Authorization: Bearer LIGHTNING_API_KEY`
+  - Config: `LIGHTNING_API_KEYS=` in `.env`
+  - Integrated into routing, key pool, models API, settings UI
+
+### 🔧 Modal.com — Critical vLLM Template Fix
+
+- **Fixed broken `_VLLM_TEMPLATE`** in `app/api/modal_deploy.py`:
+  - **Root cause**: `allow_concurrent_inputs=MAX_CONCURRENT` inside `@app.cls(...)` was **removed in Modal 1.0** (May 2025) — all deployments failed silently
+  - **Fix**: Replaced entire template with the official Modal 1.0 pattern:
+    - `@app.function(...)` instead of `@app.cls(...)`
+    - `@modal.concurrent(max_inputs=MAX_CONCURRENT)` as a separate decorator (Modal 1.0 replacement)
+    - `@modal.web_server(port=8000, startup_timeout=600)` instead of `@modal.asgi_app`
+    - vLLM runs as a **subprocess** (`subprocess.Popen(["vllm", "serve", ...])`) — uses vLLM's built-in OpenAI-compatible server
+    - vLLM version bumped: `>=0.6.0` → `>=0.8.0`; Python 3.11 → 3.12
+    - Removed heavyweight deps no longer needed in-process (`fastapi`, `uvicorn`, `transformers`)
+  - The deployed endpoint serves `/v1/chat/completions`, `/v1/models`, `/health` natively via vLLM
+- **Updated GPU prices** (Modal reduced prices since original implementation):
+  - T4: $0.36/hr → **$0.59/hr** ($0.000164/s)
+  - A10G: $0.72/hr → **$1.10/hr** ($0.000306/s)
+  - A100-40GB: $2.16/hr → **$2.10/hr** ($0.000583/s)
+  - A100-80GB: $3.40/hr → **$2.50/hr** ($0.000694/s)
+- **Added GPU options**: L4 ($0.80/hr) and L40S ($1.95/hr) to `_GPU_MAP` and model catalog
+- **Added new model options**: Qwen 2.5 7B on L4 (sweet spot), DeepSeek R1 Distill Llama 8B on T4 (cheapest reasoning)
+- **Fixed templates in `modal_manager.py`**: Updated example code to use correct Modal 1.0 patterns; corrected GPU pricing table
+
+---
+
+## [1.8.0] – 2026-03-29
+
+### ✨ Analytics Dashboard (`/analytics`)
+
+- **New dedicated analytics page** — deep usage metrics with Chart.js visualizations
+  - Summary KPI cards: total requests, tokens, errors, cache hit rate
+  - Per-provider breakdown table: requests, tokens, errors, error rate
+  - Per-model breakdown table: per-model request / token / error counts
+  - Request history line chart: 5-minute bucket time-series (last 2 hours by default)
+  - Provider distribution doughnut chart
+  - Reset button to clear all counters
+- **Per-model stat tracking in router** (`app/routing/router.py`):
+  - `model:{name}:requests` — request count per model
+  - `model:{name}:tokens` — token usage per model
+  - `model:{name}:errors` — error count per model
+  - `history:{bucket}:requests/success/errors` — 5-minute bucket time-series
+- **New API** (`app/api/analytics_api.py`):
+  - `GET /analytics/data` — returns summary, providers, models, and history arrays
+  - `DELETE /analytics/reset` — clears all `arbiter:stats:*` keys
+- **Route registered** in `main.py`
+
+### ✨ Dynamic Gateway Token Management (Settings → Gateway Keys)
+
+- **New Gateway Keys tab** in Settings UI — create, revoke, and delete API tokens from the admin panel
+  - Token name + optional expiry datetime
+  - Plaintext key shown once on creation; copy button provided
+  - Revoke (soft-disable) or permanently delete individual tokens
+  - Env-var keys shown as a count note; coexist seamlessly with UI-created tokens
+- **Tokens active immediately** — no restart required; `GatewayAuthMiddleware` reads `app.state.gateway_tokens` on every request
+- **New API** (`app/api/gateway_tokens_api.py`):
+  - `GET /api/gateway/tokens` — list tokens (keys masked)
+  - `POST /api/gateway/tokens` — create token, returns plaintext key once
+  - `DELETE /api/gateway/tokens/{id}` — permanently delete
+  - `PATCH /api/gateway/tokens/{id}` — update name / expiry / active flag
+  - `POST /api/gateway/tokens/{id}/regenerate` — rotate the key
+- **Auth middleware updated** (`app/middleware/auth.py`) to merge static env keys with dynamic `app.state.gateway_tokens`
+- **Startup restoration** — `load_gateway_tokens_to_state()` called in `lifespan()` to reload tokens from Redis on restart
+
+### ✨ Playground — Vendor + Model Drill-Down Selection
+
+- **Two-level model picker** in Playground (`/playground`):
+  - Vendor dropdown → model dropdown with metadata badges
+  - **Free / paid badge** per model (OpenRouter `:free` suffix detection, provider-level free tier flags)
+  - **Rate limits displayed**: RPM, TPM, RPD on model selection
+  - **Context window** shown per model
+- **New API endpoint** `GET /api/models/info` (`app/api/models_api.py`):
+  - Returns per-vendor model catalog with rate limits from `PROVIDER_LIMITS` and `VENDOR_MODEL_HIERARCHY`
+  - Only configured/active vendors returned
+  - OpenRouter free model detection via `:free` suffix
+
+### ✨ Dedicated Image Generation Page (`/images`)
+
+- **New standalone page** `static/images.html` — no longer redirects to Settings
+- Left panel: prompt, negative prompt, model selector (from `/v1/images/models`), count 1–4, size selector, seed, enhance toggle
+- Right panel: image grid with per-image download / open / copy-URL buttons
+- Settings persisted in `localStorage`
+- Route `/images` now serves `images.html` directly (previously redirected to `/settings?tab=images`)
+
+### 🐛 Fixes
+
+- **Logs expansion state** preserved across auto-refresh — uses stable `seq` ID instead of array index; expanded rows stay expanded as new records load
+- **Image Generation nav link** fixed across all pages (`/dashboard`, `/playground`, `/logs`, `/settings`, `/api-docs`, `/analytics`) — was incorrectly pointing to `/settings` with a `localStorage` tab trick
+
+---
+
+## [1.7.0] – 2026-03-29
+
+### ✨ Z.ai (Zhipu GLM) Provider — Free Tier Support
+
+- **New provider: Z.ai / Zhipu AI** (`app/providers/zai_provider.py`)
+  - **Free models**: GLM-4.7-Flash, GLM-4.5-Flash, GLM-Z1-Flash ($0 — completely free)
+  - **Context window**: 32K–128K tokens (flash models)
+  - **Free-tier limits**: ~10 RPM, ~1000 RPD (verify on z.ai/manage-apikey/rate-limits)
+  - **API base**: `https://api.z.ai/api/paas/v4/chat/completions`
+  - **OpenAI-compatible**: Same format as other providers
+
+- **Additive Capacity**: GLM-4.7 is now accessible via TWO independent providers:
+  - **Cerebras-hosted** `zai-glm-4.7` → 30 RPM (via Cerebras API)
+  - **Z.ai-hosted** `glm-4.7-flash` → ~10 RPM (via Z.ai API)
+  - **Combined**: ~40 RPM total for GLM-4.7 class requests
+  - Router includes both vendors; overlapping models sum their rate limits
+
+- **Audit findings**: Checked all cross-vendor overlaps:
+  - Kimi on Groq+Cloudflare ✓ (already separate providers)
+  - Llama-4-scout on Groq+Cloudflare ✓ (already separate)
+  - Qwen on Groq+Cloudflare ✓ (already separate)
+  - Mistral on OpenRouter+Cloudflare ✓ (already separate)
+  - Gemma-3 on OpenRouter+Cloudflare ✓ (already separate)
+  - GLM-4.7 on Cerebras+Z.ai ✅ (now fixed with Z.ai provider)
+
+### 🐛 Router & Cohere Fixes
+
+- **Vendor pin no longer falls back to other providers**:
+  - Before: `?vendor=cohere` would try Cohere, then silently fall back to Gemini on failure
+  - After: `?vendor=cohere` returns error if Cohere fails (no hidden fallback)
+  - Respects user's explicit provider selection
+  - Code: `app/routing/router.py:374` — return `[vendor]` only, not `[vendor] + others`
+
+- **Cohere v2 Chat API — System Message Fix**:
+  - Before: System messages were extracted from message array and sent as top-level `payload["system"]` field → 422 "unknown field" error
+  - After: System messages stay in the messages array with `role: "system"` (Cohere v2 format)
+  - Removed extraction pattern; all roles (system/user/assistant) now pass through directly
+  - Code: `app/providers/cohere_provider.py:56` — simplified `_build_cohere_messages()` method
+
+### 📊 Key Pool & Rate Limit Fixes
+
+- **Daily counter now tracks requests, not tokens**:
+  - Before: `daily_used = 10 + 290 = 300 tokens` after 2 requests → exhausted (daily_limit=33) → locked for 24h
+  - After: `daily_used = 1 + 1 = 2 requests` → plenty of room (daily_limit=33)
+  - Root cause: All `PROVIDER_LIMITS.daily` values are requests-per-day (RPD), not tokens
+  - Fixed: Use `incr` (by 1) for daily, keep `incrby(tokens)` only for TPM
+  - Code: `app/key_management/key_pool.py:174` — `record_usage()` method
+
+### 🎨 UI/UX Improvements
+
+- **Fixed CSS variables** across playground and logs pages:
+  - Corrected: `--surface-1` → `--surface`, `--text-muted` → `--text-3`, `--text-primary` → `--text`, `--text-secondary` → `--text-2`
+  - Root cause: Pages used wrong variable names; CSS fallback is `initial` → transparent backgrounds
+  - All 8 instances updated in both pages' style blocks
+
+- **Fixed layout classes** in HTML structure:
+  - `main.main-content` → `div.main-wrapper`
+  - `h1.topbar-title` → `h1.page-title`
+  - `div.topbar-actions` → `div.topbar-right`
+  - `div.content-inner` → `div.page-content`
+  - Root cause: Pages didn't match arbiter.css class names
+
+- **Fixed sidebar toggle**:
+  - Before: Button had `onclick="toggleSidebar()"` (undefined function) with no `id`
+  - After: Button has `id="sidebar-toggle"`, no onclick attribute; arbiter.js wires via event listener
+  - Sidebar toggle now works on playground and logs pages
+
+- **Fixed JavaScript errors**:
+  - Removed undefined `initTheme()` call (arbiter.js auto-applies theme)
+  - Replaced `showToast()` with `toast()` (correct arbiter.js function name)
+  - Improved error message fallback to show HTTP status code instead of empty "Error: Error"
+  - Code: `static/playground.html:399`, `static/logs.html:496`, `static/logs.html:520`
+
+- **Added responsive CSS**:
+  - Tab bar now scrollable on mobile: `overflow-x: auto; -webkit-overflow-scrolling: touch`
+  - Button size variants: `.btn-sm`, `.btn-xs`, `.btn-danger-ghost`
+  - Playground responsive layout for ≤768px: sidebar + chat stack vertically
+  - Code: `static/arbiter.css` additions
+
+### 📝 Documentation Updates
+
+- **README.md**: Updated provider count (8 → 9), added Z.ai to feature list and rate limits table
+- **Configuration docs**: Added `ZAI_API_KEYS` env var documentation
+- **Architecture diagram**: Updated provider flowchart to include Z.ai
+- **CHANGELOG.md**: This section
+
+---
+
+## [1.6.0] – 2026-03-28
 
 ### 🛠️ CF Workers — Stale-Delete Fix
 - **Fixed stale workers after deletion**: After a successful DELETE, a Redis deletion marker (`arbiter:cf:deleting:{name}`, 120s TTL) is set. `list_workers` checks this set and suppresses those workers during the Cloudflare API propagation delay (up to 2 minutes).

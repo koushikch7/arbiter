@@ -45,6 +45,12 @@
   --sidebar-border:  rgba(255,255,255,0.07);
   --sidebar-accent:  #a5b4fc;
   --sidebar-muted:   rgba(255,255,255,0.3);
+  /* Semantic aliases — used by inline styles and page-level CSS */
+  --danger:   #b91c1c;
+  --success:  #15803d;
+  --warning:  #b45309;
+  --text-1:   #0d1829;
+  --text-muted: #9aa5b8;
 }
 
 /* ── Dark Theme ── */
@@ -82,6 +88,12 @@
   --sidebar-border:  rgba(255,255,255,0.05);
   --sidebar-accent:  #818cf8;
   --sidebar-muted:   rgba(255,255,255,0.2);
+  /* Semantic aliases — used by inline styles and page-level CSS */
+  --danger:   #ef4444;
+  --success:  #22c55e;
+  --warning:  #eab308;
+  --text-1:   #e8f0ff;
+  --text-muted: #364f6a;
 }
 
 /* ── Base ── */
@@ -443,4 +455,13 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: 
   .tab-btn { padding: 10px 12px; font-size: 12px; }
   .topbar { padding: 0 14px 0 12px; gap: 8px; }
   .page-title, .topbar-title { font-size: 14px; }
+  /* Collapse any inline 2-column grids on very small screens */
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* API docs providers grid */
+  #providers-grid { grid-template-columns: 1fr !important; }
+  /* Playground sidebar becomes full-width */
+  .pg-chat { height: calc(100vh - 240px); min-height: 280px; }
 }

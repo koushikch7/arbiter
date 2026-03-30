@@ -1,41 +1,59 @@
 """
 Runtime provider key management — add/remove/test keys without restart.
 
-Keys added here are stored in Redis (arbiter:runtime:keys:{provider}) and
-merged with env-var keys.  Enable/disable flags are also stored in Redis.
+Keys are stored directly in the .env file.  The cached settings singleton
+(loaded once at startup) is bypassed for key reads — we parse .env fresh on
+every operation so changes take effect immediately without a server restart.
+
+Enable/disable flags are the only thing stored in Redis.
 
 Routes
 ------
 GET    /api/providers                    List all providers + key info
 POST   /api/providers/{name}/keys        Add a key
-DELETE /api/providers/{name}/keys/{hash} Remove a runtime key by hash
+DELETE /api/providers/{name}/keys/{hash} Remove a key by hash
 POST   /api/providers/{name}/enable      Enable a disabled provider
 POST   /api/providers/{name}/disable     Disable a provider
 POST   /api/providers/{name}/test        Test provider connectivity
-POST   /api/providers/reload             Reload all key pools from env + Redis
+POST   /api/providers/reload             Reload all key pools from .env
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
+import re
 import time
+from pathlib import Path
 from typing import List, Optional
 
-import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.config import settings
 from app.key_management.key_pool import KeyPool, PROVIDER_LIMITS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/providers", tags=["Provider Management"])
 
-_REDIS_KEYS_PFX     = "arbiter:runtime:keys:"
 _REDIS_DISABLED_PFX = "arbiter:runtime:disabled:"
+
+# Project root — two levels up from this file (app/api/keys_api.py)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Mapping: provider name → .env variable name
+_ENV_VAR_MAP: dict = {
+    "gemini":      "GEMINI_API_KEYS",
+    "groq":        "GROQ_API_KEYS",
+    "openrouter":  "OPENROUTER_API_KEYS",
+    "cohere":      "COHERE_API_KEYS",
+    "huggingface": "HUGGINGFACE_API_KEYS",
+    "cloudflare":  "CLOUDFLARE_API_KEYS",
+    "cerebras":    "CEREBRAS_API_KEYS",
+    "zai":         "ZAI_API_KEYS",
+    "lightning":   "LIGHTNING_API_KEYS",
+    "modal":       "MODAL_API_KEYS",
+}
 
 # ── Provider metadata ────────────────────────────────────────────────────────
 _PROVIDER_META = {
@@ -171,6 +189,74 @@ _PROVIDER_META = {
 }
 
 
+# ---------------------------------------------------------------------------
+# .env helpers — single source of truth for all provider keys
+# ---------------------------------------------------------------------------
+
+def _is_placeholder(key: str) -> bool:
+    """Return True for example/placeholder values that should never be used."""
+    return any(key.startswith(p) for p in (
+        "your-", "your_", "hf_your", "ak-your", "as-your",
+    ))
+
+
+def _ensure_env_file() -> Path:
+    """Return path to .env, creating it from .env.example if it doesn't exist."""
+    env_file = _PROJECT_ROOT / ".env"
+    if not env_file.exists():
+        example = _PROJECT_ROOT / ".env.example"
+        if example.exists():
+            env_file.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.info("Created .env from .env.example")
+    return env_file
+
+
+def _read_env_keys(provider: str) -> List[str]:
+    """
+    Read provider keys directly from the .env file.
+
+    Bypasses the cached settings singleton so changes written via the UI
+    are visible immediately without a server restart.
+    """
+    if provider == "pollinations":
+        return ["free"]
+    env_var = _ENV_VAR_MAP.get(provider)
+    if not env_var:
+        return []
+    env_file = _PROJECT_ROOT / ".env"
+    if not env_file.exists():
+        return []
+    content = env_file.read_text(encoding="utf-8")
+    m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
+    if not m:
+        return []
+    return [
+        k.strip() for k in m.group(1).split(",")
+        if k.strip() and not _is_placeholder(k.strip())
+    ]
+
+
+def _write_env_keys(provider: str, keys: List[str]) -> None:
+    """Write the key list for a provider into .env (creates file if needed)."""
+    env_var = _ENV_VAR_MAP.get(provider)
+    if not env_var:
+        return
+    env_file = _ensure_env_file()
+    content = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+    value    = ",".join(keys)
+    new_line = f"{env_var}={value}"
+    if re.search(rf"^{env_var}=", content, re.MULTILINE):
+        content = re.sub(rf"^{env_var}=.*$", new_line, content, flags=re.MULTILINE)
+    else:
+        content = content.rstrip("\n") + f"\n{new_line}\n"
+    env_file.write_text(content, encoding="utf-8")
+    logger.debug("Updated %s in .env (%d key(s))", env_var, len(keys))
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
 def _mask(key: str) -> str:
     if not key or key == "free":
         return "(free)"
@@ -183,51 +269,23 @@ def _hash_key(key: str) -> str:
     return hashlib.md5(key.encode()).hexdigest()[:10]
 
 
-async def _redis_keys(redis, provider: str) -> List[str]:
-    raw = await redis.get(f"{_REDIS_KEYS_PFX}{provider}")
-    if not raw:
-        return []
-    try:
-        return json.loads(raw)
-    except Exception:
-        return []
-
-
-async def _save_redis_keys(redis, provider: str, keys: List[str]) -> None:
-    await redis.set(f"{_REDIS_KEYS_PFX}{provider}", json.dumps(keys))
-
-
-async def _merged_keys(redis, provider: str) -> List[str]:
-    if provider == "pollinations":
-        return ["free"]
-    env_keys   = settings.get_keys(provider)
-    extra_keys = await _redis_keys(redis, provider)
-    seen: set  = set()
-    merged: List[str] = []
-    for k in env_keys + extra_keys:
-        if k and k not in seen:
-            seen.add(k)
-            merged.append(k)
-    return merged
-
-
 # ---------------------------------------------------------------------------
-# Helpers
+# Provider hot-reload
 # ---------------------------------------------------------------------------
 
 async def _reload_provider(name: str, request: Request) -> None:
-    """Hot-reload a provider + its key pool from env + Redis state."""
-    from app.providers.gemini       import GeminiProvider
-    from app.providers.groq_provider import GroqProvider
-    from app.providers.openrouter   import OpenRouterProvider
-    from app.providers.cohere_provider import CohereProvider
-    from app.providers.cloudflare   import CloudflareProvider
-    from app.providers.cerebras     import CerebrasProvider
-    from app.providers.huggingface  import HuggingFaceProvider
-    from app.providers.pollinations import PollinationsProvider
-    from app.providers.modal_provider import ModalProvider
+    """Hot-reload a provider + its key pool from the current .env file."""
+    from app.providers.gemini           import GeminiProvider
+    from app.providers.groq_provider    import GroqProvider
+    from app.providers.openrouter       import OpenRouterProvider
+    from app.providers.cohere_provider  import CohereProvider
+    from app.providers.cloudflare       import CloudflareProvider
+    from app.providers.cerebras         import CerebrasProvider
+    from app.providers.huggingface      import HuggingFaceProvider
+    from app.providers.pollinations     import PollinationsProvider
+    from app.providers.modal_provider   import ModalProvider
     from app.providers.lightning_provider import LightningProvider
-    from app.providers.zai_provider import ZaiProvider
+    from app.providers.zai_provider     import ZaiProvider
 
     _classes = {
         "gemini": GeminiProvider, "groq": GroqProvider,
@@ -248,7 +306,7 @@ async def _reload_provider(name: str, request: Request) -> None:
         key_pools.pop(name, None)
         return
 
-    all_keys = await _merged_keys(redis, name)
+    all_keys = _read_env_keys(name)
     if not all_keys:
         providers.pop(name, None)
         key_pools.pop(name, None)
@@ -285,9 +343,8 @@ async def list_providers(request: Request) -> JSONResponse:
 
     result = []
     for name, meta in _PROVIDER_META.items():
-        env_keys   = settings.get_keys(name) if name != "pollinations" else []
-        extra_keys = await _redis_keys(redis, name)
-        disabled   = bool(await redis.get(f"{_REDIS_DISABLED_PFX}{name}"))
+        env_keys = _read_env_keys(name) if name != "pollinations" else []
+        disabled = bool(await redis.get(f"{_REDIS_DISABLED_PFX}{name}"))
 
         pool       = key_pools.get(name)
         pool_stats = None
@@ -297,14 +354,10 @@ async def list_providers(request: Request) -> JSONResponse:
             except Exception:
                 pass
 
-        key_list = []
-        all_keys = env_keys + extra_keys
-        for k in all_keys:
-            key_list.append({
-                "hash":   _hash_key(k),
-                "masked": _mask(k),
-                "source": "env" if k in env_keys else "runtime",
-            })
+        key_list = [
+            {"hash": _hash_key(k), "masked": _mask(k)}
+            for k in env_keys
+        ]
 
         result.append({
             "name":        name,
@@ -329,7 +382,7 @@ class AddKeyBody(BaseModel):
     key: str
 
 
-@router.post("/{name}/keys", summary="Add a runtime key", status_code=201)
+@router.post("/{name}/keys", summary="Add a key", status_code=201)
 async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
@@ -339,20 +392,16 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
     if not k:
         raise HTTPException(422, "Key cannot be empty")
 
-    redis = request.app.state.redis
-
-    # Dedup check
-    existing = await _redis_keys(redis, name)
-    env_k    = settings.get_keys(name)
-    if k in existing or k in env_k:
+    existing = _read_env_keys(name)
+    if k in existing:
         if name == "modal":
             raise HTTPException(409,
-                "This endpoint is already registered. It may have been added automatically "
-                "when you deployed via the Modal GPU tab. Manage it there or delete it first.")
+                "This endpoint is already registered. It may have been added "
+                "automatically when you deployed via the Modal GPU tab.")
         raise HTTPException(409, "Key already exists")
 
     existing.append(k)
-    await _save_redis_keys(redis, name, existing)
+    _write_env_keys(name, existing)
     await _reload_provider(name, request)
 
     return JSONResponse(
@@ -361,29 +410,18 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
     )
 
 
-@router.delete("/{name}/keys/{key_hash}", summary="Remove a runtime key by hash")
+@router.delete("/{name}/keys/{key_hash}", summary="Remove a key by hash")
 async def remove_key(name: str, key_hash: str, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
 
-    redis    = request.app.state.redis
-    existing = await _redis_keys(redis, name)
+    existing = _read_env_keys(name)
     new_list = [k for k in existing if _hash_key(k) != key_hash]
 
     if len(new_list) == len(existing):
-        # Check if it's an env key (cannot delete from here)
-        env_k = settings.get_keys(name)
-        for k in env_k:
-            if _hash_key(k) == key_hash:
-                raise HTTPException(
-                    400,
-                    "This key is set via environment variable. "
-                    "Remove it from CLOUDFLARE_API_KEYS / GEMINI_API_KEYS etc. "
-                    "in your .env file and restart.",
-                )
         raise HTTPException(404, "Key not found")
 
-    await _save_redis_keys(redis, name, new_list)
+    _write_env_keys(name, new_list)
     await _reload_provider(name, request)
     return JSONResponse(content={"success": True})
 
@@ -411,10 +449,7 @@ async def disable_provider(name: str, request: Request) -> JSONResponse:
 
 @router.post("/{name}/test", summary="Test provider connectivity")
 async def test_provider(name: str, request: Request) -> JSONResponse:
-    """
-    Send a minimal probe request to the provider and report latency / errors.
-    Uses the first available key.
-    """
+    """Send a minimal probe request and report latency / errors."""
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
 
@@ -458,115 +493,7 @@ async def test_provider(name: str, request: Request) -> JSONResponse:
         })
 
 
-@router.post("/sync-env", summary="Write all runtime-added keys to the .env file")
-async def sync_env(request: Request) -> JSONResponse:
-    """
-    Merges runtime (Redis) keys with whatever is already in .env and writes the
-    result back to .env.  Creates .env from .env.example if it doesn't exist.
-
-    Placeholder values like "your-gemini-key" are automatically excluded.
-    Returns a summary of which env-vars were updated and their new masked values.
-    """
-    import re
-    from pathlib import Path
-
-    redis = request.app.state.redis
-
-    project_root = Path(__file__).resolve().parent.parent.parent
-    env_file     = project_root / ".env"
-    env_example  = project_root / ".env.example"
-
-    # Load base content
-    if env_file.exists():
-        content = env_file.read_text(encoding="utf-8")
-    elif env_example.exists():
-        content = env_example.read_text(encoding="utf-8")
-        logger.info("sync-env: .env not found — creating from .env.example")
-    else:
-        raise HTTPException(500, ".env and .env.example both missing from project root")
-
-    # Load .env.example placeholders so we can filter them out
-    placeholder_values: set = set()
-    if env_example.exists():
-        for line in env_example.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if "=" in line and not line.startswith("#"):
-                _, _, val = line.partition("=")
-                for part in val.split(","):
-                    part = part.strip()
-                    if part and (part.startswith("your-") or part.startswith("ak-your-")
-                                 or part.startswith("as-your-") or part.startswith("hf_your")):
-                        placeholder_values.add(part)
-
-    # Map provider name → env-var name
-    _env_var_map = {
-        "gemini":       "GEMINI_API_KEYS",
-        "groq":         "GROQ_API_KEYS",
-        "openrouter":   "OPENROUTER_API_KEYS",
-        "cohere":       "COHERE_API_KEYS",
-        "huggingface":  "HUGGINGFACE_API_KEYS",
-        "cloudflare":   "CLOUDFLARE_API_KEYS",
-        "cerebras":     "CEREBRAS_API_KEYS",
-        "zai":          "ZAI_API_KEYS",
-        "lightning":    "LIGHTNING_API_KEYS",
-        "modal":        "MODAL_API_KEYS",
-    }
-
-    # Build new values for each provider
-    updates: dict = {}   # env_var → comma-joined key string
-    for provider, env_var in _env_var_map.items():
-        runtime_keys = await _redis_keys(redis, provider)
-
-        # Extract current .env value (non-placeholder keys only)
-        file_keys: List[str] = []
-        m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
-        if m:
-            for k in m.group(1).split(","):
-                k = k.strip()
-                if k and k not in placeholder_values and not k.startswith("your-"):
-                    file_keys.append(k)
-
-        # Merge: runtime first, then any .env-only keys not already in runtime
-        seen: set = set()
-        merged: List[str] = []
-        for k in runtime_keys + file_keys:
-            if k and k not in seen:
-                seen.add(k)
-                merged.append(k)
-
-        if merged:
-            updates[env_var] = ",".join(merged)
-
-    # Rewrite matching lines in content
-    lines = content.splitlines()
-    new_lines = []
-    for line in lines:
-        replaced = False
-        stripped = line.strip()
-        for env_var, value in updates.items():
-            if re.match(rf"^{env_var}=", stripped):
-                new_lines.append(f"{env_var}={value}")
-                replaced = True
-                break
-        if not replaced:
-            new_lines.append(line)
-
-    env_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    logger.info("sync-env: wrote %d provider var(s) to %s", len(updates), env_file)
-
-    # Build masked summary for response
-    masked_summary = {
-        var: ",".join(_mask(k) for k in val.split(","))
-        for var, val in updates.items()
-    }
-    return JSONResponse(content={
-        "success": True,
-        "file":    str(env_file),
-        "updated": masked_summary,
-    })
-
-
-@router.post("/reload", summary="Reload all providers from env + Redis")
+@router.post("/reload", summary="Reload all providers from .env")
 async def reload_all(request: Request) -> JSONResponse:
     reloaded, failed = [], []
     for name in _PROVIDER_META:

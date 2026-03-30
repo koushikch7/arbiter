@@ -224,13 +224,6 @@
 
       <!-- ═══════════════ API Keys Tab ═══════════════ -->
       <div id="tab-keys" class="tab-panel active">
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:12px">
-          <span id="sync-env-result" style="font-size:12px"></span>
-          <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="syncEnv()" title="Persist all runtime-added keys to the .env file so they survive restart">
-            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
-            Save to .env
-          </button>
-        </div>
         <div id="keys-loading" style="padding:40px;text-align:center;color:var(--text-3)">Loading providers…</div>
         <div id="providers-grid" style="display:none"></div>
       </div>
@@ -953,14 +946,10 @@ function buildProviderCard(p) {
     keysHtml = '<div style="font-size:12px;color:var(--green);padding:8px 0">✓ No key required — anonymous free service</div>';
   } else if (p.keys && p.keys.length > 0) {
     keysHtml = p.keys.map(function(k) {
-      var delBtn = k.source === 'runtime'
-        ? '<button class="key-del-btn" onclick="deleteKey(\'' + p.name + '\',\'' + k.hash + '\')" title="Remove key">✕</button>'
-        : '<span style="font-size:10px;color:var(--text-3);padding:0 6px" title="Set via .env — edit .env to remove">env</span>';
       return '<div class="key-row">' +
         '<span class="key-hash">' + k.hash + '</span>' +
         '<span class="key-masked">' + k.masked + '</span>' +
-        '<span class="key-source ' + k.source + '">' + k.source + '</span>' +
-        delBtn +
+        '<button class="key-del-btn" onclick="deleteKey(\'' + p.name + '\',\'' + k.hash + '\')" title="Remove key">✕</button>' +
         '</div>';
     }).join('');
   } else {
@@ -1192,27 +1181,6 @@ async function reloadAll() {
     await loadProviders();
   } catch(e) {
     toast('Reload failed: ' + e.message, 'error');
-  }
-}
-
-async function syncEnv() {
-  var resEl = document.getElementById('sync-env-result');
-  if (resEl) resEl.innerHTML = '<span style="color:var(--text-3)">Writing .env…</span>';
-  try {
-    var r = await fetch('/api/providers/sync-env', {method:'POST'});
-    var data = await r.json();
-    if (!r.ok) throw new Error(data.detail || 'Error');
-    var count = Object.keys(data.updated || {}).length;
-    var msg = count > 0
-      ? count + ' provider(s) written to .env'
-      : 'No runtime keys to write (add keys via UI first)';
-    toast(msg, count > 0 ? 'success' : 'info');
-    if (resEl) resEl.innerHTML = '<span style="color:var(--success)">✓ ' + msg + '</span>';
-    setTimeout(function(){ if(resEl) resEl.innerHTML=''; }, 4000);
-  } catch(e) {
-    toast('Save to .env failed: ' + e.message, 'error');
-    if (resEl) resEl.innerHTML = '<span style="color:var(--danger)">✗ ' + e.message + '</span>';
-    setTimeout(function(){ if(resEl) resEl.innerHTML=''; }, 5000);
   }
 }
 

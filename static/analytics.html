@@ -1,113 +1,301 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Analytics — Arbiter</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/arbiter.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/static/arbiter.css"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="/static/arbiter.js"></script>
+
   <style>
-    /* ── Analytics-specific styles ───────────────────────────── */
-    .summary-grid {
+    /* ── Animations ─────────────────────────────────────────────── */
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+    @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.35} }
+    @keyframes spin     { to{transform:rotate(360deg)} }
+    @keyframes shimmer  { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    @keyframes fillBar  { from{width:0} to{width:var(--bar-w)} }
+
+    .fade-up { animation: fadeUp .35s ease both; }
+
+    /* ── KPI grid ───────────────────────────────────────────────── */
+    .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
       margin-bottom: 20px;
     }
-    @media (max-width: 900px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 540px) { .summary-grid { grid-template-columns: 1fr; } }
+    @media(max-width:1100px){ .kpi-grid{ grid-template-columns:repeat(3,1fr); } }
+    @media(max-width:640px) { .kpi-grid{ grid-template-columns:repeat(2,1fr); } }
 
-    .analytics-chart-row {
+    .kpi-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 6px;
+      transition: box-shadow .2s;
+      animation: fadeUp .4s ease both;
+      position: relative; overflow: hidden;
+    }
+    .kpi-card::before {
+      content:''; position:absolute; inset:0;
+      background: linear-gradient(135deg, var(--kc-color,transparent) 0%, transparent 60%);
+      opacity: .05; pointer-events:none;
+    }
+    .kpi-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.18); }
+    .kpi-label { font-size:11px; font-weight:600; color:var(--text-3); letter-spacing:.04em; text-transform:uppercase; }
+    .kpi-value { font-size:26px; font-weight:700; line-height:1; color:var(--kc-color, var(--text-1)); font-variant-numeric:tabular-nums; }
+    .kpi-sub   { font-size:11px; color:var(--text-3); }
+    .kpi-trend { display:flex; align-items:center; gap:3px; font-size:10px; font-weight:600; margin-top:2px; }
+    .trend-up   { color:var(--green); }
+    .trend-down { color:var(--red);   }
+
+    /* ── Chart rows ─────────────────────────────────────────────── */
+    .chart-row-main {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-row-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
-    @media (max-width: 800px) { .analytics-chart-row { grid-template-columns: 1fr; } }
+    @media(max-width:900px) {
+      .chart-row-main, .chart-row-2 { grid-template-columns:1fr; }
+    }
 
-    .section-block { margin-bottom: 24px; }
+    /* ── Key health grid ────────────────────────────────────────── */
+    .key-health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .kh-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      animation: fadeUp .4s ease both;
+    }
+    .kh-provider-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 10px;
+    }
+    .kh-provider-name {
+      font-weight: 700; font-size: 13px; text-transform: capitalize;
+      flex: 1;
+    }
+    .kh-badge {
+      font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 20px;
+    }
+    .kh-badge.healthy     { background:rgba(34,197,94,.15); color:#22c55e; }
+    .kh-badge.degraded    { background:rgba(234,179,8,.15);  color:#eab308; }
+    .kh-badge.unavailable { background:rgba(239,68,68,.15);  color:#ef4444; }
+    .kh-badge.unconfigured{ background:rgba(107,114,128,.12);color:#9ca3af; }
 
-    /* provider badge colors */
-    .prov-badge {
-      display: inline-block;
-      padding: 2px 8px; border-radius: 10px;
+    .kh-status-dot {
+      width:7px; height:7px; border-radius:50%; flex-shrink:0;
+    }
+    .kh-status-dot.healthy     { background:#22c55e; animation:pulse 2.5s infinite; }
+    .kh-status-dot.degraded    { background:#eab308; animation:pulse 1.8s infinite; }
+    .kh-status-dot.unavailable { background:#ef4444; animation:pulse 1.2s infinite; }
+    .kh-status-dot.unconfigured{ background:#6b7280; }
+
+    .kh-key-item {
+      background: var(--surface-3);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .kh-key-item:last-child { margin-bottom: 0; }
+    .kh-key-header {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    .kh-key-hash {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; color: var(--text-3);
+      flex: 1;
+    }
+    .kh-key-status {
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 10px;
+    }
+    .kh-key-status.active     { background:rgba(34,197,94,.15);  color:#22c55e; }
+    .kh-key-status.limited    { background:rgba(234,179,8,.15);   color:#eab308; }
+    .kh-key-status.exhausted  { background:rgba(239,68,68,.15);   color:#ef4444; }
+    .kh-key-status.failed     { background:rgba(239,68,68,.25);   color:#ef4444; }
+
+    .kh-score {
       font-size: 10px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gauge-row {
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 5px;
+    }
+    .gauge-row:last-child { margin-bottom: 0; }
+    .gauge-label {
+      font-size: 9.5px; font-weight: 600; color: var(--text-3);
       text-transform: uppercase; letter-spacing: .04em;
+      min-width: 32px;
     }
-    .prov-gemini    { background: rgba(66,133,244,.18); color: #4285f4; }
-    .prov-openai    { background: rgba(16,163,127,.18); color: #10a37f; }
-    .prov-anthropic { background: rgba(205,127,50,.18); color: #cd7f32; }
-    .prov-mistral   { background: rgba(240,116,30,.18); color: #f0741e; }
-    .prov-meta      { background: rgba(24,119,242,.18); color: #1877f2; }
-    .prov-deepseek  { background: rgba(100,60,220,.18); color: #643cdc; }
-    .prov-groq      { background: rgba(248,163,0,.18); color: #f8a300; }
-    .prov-unknown   { background: rgba(139,148,158,.15); color: #8b949e; }
-
-    .free-badge {
-      display: inline-block;
-      padding: 1px 6px; border-radius: 8px;
-      font-size: 9px; font-weight: 700;
-      background: rgba(52,211,153,.18); color: #34d399;
-      margin-left: 4px; letter-spacing: .05em;
+    .gauge-track {
+      flex: 1; height: 5px; border-radius: 3px;
+      background: var(--surface-1); overflow: hidden;
+    }
+    .gauge-fill {
+      height: 100%; border-radius: 3px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+      /* bar width set inline via var */
+      width: var(--bar-w, 0%);
+    }
+    .gauge-fill.green  { background: #22c55e; }
+    .gauge-fill.yellow { background: #eab308; }
+    .gauge-fill.red    { background: #ef4444; }
+    .gauge-vals {
+      font-size: 9.5px; color: var(--text-3);
+      font-variant-numeric: tabular-nums;
+      min-width: 70px; text-align: right;
     }
 
-    /* rate bar in table */
+    .kh-no-keys {
+      text-align: center; padding: 12px;
+      font-size: 12px; color: var(--text-3);
+    }
+
+    /* ── Provider table ──────────────────────────────────────────── */
+    .prov-dot {
+      width: 8px; height: 8px; border-radius: 50%; display:inline-block;
+      margin-right: 6px; vertical-align: middle;
+    }
+
+    /* ── Rate bar ────────────────────────────────────────────────── */
     .rate-bar-wrap { display: flex; align-items: center; gap: 6px; }
     .rate-bar-track {
       flex: 1; height: 5px; border-radius: 3px;
       background: var(--surface-3); overflow: hidden; min-width: 40px;
     }
-    .rate-bar-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+    .rate-bar-fill { height: 100%; border-radius: 3px; transition: width .5s; }
 
-    /* error list */
-    .error-model-list { display: flex; flex-direction: column; gap: 8px; }
-    .error-model-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px; border-radius: 8px;
-      background: var(--surface-2); font-size: 13px;
+    /* ── Free badge ──────────────────────────────────────────────── */
+    .free-badge {
+      display:inline-block; padding:1px 5px; border-radius:8px;
+      font-size:9px; font-weight:700;
+      background:rgba(52,211,153,.18); color:#34d399;
+      margin-left:4px; letter-spacing:.05em;
     }
-    .error-model-id { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-2); }
-    .error-model-count { font-weight: 700; color: var(--red); }
 
-    /* toast */
-    .toast-container {
-      position: fixed; bottom: 24px; right: 24px;
-      display: flex; flex-direction: column; gap: 8px;
-      z-index: 9999; pointer-events: none;
+    /* ── Provider badge ──────────────────────────────────────────── */
+    .prov-badge {
+      display:inline-block; padding:2px 7px; border-radius:10px;
+      font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
     }
-    .toast {
-      padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
-      box-shadow: 0 4px 16px rgba(0,0,0,.25);
-      pointer-events: auto; opacity: 1;
-      transition: opacity .3s;
-    }
-    .toast.success { background: var(--green); color: #fff; }
-    .toast.error   { background: var(--red);   color: #fff; }
-    .toast.info    { background: var(--accent); color: #fff; }
 
-    /* topbar extras */
-    .topbar-controls { display: flex; align-items: center; gap: 10px; }
+    /* ── Section header extras ───────────────────────────────────── */
+    .section-hd-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    /* ── Topbar controls ─────────────────────────────────────────── */
+    .topbar-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .refresh-select {
-      font-size: 12px; padding: 4px 8px; border-radius: 6px;
-      border: 1px solid var(--border); background: var(--surface-2);
-      color: var(--text-2); cursor: pointer; height: 30px;
+      font-size:12px; padding:4px 8px; border-radius:6px;
+      border:1px solid var(--border); background:var(--surface-2);
+      color:var(--text-2); cursor:pointer; height:28px;
     }
     .btn-danger {
-      padding: 4px 14px; font-size: 12px; height: 30px;
-      border-radius: 6px; border: 1px solid var(--red);
-      background: rgba(248,81,73,.1); color: var(--red);
-      cursor: pointer; font-weight: 600;
-      transition: background .15s;
+      padding:4px 12px; font-size:12px; height:28px; border-radius:6px;
+      border:1px solid var(--red); background:rgba(239,68,68,.1);
+      color:var(--red); cursor:pointer; font-weight:600; transition:background .15s;
     }
-    .btn-danger:hover { background: rgba(248,81,73,.2); }
+    .btn-danger:hover { background:rgba(239,68,68,.22); }
 
-    /* empty state */
-    .empty-state {
-      padding: 32px; text-align: center;
-      color: var(--text-3); font-size: 13px;
+    /* ── Live pulse indicator ────────────────────────────────────── */
+    .live-indicator {
+      display:flex; align-items:center; gap:5px;
+      font-size:11px; color:var(--text-3);
     }
+    .live-dot {
+      width:6px; height:6px; border-radius:50%;
+      background:var(--green); animation:pulse 1.8s infinite;
+    }
+    .live-dot.stale { background:var(--yellow); }
+    .live-dot.error { background:var(--red); animation:pulse .8s infinite; }
+
+    /* ── Loading skeleton ────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 6px;
+    }
+
+    /* ── Summary mini-bar under KPI ──────────────────────────────── */
+    .kpi-mini-bar {
+      height: 3px; border-radius: 2px;
+      background: var(--surface-3); overflow: hidden; margin-top: 4px;
+    }
+    .kpi-mini-fill {
+      height: 100%; border-radius: 2px;
+      background: var(--kc-color, var(--accent-br));
+      transition: width .7s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* ── Latency rank bar ────────────────────────────────────────── */
+    .latency-bar-cell { min-width: 120px; }
+    .latency-bar-wrap { display:flex; align-items:center; gap:6px; }
+    .latency-bar-track {
+      flex:1; height:6px; border-radius:3px;
+      background:var(--surface-3); overflow:hidden;
+    }
+    .latency-bar-fill {
+      height:100%; border-radius:3px;
+      background: linear-gradient(90deg, var(--accent-br), var(--blue));
+      transition: width .6s;
+    }
+
+    /* ── Toast ───────────────────────────────────────────────────── */
+    .toast-container {
+      position:fixed; bottom:24px; right:24px;
+      display:flex; flex-direction:column; gap:8px;
+      z-index:9999; pointer-events:none;
+    }
+    .toast {
+      padding:10px 16px; border-radius:8px; font-size:13px; font-weight:500;
+      box-shadow:0 4px 16px rgba(0,0,0,.25); pointer-events:auto;
+      opacity:1; transition:opacity .3s;
+    }
+    .toast.success { background:var(--green);  color:#fff; }
+    .toast.error   { background:var(--red);    color:#fff; }
+    .toast.info    { background:var(--accent); color:#fff; }
+
+    /* ── Empty state ─────────────────────────────────────────────── */
+    .empty-state {
+      padding:24px; text-align:center;
+      color:var(--text-3); font-size:13px;
+    }
+
+    /* ── Section mb ──────────────────────────────────────────────── */
+    .mb20 { margin-bottom:20px; }
+
+    /* ── Error model list ────────────────────────────────────────── */
+    .error-model-list { display:flex; flex-direction:column; gap:8px; }
+    .error-model-row {
+      display:flex; align-items:center; gap:10px;
+      padding:8px 12px; border-radius:8px;
+      background:var(--surface-2); font-size:13px;
+    }
+    .error-model-id { flex:1; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-2); }
   </style>
 </head>
 <body>
@@ -172,73 +360,85 @@
   </aside>
 
   <div class="main-wrapper">
-    <!-- Topbar -->
     <header class="topbar">
       <button class="sidebar-toggle" id="sidebar-toggle">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <h1 class="page-title">Analytics</h1>
       <div class="topbar-right topbar-controls">
-        <label style="font-size:12px;color:var(--text-3)">Refresh:</label>
+        <div class="live-indicator">
+          <div class="live-dot" id="live-dot"></div>
+          <span id="live-label">Live</span>
+        </div>
+        <label style="font-size:11px;color:var(--text-3)">Refresh:</label>
         <select class="refresh-select" id="refresh-select" onchange="setRefreshInterval(this.value)">
-          <option value="10000">10s</option>
+          <option value="5000">5s</option>
+          <option value="15000">15s</option>
           <option value="30000" selected>30s</option>
+          <option value="60000">1m</option>
           <option value="0">Off</option>
         </select>
         <button class="btn-danger" onclick="confirmReset()">Reset Stats</button>
-        <span class="topbar-time" id="last-update">–</span>
       </div>
     </header>
 
     <main class="page-content">
 
-      <!-- Section 1: Summary Cards -->
-      <div class="section-hd" style="margin-bottom:12px">
-        <span class="section-label">Summary</span>
-      </div>
-      <div class="summary-grid">
-        <div class="kpi-card" style="--kpi-color:var(--accent)">
-          <div class="kpi-icon" style="background:var(--accent-dim)">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--accent-br)" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          </div>
+      <!-- ═══ 1. KPI cards ══════════════════════════════════════════════════ -->
+      <div class="kpi-grid" id="kpi-grid">
+
+        <div class="kpi-card" style="--kc-color:var(--accent-br)">
           <div class="kpi-label">Total Requests</div>
           <div class="kpi-value" id="kpi-total">–</div>
-          <div class="kpi-sub" id="kpi-total-sub">–</div>
+          <div class="kpi-sub"  id="kpi-total-sub">–</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-total-bar" style="width:100%"></div></div>
         </div>
-        <div class="kpi-card" style="--kpi-color:var(--green)">
-          <div class="kpi-icon" style="background:var(--green-dim)">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--green)" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          </div>
+
+        <div class="kpi-card" style="--kc-color:#22c55e">
           <div class="kpi-label">Success Rate</div>
-          <div class="kpi-value" id="kpi-success" style="color:var(--green)">–</div>
-          <div class="kpi-sub" id="kpi-success-sub">–</div>
+          <div class="kpi-value" id="kpi-success">–</div>
+          <div class="kpi-sub"  id="kpi-success-sub">–</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-success-bar" style="width:0%"></div></div>
         </div>
-        <div class="kpi-card" style="--kpi-color:var(--yellow)">
-          <div class="kpi-icon" style="background:var(--yellow-dim)">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--yellow)" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-          </div>
+
+        <div class="kpi-card" style="--kc-color:#eab308">
           <div class="kpi-label">Cache Hit Rate</div>
-          <div class="kpi-value" id="kpi-cache" style="color:var(--yellow)">–</div>
-          <div class="kpi-sub" id="kpi-cache-sub">–</div>
+          <div class="kpi-value" id="kpi-cache">–</div>
+          <div class="kpi-sub"  id="kpi-cache-sub">–</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-cache-bar" style="width:0%"></div></div>
         </div>
-        <div class="kpi-card" style="--kpi-color:var(--blue)">
-          <div class="kpi-icon" style="background:var(--blue-dim)">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
+
+        <div class="kpi-card" style="--kc-color:var(--blue)">
           <div class="kpi-label">Avg Latency</div>
-          <div class="kpi-value" id="kpi-latency" style="color:var(--blue)">–</div>
-          <div class="kpi-sub">milliseconds</div>
+          <div class="kpi-value" id="kpi-latency">–</div>
+          <div class="kpi-sub">milliseconds per request</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-latency-bar" style="width:50%"></div></div>
         </div>
+
+        <div class="kpi-card" style="--kc-color:#a78bfa">
+          <div class="kpi-label">Tokens Consumed</div>
+          <div class="kpi-value" id="kpi-tokens">–</div>
+          <div class="kpi-sub"  id="kpi-tokens-sub">across all models</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-tokens-bar" style="width:100%"></div></div>
+        </div>
+
+        <div class="kpi-card" style="--kc-color:#06b6d4">
+          <div class="kpi-label">Active API Keys</div>
+          <div class="kpi-value" id="kpi-keys">–</div>
+          <div class="kpi-sub"  id="kpi-keys-sub">–</div>
+          <div class="kpi-mini-bar"><div class="kpi-mini-fill" id="kpi-keys-bar" style="width:0%"></div></div>
+        </div>
+
       </div>
 
-      <!-- Section 2: Charts Row -->
-      <div class="analytics-chart-row">
+      <!-- ═══ 2. Request History + Provider Donut ═══════════════════════════ -->
+      <div class="chart-row-main mb20">
         <div class="card">
           <div class="card-hd">
             <span class="card-title">Request History</span>
-            <span class="badge badge-accent">5-min buckets</span>
+            <span class="badge badge-accent">5-min buckets · last 4 h</span>
           </div>
-          <div class="card-body" style="height:220px;position:relative">
+          <div class="card-body" style="height:230px;position:relative">
             <canvas id="chart-history"></canvas>
           </div>
         </div>
@@ -246,16 +446,49 @@
           <div class="card-hd">
             <span class="card-title">Provider Distribution</span>
           </div>
-          <div class="card-body" style="height:220px;position:relative;display:flex;align-items:center;justify-content:center">
-            <canvas id="chart-providers" style="max-height:180px;max-width:180px"></canvas>
+          <div class="card-body" style="height:230px;position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+            <canvas id="chart-providers" style="max-height:190px"></canvas>
             <div id="chart-providers-empty" style="display:none;color:var(--text-3);font-size:13px">No data yet</div>
           </div>
         </div>
       </div>
 
-      <!-- Section 3: Provider Breakdown Table -->
-      <div class="section-block">
-        <div class="section-hd">
+      <!-- ═══ 3. Latency bars + Token bars ══════════════════════════════════ -->
+      <div class="chart-row-2 mb20">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Avg Latency by Provider</span>
+            <span class="badge" style="background:rgba(99,102,241,.12);color:#818cf8">ms</span>
+          </div>
+          <div class="card-body" style="height:200px;position:relative">
+            <canvas id="chart-latency"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Token Consumption by Provider</span>
+            <span class="badge" style="background:rgba(167,139,250,.12);color:#a78bfa">tokens</span>
+          </div>
+          <div class="card-body" style="height:200px;position:relative">
+            <canvas id="chart-tokens"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 4. Key Health Matrix ═══════════════════════════════════════════ -->
+      <div class="mb20">
+        <div class="section-hd-row">
+          <span class="section-label">API Key Health</span>
+          <span style="font-size:11px;color:var(--text-3)">Live quota usage — RPM · TPM · Daily</span>
+        </div>
+        <div class="key-health-grid" id="key-health-grid">
+          <div class="empty-state">Loading key health…</div>
+        </div>
+      </div>
+
+      <!-- ═══ 5. Provider Breakdown ══════════════════════════════════════════ -->
+      <div class="mb20">
+        <div class="section-hd-row">
           <span class="section-label">Provider Breakdown</span>
         </div>
         <div class="card">
@@ -278,10 +511,11 @@
         </div>
       </div>
 
-      <!-- Section 4: Model Breakdown Table -->
-      <div class="section-block">
-        <div class="section-hd">
+      <!-- ═══ 6. Model Breakdown ════════════════════════════════════════════ -->
+      <div class="mb20">
+        <div class="section-hd-row">
           <span class="section-label">Model Breakdown</span>
+          <span id="model-count-badge" class="badge badge-accent"></span>
         </div>
         <div class="card">
           <div class="table-wrap">
@@ -291,23 +525,24 @@
                 <th>Provider</th>
                 <th>Requests</th>
                 <th>Tokens Used</th>
+                <th>Tokens / Req</th>
                 <th>Errors</th>
                 <th>Success Rate</th>
               </tr></thead>
               <tbody id="model-rows">
-                <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+                <tr><td colspan="7" class="empty-state">Loading…</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- Section 5: Error Analysis -->
-      <div class="section-block">
-        <div class="section-hd">
+      <!-- ═══ 7. Error Analysis ══════════════════════════════════════════════ -->
+      <div class="mb20">
+        <div class="section-hd-row">
           <span class="section-label">Error Analysis</span>
         </div>
-        <div class="analytics-chart-row">
+        <div class="chart-row-2">
           <div class="card">
             <div class="card-hd">
               <span class="card-title">Error Rate Trend</span>
@@ -334,134 +569,208 @@
   </div>
 </div>
 
-<!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
 
 <script>
-// ── Provider colors ────────────────────────────────────────────────────────
-const PROVIDER_COLORS = {
-  gemini:    '#4285f4',
-  openai:    '#10a37f',
-  anthropic: '#cd7f32',
-  mistral:   '#f0741e',
-  meta:      '#1877f2',
-  deepseek:  '#643cdc',
-  groq:      '#f8a300',
-  unknown:   '#8b949e',
+/* ══════════════════════════════════════════════════════════════════════════
+   ANALYTICS PAGE — full JS
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// ── Provider color map ──────────────────────────────────────────────────────
+const PC = {
+  gemini:     '#4285f4',
+  openai:     '#10a37f',
+  anthropic:  '#c88b3a',
+  mistral:    '#f0741e',
+  meta:       '#1877f2',
+  deepseek:   '#643cdc',
+  groq:       '#f8a300',
+  cloudflare: '#f38020',
+  cohere:     '#39b2b2',
+  cerebras:   '#e66a2c',
+  huggingface:'#ffcc4d',
+  zai:        '#22d3ee',
+  lightning:  '#fbbf24',
+  modal:      '#7c3aed',
+  pollinations:'#34d399',
+  qwen:       '#a78bfa',
+  unknown:    '#6b7280',
 };
+const PALETTE = ['#4285f4','#10a37f','#f8a300','#f0741e','#1877f2','#643cdc','#c88b3a','#a78bfa','#06b6d4','#22d3ee','#34d399','#fbbf24'];
 
-const CHART_PALETTE = ['#4285f4','#10a37f','#cd7f32','#f0741e','#1877f2','#643cdc','#f8a300','#a78bfa','#06b6d4'];
+function provColor(name) { return PC[(name||'').toLowerCase()] || PC.unknown; }
 
-// ── Utility ────────────────────────────────────────────────────────────────
+// ── Format helpers ─────────────────────────────────────────────────────────
 function fmtNum(n) {
-  if (n == null) return '–';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  if (n == null || n === '–') return '–';
+  n = Number(n);
+  if (n >= 1_000_000) return (n/1_000_000).toFixed(1)+'M';
+  if (n >= 1_000)     return (n/1_000).toFixed(1)+'K';
   return n.toLocaleString();
 }
-
 function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(ts*1000);
+  return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 }
-
-function rateColor(rate) {
-  if (rate >= 90) return 'var(--green)';
-  if (rate >= 60) return 'var(--yellow)';
+function rateColor(r) {
+  if (r >= 90) return 'var(--green)';
+  if (r >= 60) return 'var(--yellow)';
   return 'var(--red)';
 }
-
-function providerBadge(name) {
-  const cls = 'prov-' + (name || 'unknown').toLowerCase();
-  return '<span class="prov-badge ' + cls + '">' + (name || 'unknown') + '</span>';
+function provBadge(name) {
+  const c = provColor(name);
+  return `<span class="prov-badge" style="background:${c}22;color:${c}">${name||'?'}</span>`;
+}
+function rateBarHtml(rate, width) {
+  const c = rateColor(rate);
+  const w = width || Math.min(rate, 100);
+  return `<div class="rate-bar-wrap">
+    <span style="font-weight:700;color:${c};min-width:40px;font-size:12px">${rate}%</span>
+    <div class="rate-bar-track"><div class="rate-bar-fill" style="width:${w}%;background:${c}"></div></div>
+  </div>`;
 }
 
-function rateBarHtml(rate) {
-  const color = rateColor(rate);
-  return '<div class="rate-bar-wrap">' +
-    '<span style="font-weight:600;color:' + color + ';min-width:42px">' + rate + '%</span>' +
-    '<div class="rate-bar-track"><div class="rate-bar-fill" style="width:' + Math.min(rate, 100) + '%;background:' + color + '"></div></div>' +
-    '</div>';
+// ── Animated counter ───────────────────────────────────────────────────────
+const _prevVals = {};
+function animateValue(el, toVal, formatter, key) {
+  if (!el) return;
+  const from = _prevVals[key] || 0;
+  _prevVals[key] = toVal;
+  if (from === toVal) { el.textContent = formatter(toVal); return; }
+  const dur = 600;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    el.textContent = formatter(Math.round(from + (toVal - from) * ease));
+    if (t < 1) requestAnimationFrame(tick);
+    else el.textContent = formatter(toVal);
+  }
+  requestAnimationFrame(tick);
 }
 
 // ── Toast ──────────────────────────────────────────────────────────────────
-function showToast(msg, type = 'info') {
-  const container = document.getElementById('toast-container');
+function showToast(msg, type='info') {
+  const c = document.getElementById('toast-container');
   const el = document.createElement('div');
-  el.className = 'toast ' + type;
+  el.className = 'toast '+type;
   el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+  c.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3200);
 }
 
 // ── Charts ─────────────────────────────────────────────────────────────────
-let histChart = null, provChart = null, errChart = null;
+let histChart=null, provChart=null, latChart=null, tokChart=null, errChart=null;
 
-function getThemeColors() {
+function getTC() {
   const s = getComputedStyle(document.documentElement);
   return {
-    text2:  s.getPropertyValue('--text-2').trim(),
-    text3:  s.getPropertyValue('--text-3').trim(),
-    border: s.getPropertyValue('--border').trim(),
-    accent: s.getPropertyValue('--accent-br').trim(),
-    green:  s.getPropertyValue('--green').trim(),
-    yellow: s.getPropertyValue('--yellow').trim(),
-    red:    s.getPropertyValue('--red').trim(),
-    blue:   s.getPropertyValue('--blue').trim(),
+    text2:  s.getPropertyValue('--text-2').trim()  || '#c9d1d9',
+    text3:  s.getPropertyValue('--text-3').trim()  || '#8b949e',
+    border: s.getPropertyValue('--border').trim()  || '#30363d',
+    accent: s.getPropertyValue('--accent-br').trim()|| '#58a6ff',
+    green:  s.getPropertyValue('--green').trim()   || '#22c55e',
+    yellow: s.getPropertyValue('--yellow').trim()  || '#eab308',
+    red:    s.getPropertyValue('--red').trim()     || '#ef4444',
+    blue:   s.getPropertyValue('--blue').trim()    || '#818cf8',
   };
 }
 
 function initCharts() {
-  const c = getThemeColors();
-  Chart.defaults.color = c.text3;
+  const c = getTC();
+  Chart.defaults.color       = c.text3;
   Chart.defaults.borderColor = c.border;
   Chart.defaults.font.family = 'Inter';
-  Chart.defaults.font.size = 11;
+  Chart.defaults.font.size   = 11;
 
-  // History line chart
-  const histCtx = document.getElementById('chart-history').getContext('2d');
-  histChart = new Chart(histCtx, {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'Requests', data: [], borderColor: c.accent, backgroundColor: c.accent + '20', fill: true, tension: 0.4, pointRadius: 3 },
-      { label: 'Success',  data: [], borderColor: c.green,  backgroundColor: c.green  + '18', fill: true, tension: 0.4, pointRadius: 3 },
-      { label: 'Errors',   data: [], borderColor: c.red,    backgroundColor: c.red    + '12', fill: true, tension: 0.4, pointRadius: 3 },
+  const baseLineOpts = {
+    responsive:true, maintainAspectRatio:false,
+    animation:{ duration:500 },
+    plugins:{ legend:{ position:'top', labels:{ boxWidth:8, usePointStyle:true, padding:10 } } },
+    scales:{
+      x:{ grid:{ color:c.border+'55' }, ticks:{ maxTicksLimit:8 } },
+      y:{ grid:{ color:c.border+'55' }, beginAtZero:true, ticks:{ precision:0 } },
+    },
+  };
+
+  // ── History line chart
+  histChart = new Chart(document.getElementById('chart-history').getContext('2d'), {
+    type:'line',
+    data:{ labels:[], datasets:[
+      { label:'Requests', data:[], borderColor:c.accent,  backgroundColor:c.accent+'28',  fill:true, tension:.4, pointRadius:2, borderWidth:2 },
+      { label:'Success',  data:[], borderColor:c.green,   backgroundColor:c.green+'20',   fill:true, tension:.4, pointRadius:2, borderWidth:2 },
+      { label:'Errors',   data:[], borderColor:c.red,     backgroundColor:c.red+'18',     fill:true, tension:.4, pointRadius:2, borderWidth:2 },
     ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { boxWidth: 8, usePointStyle: true } } },
-      scales: {
-        x: { grid: { color: c.border }, ticks: { maxTicksLimit: 8 } },
-        y: { grid: { color: c.border }, beginAtZero: true, ticks: { precision: 0 } },
+    options: baseLineOpts,
+  });
+
+  // ── Provider doughnut
+  provChart = new Chart(document.getElementById('chart-providers').getContext('2d'), {
+    type:'doughnut',
+    data:{ labels:[], datasets:[{ data:[], backgroundColor:PALETTE, borderWidth:2, borderColor:'transparent', hoverBorderWidth:3 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{ duration:600, animateRotate:true, animateScale:true },
+      plugins:{ legend:{ position:'right', labels:{ boxWidth:8, usePointStyle:true, padding:8, font:{size:11} } } },
+      cutout:'60%',
+    },
+  });
+
+  // ── Latency horizontal bar
+  latChart = new Chart(document.getElementById('chart-latency').getContext('2d'), {
+    type:'bar',
+    data:{ labels:[], datasets:[{
+      label:'Avg Latency (ms)', data:[], borderRadius:4, borderWidth:0,
+      backgroundColor: ctx => {
+        const g = ctx.chart.ctx.createLinearGradient(0,0,400,0);
+        g.addColorStop(0,c.accent+'cc'); g.addColorStop(1, c.blue+'cc'); return g;
+      },
+    }]},
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      animation:{duration:500},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ grid:{color:c.border+'55'}, beginAtZero:true, ticks:{callback:v=>v+'ms'} },
+        y:{ grid:{display:false} },
       },
     },
   });
 
-  // Provider doughnut
-  const provCtx = document.getElementById('chart-providers').getContext('2d');
-  provChart = new Chart(provCtx, {
-    type: 'doughnut',
-    data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_PALETTE, borderWidth: 2, borderColor: 'transparent' }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'right', labels: { boxWidth: 8, usePointStyle: true, padding: 8 } } },
-      cutout: '65%',
+  // ── Token horizontal bar
+  tokChart = new Chart(document.getElementById('chart-tokens').getContext('2d'), {
+    type:'bar',
+    data:{ labels:[], datasets:[{
+      label:'Tokens', data:[], borderRadius:4, borderWidth:0,
+      backgroundColor: ctx => {
+        const g = ctx.chart.ctx.createLinearGradient(0,0,400,0);
+        g.addColorStop(0,'#a78bfa'+'cc'); g.addColorStop(1,'#7c3aed'+'cc'); return g;
+      },
+    }]},
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      animation:{duration:500},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ grid:{color:c.border+'55'}, beginAtZero:true, ticks:{callback:v=>fmtNum(v)} },
+        y:{ grid:{display:false} },
+      },
     },
   });
 
-  // Error rate line chart
-  const errCtx = document.getElementById('chart-errors').getContext('2d');
-  errChart = new Chart(errCtx, {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'Errors', data: [], borderColor: c.red, backgroundColor: c.red + '20', fill: true, tension: 0.4, pointRadius: 3 },
+  // ── Error trend
+  errChart = new Chart(document.getElementById('chart-errors').getContext('2d'), {
+    type:'line',
+    data:{ labels:[], datasets:[
+      { label:'Errors', data:[], borderColor:c.red, backgroundColor:c.red+'28', fill:true, tension:.4, pointRadius:2, borderWidth:2 },
     ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: c.border }, ticks: { maxTicksLimit: 8 } },
-        y: { grid: { color: c.border }, beginAtZero: true, ticks: { precision: 0 } },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:500},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ grid:{color:c.border+'55'}, ticks:{maxTicksLimit:8} },
+        y:{ grid:{color:c.border+'55'}, beginAtZero:true, ticks:{precision:0} },
       },
     },
   });
@@ -469,152 +778,258 @@ function initCharts() {
 
 // ── Render ─────────────────────────────────────────────────────────────────
 function render(data) {
-  const summary   = data.summary   || {};
-  const providers = data.providers || [];
-  const models    = data.models    || [];
-  const history   = data.history   || [];
+  const s  = data.summary        || {};
+  const ps = data.providers      || [];
+  const ms = data.models         || [];
+  const hs = data.history        || [];
+  const kp = data.key_pools      || [];
+  const tb = data.token_by_provider || {};
 
-  // Summary cards
-  document.getElementById('kpi-total').textContent     = fmtNum(summary.total_requests);
+  // ── KPI cards ────────────────────────────────────────────────────────────
+  animateValue(document.getElementById('kpi-total'), s.total_requests||0, fmtNum, 'total');
   document.getElementById('kpi-total-sub').textContent =
-    fmtNum(summary.success || 0) + ' ok / ' + fmtNum(summary.failed || 0) + ' failed';
+    fmtNum(s.success||0)+' ok · '+fmtNum(s.failed||0)+' failed';
 
-  const sr = summary.success_rate || 0;
-  document.getElementById('kpi-success').textContent     = sr + '%';
-  document.getElementById('kpi-success-sub').textContent = fmtNum(summary.success || 0) + ' succeeded';
+  const sr = s.success_rate || 0;
+  animateValue(document.getElementById('kpi-success'), sr, v=>v.toFixed(1)+'%', 'sr');
+  document.getElementById('kpi-success-bar').style.width = sr+'%';
+  document.getElementById('kpi-success-bar').style.background = rateColor(sr);
+  document.getElementById('kpi-success-sub').textContent = fmtNum(s.success||0)+' succeeded';
 
-  const chr = summary.cache_hit_rate || 0;
-  document.getElementById('kpi-cache').textContent     = chr + '%';
+  const cr = s.cache_hit_rate || 0;
+  animateValue(document.getElementById('kpi-cache'), cr, v=>v.toFixed(1)+'%', 'cr');
+  document.getElementById('kpi-cache-bar').style.width = cr+'%';
   document.getElementById('kpi-cache-sub').textContent =
-    fmtNum(summary.cache_hits || 0) + ' hits / ' + fmtNum(summary.cache_misses || 0) + ' misses';
+    fmtNum(s.cache_hits||0)+' hits · '+fmtNum(s.cache_misses||0)+' misses';
 
-  document.getElementById('kpi-latency').textContent = (summary.avg_latency_ms || 0) + ' ms';
+  const lat = s.avg_latency_ms || 0;
+  animateValue(document.getElementById('kpi-latency'), lat, v=>v+' ms', 'lat');
+  // bar: 0ms=0%, 3000ms=100%
+  document.getElementById('kpi-latency-bar').style.width = Math.min(lat/3000*100,100)+'%';
 
-  // History chart (last 20 buckets)
-  const last20 = history.slice(-20);
-  histChart.data.labels = last20.map(h => h.ts ? fmtTime(h.ts) : '–');
-  histChart.data.datasets[0].data = last20.map(h => h.requests || 0);
-  histChart.data.datasets[1].data = last20.map(h => h.success  || 0);
-  histChart.data.datasets[2].data = last20.map(h => h.errors   || 0);
+  animateValue(document.getElementById('kpi-tokens'), s.total_tokens||0, fmtNum, 'tokens');
+  const topProv = Object.entries(tb).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('kpi-tokens-sub').textContent =
+    topProv ? 'top: '+topProv[0]+' ('+fmtNum(topProv[1])+')' : 'across all models';
+
+  const totalKeys  = s.configured_keys || 0;
+  const activeKeys = s.active_keys || 0;
+  animateValue(document.getElementById('kpi-keys'), activeKeys, v=>v+' / '+totalKeys, 'keys');
+  document.getElementById('kpi-keys-bar').style.width = totalKeys>0 ? (activeKeys/totalKeys*100)+'%' : '0%';
+  document.getElementById('kpi-keys-sub').textContent = totalKeys+' configured across providers';
+
+  // ── History charts ────────────────────────────────────────────────────────
+  const last = hs.slice(-32);
+  const labs  = last.map(h=>h.ts ? fmtTime(h.ts) : '–');
+  histChart.data.labels         = labs;
+  histChart.data.datasets[0].data = last.map(h=>h.requests||0);
+  histChart.data.datasets[1].data = last.map(h=>h.success||0);
+  histChart.data.datasets[2].data = last.map(h=>h.errors||0);
   histChart.update('none');
 
-  // Error trend chart
-  errChart.data.labels = last20.map(h => h.ts ? fmtTime(h.ts) : '–');
-  errChart.data.datasets[0].data = last20.map(h => h.errors || 0);
+  errChart.data.labels         = labs;
+  errChart.data.datasets[0].data = last.map(h=>h.errors||0);
   errChart.update('none');
 
-  // Provider doughnut
-  const withReqs = providers.filter(p => p.requests > 0);
+  // ── Provider donut ────────────────────────────────────────────────────────
+  const withReqs = ps.filter(p=>p.requests>0);
   if (!withReqs.length) {
-    document.getElementById('chart-providers').style.display = 'none';
-    document.getElementById('chart-providers-empty').style.display = 'block';
+    document.getElementById('chart-providers').style.display='none';
+    document.getElementById('chart-providers-empty').style.display='block';
   } else {
-    document.getElementById('chart-providers').style.display = 'block';
-    document.getElementById('chart-providers-empty').style.display = 'none';
-    provChart.data.labels   = withReqs.map(p => p.name);
-    provChart.data.datasets[0].data = withReqs.map(p => p.requests);
-    provChart.data.datasets[0].backgroundColor = withReqs.map(p =>
-      PROVIDER_COLORS[p.name.toLowerCase()] || '#8b949e'
-    );
+    document.getElementById('chart-providers').style.display='block';
+    document.getElementById('chart-providers-empty').style.display='none';
+    provChart.data.labels   = withReqs.map(p=>p.name);
+    provChart.data.datasets[0].data = withReqs.map(p=>p.requests);
+    provChart.data.datasets[0].backgroundColor = withReqs.map(p=>provColor(p.name));
     provChart.update('none');
   }
 
-  // Provider table
+  // ── Latency bar ───────────────────────────────────────────────────────────
+  const lps = ps.filter(p=>p.avg_latency_ms>0).sort((a,b)=>b.avg_latency_ms-a.avg_latency_ms).slice(0,8);
+  latChart.data.labels         = lps.map(p=>p.name);
+  latChart.data.datasets[0].data = lps.map(p=>p.avg_latency_ms);
+  latChart.update('none');
+
+  // ── Token bar ─────────────────────────────────────────────────────────────
+  const tEntries = Object.entries(tb).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  tokChart.data.labels         = tEntries.map(([k])=>k);
+  tokChart.data.datasets[0].data = tEntries.map(([,v])=>v);
+  tokChart.update('none');
+
+  // ── Key health grid ───────────────────────────────────────────────────────
+  renderKeyHealth(kp);
+
+  // ── Provider table ────────────────────────────────────────────────────────
   const ptbody = document.getElementById('provider-rows');
-  if (!providers.length) {
-    ptbody.innerHTML = '<tr><td colspan="7" class="empty-state">No provider data yet</td></tr>';
+  if (!ps.length) {
+    ptbody.innerHTML = '<tr><td colspan="7" class="empty-state">No provider data yet — send some requests first</td></tr>';
   } else {
-    ptbody.innerHTML = providers.map(function(p) {
-      const color = PROVIDER_COLORS[p.name.toLowerCase()] || '#8b949e';
-      return '<tr>' +
-        '<td style="font-weight:600;text-transform:capitalize;color:' + color + '">' + p.name + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums">' + fmtNum(p.requests) + '</td>' +
-        '<td style="color:var(--green)">' + fmtNum(p.success) + '</td>' +
-        '<td style="color:var(--red)">' + fmtNum(p.errors) + '</td>' +
-        '<td style="color:var(--yellow)">' + fmtNum(p.rate_limited) + '</td>' +
-        '<td>' + rateBarHtml(p.success_rate || 0) + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums">' + (p.avg_latency_ms || 0) + ' ms</td>' +
-        '</tr>';
+    ptbody.innerHTML = ps.map(p => {
+      const c = provColor(p.name);
+      return `<tr>
+        <td><span class="prov-dot" style="background:${c}"></span><strong style="color:${c};text-transform:capitalize">${p.name}</strong></td>
+        <td style="font-variant-numeric:tabular-nums;font-weight:600">${fmtNum(p.requests)}</td>
+        <td style="color:var(--green)">${fmtNum(p.success)}</td>
+        <td style="color:var(--red)">${fmtNum(p.errors)}</td>
+        <td style="color:var(--yellow)">${fmtNum(p.rate_limited)}</td>
+        <td>${rateBarHtml(p.success_rate||0)}</td>
+        <td style="font-variant-numeric:tabular-nums">${p.avg_latency_ms||0} ms</td>
+      </tr>`;
     }).join('');
   }
 
-  // Model table
+  // ── Model table ───────────────────────────────────────────────────────────
+  document.getElementById('model-count-badge').textContent = ms.length ? ms.length+' models' : '';
   const mtbody = document.getElementById('model-rows');
-  if (!models.length) {
-    mtbody.innerHTML = '<tr><td colspan="6" class="empty-state">No model data yet</td></tr>';
+  if (!ms.length) {
+    mtbody.innerHTML = '<tr><td colspan="7" class="empty-state">No model data yet</td></tr>';
   } else {
-    mtbody.innerHTML = models.map(function(m) {
-      const freeBadge = m.free_tier ? '<span class="free-badge">FREE</span>' : '';
-      return '<tr>' +
-        '<td style="font-family:\'JetBrains Mono\',monospace;font-size:12px">' +
-          m.model_id + freeBadge +
-        '</td>' +
-        '<td>' + providerBadge(m.provider) + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums">' + fmtNum(m.requests) + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums">' + fmtNum(m.tokens) + '</td>' +
-        '<td style="color:var(--red)">' + fmtNum(m.errors) + '</td>' +
-        '<td>' + rateBarHtml(m.success_rate || 0) + '</td>' +
-        '</tr>';
+    mtbody.innerHTML = ms.map(m => {
+      const tpr = m.requests > 0 ? Math.round(m.tokens / m.requests) : 0;
+      const fb  = m.free_tier ? '<span class="free-badge">FREE</span>' : '';
+      return `<tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11.5px">${m.model_id}${fb}</td>
+        <td>${provBadge(m.provider)}</td>
+        <td style="font-variant-numeric:tabular-nums">${fmtNum(m.requests)}</td>
+        <td style="font-variant-numeric:tabular-nums">${fmtNum(m.tokens)}</td>
+        <td style="font-variant-numeric:tabular-nums;color:var(--text-3)">${fmtNum(tpr)}</td>
+        <td style="color:var(--red)">${fmtNum(m.errors)}</td>
+        <td>${rateBarHtml(m.success_rate||0)}</td>
+      </tr>`;
     }).join('');
   }
 
-  // Error-prone models list (top 5 by errors, models with errors > 0)
-  const errList = document.getElementById('error-model-list');
-  const errModels = [...models].filter(m => m.errors > 0).sort((a, b) => b.errors - a.errors).slice(0, 5);
-  if (!errModels.length) {
-    errList.innerHTML = '<div class="empty-state">No error data yet</div>';
+  // ── Error-prone models ────────────────────────────────────────────────────
+  const errEl = document.getElementById('error-model-list');
+  const errMs = [...ms].filter(m=>m.errors>0).sort((a,b)=>b.errors-a.errors).slice(0,6);
+  if (!errMs.length) {
+    errEl.innerHTML = '<div class="empty-state">No errors recorded 🎉</div>';
   } else {
-    errList.innerHTML = errModels.map(function(m) {
-      const errRate = m.requests > 0 ? Math.round(m.errors / m.requests * 100) : 0;
-      return '<div class="error-model-row">' +
-        providerBadge(m.provider) +
-        '<span class="error-model-id">' + m.model_id + '</span>' +
-        '<span class="error-model-count">' + fmtNum(m.errors) + ' errors</span>' +
-        '<span style="font-size:11px;color:var(--text-3)">' + errRate + '% rate</span>' +
-        '</div>';
+    errEl.innerHTML = errMs.map(m => {
+      const rate = m.requests>0 ? Math.round(m.errors/m.requests*100) : 0;
+      return `<div class="error-model-row">
+        ${provBadge(m.provider)}
+        <span class="error-model-id">${m.model_id}</span>
+        <span style="font-weight:700;color:var(--red)">${fmtNum(m.errors)} err</span>
+        <span style="font-size:11px;color:var(--text-3)">${rate}%</span>
+      </div>`;
     }).join('');
   }
-
-  document.getElementById('last-update').textContent =
-    'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Fetch ──────────────────────────────────────────────────────────────────
+// ── Key health grid ────────────────────────────────────────────────────────
+function gaugeColor(color) {
+  if (color === 'green')  return '#22c55e';
+  if (color === 'yellow') return '#eab308';
+  return '#ef4444';
+}
+
+function renderKeyHealth(kp) {
+  const grid = document.getElementById('key-health-grid');
+  if (!kp.length) {
+    grid.innerHTML = '<div class="empty-state">No key pools configured yet</div>';
+    return;
+  }
+
+  grid.innerHTML = kp.map(prov => {
+    const dotCls  = prov.status;
+    const badgeCls = prov.status;
+    const color    = provColor(prov.name);
+
+    let keysHtml = '';
+    if (!prov.keys || !prov.keys.length) {
+      keysHtml = `<div class="kh-no-keys">No keys configured</div>`;
+    } else {
+      keysHtml = prov.keys.map(k => {
+        const statusColor = {active:'#22c55e',limited:'#eab308',exhausted:'#ef4444',failed:'#ef4444'}[k.status]||'#6b7280';
+        const scoreColor  = k.score > .7 ? '#22c55e' : k.score > .3 ? '#eab308' : '#ef4444';
+        const scoreBar    = Math.max(0, Math.min(100, Math.round(k.score * 100)));
+
+        return `<div class="kh-key-item">
+          <div class="kh-key-header">
+            <span class="kh-key-hash">key:${k.hash}</span>
+            <span class="kh-key-status ${k.status}">${k.status}</span>
+            <span class="kh-score" style="color:${scoreColor}" title="Health score">${(k.score*100).toFixed(0)}%</span>
+          </div>
+          <div class="gauge-row">
+            <span class="gauge-label">RPM</span>
+            <div class="gauge-track">
+              <div class="gauge-fill ${k.rpm.color}" style="--bar-w:${k.rpm.pct}%;width:${k.rpm.pct}%"></div>
+            </div>
+            <span class="gauge-vals">${fmtNum(k.rpm.used)} / ${fmtNum(k.rpm.limit)}</span>
+          </div>
+          <div class="gauge-row">
+            <span class="gauge-label">TPM</span>
+            <div class="gauge-track">
+              <div class="gauge-fill ${k.tpm.color}" style="--bar-w:${k.tpm.pct}%;width:${k.tpm.pct}%"></div>
+            </div>
+            <span class="gauge-vals">${fmtNum(k.tpm.used)} / ${fmtNum(k.tpm.limit)}</span>
+          </div>
+          <div class="gauge-row">
+            <span class="gauge-label">Daily</span>
+            <div class="gauge-track">
+              <div class="gauge-fill ${k.daily.color}" style="--bar-w:${k.daily.pct}%;width:${k.daily.pct}%"></div>
+            </div>
+            <span class="gauge-vals">${fmtNum(k.daily.used)} / ${fmtNum(k.daily.limit)}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    return `<div class="kh-card">
+      <div class="kh-provider-row">
+        <div class="kh-status-dot ${dotCls}"></div>
+        <span class="kh-provider-name" style="color:${color}">${prov.provider}</span>
+        <span class="badge" style="font-size:9px;padding:1px 6px;background:${color}18;color:${color}">${prov.active_keys}/${prov.total_keys} active</span>
+        <span class="kh-badge ${badgeCls}">${prov.status}</span>
+      </div>
+      ${keysHtml}
+    </div>`;
+  }).join('');
+}
+
+// ── Fetch + refresh ────────────────────────────────────────────────────────
+let _refreshTimer = null;
+let _lastFetch = 0;
+
 async function fetchData() {
+  const dot   = document.getElementById('live-dot');
+  const label = document.getElementById('live-label');
   try {
     const r = await fetch('/analytics/data');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    render(await r.json());
-  } catch (e) {
-    console.error('Analytics fetch error:', e);
-  }
-}
-
-// ── Reset ──────────────────────────────────────────────────────────────────
-async function confirmReset() {
-  if (!confirm('Reset all analytics statistics? This cannot be undone.')) return;
-  try {
-    const r = await fetch('/analytics/reset', { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
     const data = await r.json();
-    if (data.ok) {
-      showToast('Analytics reset (' + (data.deleted_keys || 0) + ' keys cleared)', 'success');
-      await fetchData();
-    } else {
-      showToast('Reset failed: ' + (data.error || 'unknown error'), 'error');
-    }
-  } catch (e) {
-    showToast('Reset request failed', 'error');
+    render(data);
+    _lastFetch = Date.now();
+    dot.className   = 'live-dot';
+    label.textContent = 'Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  } catch(e) {
+    console.error('Analytics fetch error:', e);
+    dot.className   = 'live-dot error';
+    label.textContent = 'Fetch error';
   }
 }
-
-// ── Auto-refresh ───────────────────────────────────────────────────────────
-let _refreshTimer = null;
 
 function setRefreshInterval(ms) {
   if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
-  const interval = parseInt(ms, 10);
-  if (interval > 0) {
-    _refreshTimer = setInterval(fetchData, interval);
+  const iv = parseInt(ms, 10);
+  if (iv > 0) _refreshTimer = setInterval(fetchData, iv);
+}
+
+async function confirmReset() {
+  if (!confirm('Reset all analytics statistics? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/analytics/reset', {method:'DELETE'});
+    const d = await r.json();
+    if (d.ok) {
+      showToast('Reset complete — '+( d.deleted_keys||0)+' counters cleared', 'success');
+      await fetchData();
+    } else {
+      showToast('Reset failed: '+(d.error||'unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Reset request failed', 'error');
   }
 }
 
@@ -622,7 +1037,6 @@ function setRefreshInterval(ms) {
 document.addEventListener('DOMContentLoaded', function() {
   initCharts();
   fetchData();
-  // Default: 30s refresh
   setRefreshInterval(30000);
 });
 </script>

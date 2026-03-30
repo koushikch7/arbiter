@@ -53,6 +53,7 @@ _ENV_VAR_MAP: dict = {
     "zai":         "ZAI_API_KEYS",
     "lightning":   "LIGHTNING_API_KEYS",
     "modal":       "MODAL_API_KEYS",
+    "pollinations": "POLLINATIONS_API_KEYS",
 }
 
 # ── Provider metadata ────────────────────────────────────────────────────────
@@ -139,11 +140,12 @@ _PROVIDER_META = {
     },
     "pollinations": {
         "label":      "Pollinations.ai",
-        "key_format": "No key required",
-        "key_hint":   "",
-        "signup_url": "https://pollinations.ai/",
+        "key_format": "API key",
+        "key_hint":   "sk_... or pk_...",
+        "signup_url": "https://enter.pollinations.ai/",
         "free":       True,
-        "models": ["mistral", "mistral-large", "openai", "claude"],
+        "models": ["openai", "openai-fast", "openai-large", "claude", "claude-fast",
+                   "claude-large", "gemini", "gemini-fast", "mistral", "deepseek", "qwen-coder"],
     },
     "modal": {
         "label":      "Modal.com (Serverless GPU)",
@@ -218,8 +220,6 @@ def _read_env_keys(provider: str) -> List[str]:
     Bypasses the cached settings singleton so changes written via the UI
     are visible immediately without a server restart.
     """
-    if provider == "pollinations":
-        return ["free"]
     env_var = _ENV_VAR_MAP.get(provider)
     if not env_var:
         return []
@@ -343,7 +343,7 @@ async def list_providers(request: Request) -> JSONResponse:
 
     result = []
     for name, meta in _PROVIDER_META.items():
-        env_keys = _read_env_keys(name) if name != "pollinations" else []
+        env_keys = _read_env_keys(name)
         disabled = bool(await redis.get(f"{_REDIS_DISABLED_PFX}{name}"))
 
         pool       = key_pools.get(name)
@@ -386,8 +386,6 @@ class AddKeyBody(BaseModel):
 async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
-    if name == "pollinations":
-        raise HTTPException(400, "Pollinations requires no key")
     k = body.key.strip()
     if not k:
         raise HTTPException(422, "Key cannot be empty")

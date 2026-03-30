@@ -1,18 +1,24 @@
 """
 Pollinations.ai text provider adapter (OpenAI-compatible endpoint).
 
-Completely free, no API key required (anonymous / IP-rate-limited).
-The key pool stores a dummy "free" key so the key-pool machinery works;
-no Authorization header is sent.
+Requires an API key from https://enter.pollinations.ai/
+(free tier available; keys start with sk_ or pk_).
 
 Available models (March 2026):
-  mistral         fast, general purpose  ← default
-  mistral-large   higher quality
-  openai          GPT-based backend
-  claude          Claude-based backend
+  openai              GPT-based — recommended default
+  openai-fast         Faster/cheaper GPT variant
+  openai-large        Higher quality GPT variant
+  claude              Claude-based backend
+  claude-fast         Faster Claude variant
+  claude-large        Higher quality Claude variant
+  gemini              Gemini-based backend
+  gemini-fast         Faster Gemini variant
+  mistral             Mistral backend
+  deepseek            DeepSeek backend
+  qwen-coder          Qwen coding model
 
-Endpoint:  POST https://text.pollinations.ai/openai
-Rate limit: ~5 RPM per IP (enforced by Pollinations server-side)
+Endpoint:  POST https://gen.pollinations.ai/v1/chat/completions
+Auth:      Bearer <api_key>
 
 Source: https://github.com/pollinations/pollinations?tab=readme-ov-file#text-generation-api
 """
@@ -35,29 +41,36 @@ from app.models.schemas import (
 
 logger = logging.getLogger(__name__)
 
-POLLINATIONS_API_BASE = "https://text.pollinations.ai/openai"
+POLLINATIONS_API_BASE = "https://gen.pollinations.ai/v1/chat/completions"
 
 
 class PollinationsProvider(BaseProvider):
     name = "pollinations"
 
     models: List[str] = [
-        "mistral",        # fast, general purpose
-        "mistral-large",  # higher quality
-        "openai",         # GPT-based
-        "claude",         # Claude-based
+        "openai",              # GPT-based — default
+        "openai-fast",         # faster/cheaper GPT
+        "openai-large",        # higher quality GPT
+        "claude",              # Claude-based
+        "claude-fast",         # faster Claude
+        "claude-large",        # higher quality Claude
+        "gemini",              # Gemini-based
+        "gemini-fast",         # faster Gemini
+        "mistral",             # Mistral
+        "deepseek",            # DeepSeek
+        "qwen-coder",          # Qwen coding model
     ]
 
     max_context_tokens = 32768
-    default_model      = "mistral"
+    default_model      = "openai"
 
     # ------------------------------------------------------------------
     async def complete(
-        self, request: ChatCompletionRequest, api_key: str  # api_key unused — no auth needed
+        self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
         """
         Call the Pollinations.ai OpenAI-compatible text endpoint.
-        No Authorization header is sent (free, anonymous service).
+        Requires a Bearer token from https://enter.pollinations.ai/
         Falls back to default_model when the requested model is unknown.
         """
         model = request.model if request.model in self.models else self.default_model
@@ -78,9 +91,9 @@ class PollinationsProvider(BaseProvider):
         if request.stop:
             payload["stop"] = request.stop
 
-        # Note: intentionally NO Authorization header — Pollinations is free / anonymous
         headers = {
-            "Content-Type": "application/json",
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {api_key}",
         }
 
         logger.debug(f"PollinationsProvider POST model={model}")

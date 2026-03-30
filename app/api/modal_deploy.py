@@ -240,9 +240,11 @@ image = (
         "huggingface_hub[hf_transfer]",
         "hf_transfer",
     )
-    # Pin tokenizers to 0.20.x — tokenizers>=0.21 removed all_special_tokens_extended
+    # Force-reinstall tokenizers 0.20.x — tokenizers>=0.21 removed all_special_tokens_extended
     # which vLLM's get_cached_tokenizer still accesses, causing an AttributeError on startup.
-    .run_commands("pip install --quiet 'tokenizers==0.20.3'")
+    # --force-reinstall is required because vllm's pip_install may pull in tokenizers>=0.21
+    # as a transitive dependency, and we need to override it after the fact.
+    .run_commands("pip install --quiet --force-reinstall 'tokenizers==0.20.3'")
     .env({{
         "HF_HOME":                   "/model-cache",
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
@@ -441,11 +443,11 @@ async def _run_deployment(
                 token_str = f"{token_id}:{token_secret}"
                 composite  = f"{url_found}|{token_str}"
                 try:
-                    from app.api.keys_api import _redis_keys, _save_redis_keys, _reload_provider
-                    existing = await _redis_keys(redis, "modal")
+                    from app.api.keys_api import _read_env_keys, _write_env_keys, _reload_provider
+                    existing = _read_env_keys("modal")
                     if composite not in existing:
                         existing.append(composite)
-                        await _save_redis_keys(redis, "modal", existing)
+                        _write_env_keys("modal", existing)
 
                     # Also add to modal endpoints registry
                     from app.api.modal_manager import _load_endpoints, _save_endpoints
@@ -790,10 +792,10 @@ async def delete_deployment(deploy_id: str, request: Request) -> JSONResponse:
     # Remove from endpoint pool
     if url:
         try:
-            from app.api.keys_api import _redis_keys, _save_redis_keys
-            existing = await _redis_keys(redis, "modal")
+            from app.api.keys_api import _read_env_keys, _write_env_keys
+            existing = _read_env_keys("modal")
             existing = [k for k in existing if not k.startswith(url)]
-            await _save_redis_keys(redis, "modal", existing)
+            _write_env_keys("modal", existing)
         except Exception:
             pass
 

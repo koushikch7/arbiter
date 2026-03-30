@@ -27,7 +27,7 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 
 ## Managing API Keys via UI
 
-You can add, remove, test, and enable/disable provider API keys at runtime — **no container restart required**.
+You can add, remove, test, and enable/disable provider API keys at runtime — **no container restart required**. Keys are written directly to `.env` so they persist across restarts automatically.
 
 ### Open Settings → API Keys tab
 
@@ -35,10 +35,10 @@ Navigate to `/settings` and click the **API Keys** tab (shown first by default).
 
 Each provider card shows:
 - **Status badge** — Active (green) or Inactive (grey)
-- **Enable / Disable toggle** — instantly remove or restore a provider from the routing pool
+- **Enable / Disable toggle** — instantly remove or restore a provider from the routing pool. When enabling, a connectivity test runs automatically first — if the key is invalid the toggle reverts and an error is shown
 - **Test button** — sends a minimal probe request and reports latency
-- **Existing keys** — masked (e.g. `AIzaSy...Ab3c`), labelled `env` (from `.env` file) or `runtime` (added via UI)
-- **Add key form** — paste a new key and click **Add Key**
+- **Existing keys** — masked (e.g. `AIzaSy...Ab3c`); click ✕ to remove any key
+- **Add key form** — paste a new key and click **Add Key**; the key is saved to `.env` and a connectivity test runs automatically
 
 ### Key Format by Provider
 
@@ -51,6 +51,9 @@ Each provider card shows:
 | **Cloudflare Workers AI** | `account_id\|api_token` | `abc123\|your_token` |
 | Cerebras | API key | `csk-...` |
 | HuggingFace | Access Token | `hf_...` |
+| Z.ai / Zhipu AI | API key | `your-zai-key` |
+| Lightning.ai LitAI | API key | `your-lightning-key` |
+| **Modal.com** | `endpoint_url\|token` | `https://org--app.modal.run\|ak-abc:xyz` |
 | Pollinations | *(none needed)* | Free, anonymous |
 
 ### Cloudflare Workers AI Setup

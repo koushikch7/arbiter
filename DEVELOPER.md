@@ -141,7 +141,7 @@ arbiter/
 │   │   ├── __init__.py
 │   │   └── schemas.py                # OpenAI-compatible Pydantic models
 │   │
-│   ├── providers/                    # Vendor adapters (9 total)
+│   ├── providers/                    # Vendor adapters (11 total)
 │   │   ├── __init__.py
 │   │   ├── base.py                   # BaseProvider abstract class
 │   │   ├── gemini.py                 # Google Gemini (4 models)
@@ -152,6 +152,8 @@ arbiter/
 │   │   ├── cohere_provider.py        # Cohere (4 models)
 │   │   ├── huggingface.py            # HuggingFace (4 models)
 │   │   ├── pollinations.py           # Pollinations.ai (3 free models)
+│   │   ├── zai_provider.py           # Z.ai / Zhipu AI (3 free models)
+│   │   ├── lightning_provider.py     # Lightning.ai LitAI (5 models)
 │   │   └── modal_provider.py         # Modal.com vLLM GPU provider
 │   │
 │   ├── routing/                      # Routing logic
@@ -220,15 +222,17 @@ arbiter/
 
 ### Provider Key Management
 
+Keys are stored in `.env` and read fresh on every operation — no Redis layer.
+
 | Method | Path | Description |
 |---|---|---|
 | `GET`    | `/api/providers` | List all providers with status, masked keys, pool stats |
-| `POST`   | `/api/providers/{name}/keys` | Add a runtime key `{"key": "..."}` |
-| `DELETE` | `/api/providers/{name}/keys/{hash}` | Remove a runtime key by MD5 hash |
-| `POST`   | `/api/providers/{name}/enable` | Enable a disabled provider |
-| `POST`   | `/api/providers/{name}/disable` | Disable a provider (removes from routing) |
+| `POST`   | `/api/providers/{name}/keys` | Add a key `{"key": "..."}` — writes to `.env`, hot-reloads provider |
+| `DELETE` | `/api/providers/{name}/keys/{hash}` | Remove a key by MD5 hash — removes from `.env` |
+| `POST`   | `/api/providers/{name}/enable` | Enable a disabled provider (clears Redis disabled flag) |
+| `POST`   | `/api/providers/{name}/disable` | Disable a provider (sets Redis disabled flag, removes from routing) |
 | `POST`   | `/api/providers/{name}/test` | Probe connectivity, returns latency + sample reply |
-| `POST`   | `/api/providers/reload` | Hot-reload all providers from env + Redis |
+| `POST`   | `/api/providers/reload` | Hot-reload all providers from current `.env` |
 
 ### Settings (Routing & Cache)
 
@@ -345,7 +349,6 @@ Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2
 | `arbiter:cache:{sha256}` | JSON | Cached response |
 | `arbiter:config:provider_order` | JSON | Custom provider order |
 | `arbiter:config:models:{provider}` | JSON | Custom model hierarchy |
-| `arbiter:runtime:keys:{provider}` | JSON | Runtime-added keys |
 | `arbiter:runtime:disabled:{provider}` | String | Provider disabled flag |
 | `arbiter:cf:workers:registry` | JSON | Cloudflare worker registry (provisioning state + metadata) |
 | `arbiter:cf:deleting:{name}` | String (120s TTL) | Deletion marker — suppresses worker from list during CF propagation delay |

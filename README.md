@@ -94,8 +94,9 @@ Try Gemini (large context required):
 - **Secure header transmission** — All secrets sent via secure channels
 
 ### ✅ Runtime API Key Management (no restart)
-- **Add / remove keys at runtime** — stored in Redis, merged with `.env` keys automatically
+- **Add / remove keys at runtime** — written directly to `.env`; takes effect immediately without a restart
 - **Enable / disable providers** — take a provider offline and bring it back without restarting Docker
+- **Test-before-enable** — toggling a provider on runs a connectivity probe first; if the key is broken the toggle auto-reverts with an error message
 - **Test connectivity** — probe any provider and measure round-trip latency
 - **Hot-reload all providers** in one click
 - **API:** `GET/POST/DELETE /api/providers/*`
@@ -145,6 +146,7 @@ Try Gemini (large context required):
 - **Endpoint selector** grouped by type: Gateway Providers, Cloudflare Workers, Modal Deployments
 - **Per-endpoint routing**: CF workers route through the gateway (`cfworker/{name}`), Modal deployments hit the endpoint directly, providers go through `/v1/chat/completions`
 - **Config panel** — system prompt, temperature, max tokens; latency badge on each response
+- **Markdown rendering** — assistant replies rendered as full GFM markdown (headers, code blocks, tables, lists, links)
 
 ### ✅ Real-Time Log Viewer (`/logs`)
 - **In-memory log buffer** — last 5,000 records from all modules captured automatically

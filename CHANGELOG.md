@@ -6,7 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.9.0] – 2026-03-29 (Latest)
+## [1.10.0] – 2026-03-30 (Latest)
+
+### 🏗️ Key Storage Refactor — `.env` as Single Source of Truth
+
+- **Removed Redis key storage** — provider API keys were previously stored in both `.env` (at startup) and Redis (added via UI), requiring an explicit "Save to .env" step to persist them across restarts
+- **Keys now written directly to `.env`** on every add/remove operation via the UI
+- `_read_env_keys()` / `_write_env_keys()` parse `.env` fresh on each call — changes take effect immediately without a restart or Redis sync
+- **Auto-creates `.env` from `.env.example`** if no `.env` exists when the first key is added
+- Removed `sync-env` endpoint and "Save to .env" button (no longer needed)
+- **Delete button shown for all keys** — all keys live in `.env` and are all removable via the UI
+- Redis is now used **only** for rate-limit counters and provider disabled/enabled flags
+
+### 🔧 Provider Enable/Disable Flow
+
+- **Test-before-enable** — when the enable toggle is switched on, Arbiter first calls the enable API then immediately runs a connectivity test
+  - If test **passes**: provider stays enabled; latency and reply shown in the card
+  - If test **fails**: provider is auto-disabled back; toggle reverts; error shown in red — ensures no provider is active with a broken key
+- **Fixed stale DOM bug** in `addKey()` — after adding a key, `loadProviders()` re-renders the card grid; the validation result was being written to a detached (removed) DOM node and was invisible. Now re-queries the result element after the re-render.
+
+### ✨ Playground — Markdown Rendering in Chat
+
+- **Assistant chat bubbles now render GFM markdown** using `marked.js v9`
+  - Headers, bold, italic, code blocks, inline code, lists, blockquotes, tables, links all rendered as HTML
+  - Links open in new tab
+  - User messages remain plain text (HTML-escaped)
+  - Responsive markdown styles for all elements inside `.chat-msg.assistant`
+
+### 🐛 Critical Bug Fixes
+
+- **Modal vLLM startup crash** (`tokenizers` incompatibility) — `tokenizers>=0.21.0` removed `all_special_tokens_extended` which vLLM 0.11.x still accessed; fix: force-reinstall `tokenizers==0.20.3` as a separate image layer after vLLM install
+- **Modal `startup_timeout`** increased from 600s to 1200s to accommodate large model downloads
+- **Modal live deployment status** — added 5-second polling loop (`setInterval`) when Modal GPU tab is open; previously the deployment list was loaded once and never refreshed
+- **Modal endpoint not appearing after deploy** — `loadModalEndpoints()` was only called on tab open; now also called when deployment reaches `active` state and on every 5s poll tick
+- **Pollinations image generation 401** — `/v1/images/generations` was not in `_EXEMPT_PATHS`; browser UI requests don't carry Bearer tokens; added it and all UI page routes to exempt list
+- **Lightning.ai / Z.ai keys not activating** — both providers were missing from `_reload_provider`'s `_classes` dict; keys were saved but providers were never instantiated; added `LightningProvider` and `ZaiProvider`
+
+### 🎨 CSS / Responsive Fixes
+
+- **Added 5 missing semantic CSS alias variables** to both light and dark themes: `--danger`, `--success`, `--warning`, `--text-1`, `--text-muted` — these were used in 24+ inline styles across pages but never defined, causing invisible/fallback rendering
+- **Mobile 480px breakpoint** — added rules to collapse inline `1fr 1fr` grids to single column, fix `#providers-grid` in api-docs, adjust playground chat height
+
+---
+
+## [1.9.0] – 2026-03-29
 
 ### ✨ Lightning.ai Provider (LitAI)
 

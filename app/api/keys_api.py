@@ -458,6 +458,114 @@ async def test_provider(name: str, request: Request) -> JSONResponse:
         })
 
 
+@router.post("/sync-env", summary="Write all runtime-added keys to the .env file")
+async def sync_env(request: Request) -> JSONResponse:
+    """
+    Merges runtime (Redis) keys with whatever is already in .env and writes the
+    result back to .env.  Creates .env from .env.example if it doesn't exist.
+
+    Placeholder values like "your-gemini-key" are automatically excluded.
+    Returns a summary of which env-vars were updated and their new masked values.
+    """
+    import re
+    from pathlib import Path
+
+    redis = request.app.state.redis
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+    env_file     = project_root / ".env"
+    env_example  = project_root / ".env.example"
+
+    # Load base content
+    if env_file.exists():
+        content = env_file.read_text(encoding="utf-8")
+    elif env_example.exists():
+        content = env_example.read_text(encoding="utf-8")
+        logger.info("sync-env: .env not found — creating from .env.example")
+    else:
+        raise HTTPException(500, ".env and .env.example both missing from project root")
+
+    # Load .env.example placeholders so we can filter them out
+    placeholder_values: set = set()
+    if env_example.exists():
+        for line in env_example.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                _, _, val = line.partition("=")
+                for part in val.split(","):
+                    part = part.strip()
+                    if part and (part.startswith("your-") or part.startswith("ak-your-")
+                                 or part.startswith("as-your-") or part.startswith("hf_your")):
+                        placeholder_values.add(part)
+
+    # Map provider name → env-var name
+    _env_var_map = {
+        "gemini":       "GEMINI_API_KEYS",
+        "groq":         "GROQ_API_KEYS",
+        "openrouter":   "OPENROUTER_API_KEYS",
+        "cohere":       "COHERE_API_KEYS",
+        "huggingface":  "HUGGINGFACE_API_KEYS",
+        "cloudflare":   "CLOUDFLARE_API_KEYS",
+        "cerebras":     "CEREBRAS_API_KEYS",
+        "zai":          "ZAI_API_KEYS",
+        "lightning":    "LIGHTNING_API_KEYS",
+        "modal":        "MODAL_API_KEYS",
+    }
+
+    # Build new values for each provider
+    updates: dict = {}   # env_var → comma-joined key string
+    for provider, env_var in _env_var_map.items():
+        runtime_keys = await _redis_keys(redis, provider)
+
+        # Extract current .env value (non-placeholder keys only)
+        file_keys: List[str] = []
+        m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
+        if m:
+            for k in m.group(1).split(","):
+                k = k.strip()
+                if k and k not in placeholder_values and not k.startswith("your-"):
+                    file_keys.append(k)
+
+        # Merge: runtime first, then any .env-only keys not already in runtime
+        seen: set = set()
+        merged: List[str] = []
+        for k in runtime_keys + file_keys:
+            if k and k not in seen:
+                seen.add(k)
+                merged.append(k)
+
+        if merged:
+            updates[env_var] = ",".join(merged)
+
+    # Rewrite matching lines in content
+    lines = content.splitlines()
+    new_lines = []
+    for line in lines:
+        replaced = False
+        stripped = line.strip()
+        for env_var, value in updates.items():
+            if re.match(rf"^{env_var}=", stripped):
+                new_lines.append(f"{env_var}={value}")
+                replaced = True
+                break
+        if not replaced:
+            new_lines.append(line)
+
+    env_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    logger.info("sync-env: wrote %d provider var(s) to %s", len(updates), env_file)
+
+    # Build masked summary for response
+    masked_summary = {
+        var: ",".join(_mask(k) for k in val.split(","))
+        for var, val in updates.items()
+    }
+    return JSONResponse(content={
+        "success": True,
+        "file":    str(env_file),
+        "updated": masked_summary,
+    })
+
+
 @router.post("/reload", summary="Reload all providers from env + Redis")
 async def reload_all(request: Request) -> JSONResponse:
     reloaded, failed = [], []

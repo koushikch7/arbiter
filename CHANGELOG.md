@@ -6,7 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.10.0] – 2026-03-30 (Latest)
+## [1.11.0] – 2026-03-31 (Latest)
+
+### 🔄 Pollinations API Migration
+
+- **Endpoint changed**: `text.pollinations.ai/openai` → `gen.pollinations.ai/v1/chat/completions`
+- **Authentication now required** — Pollinations moved from anonymous/free to key-based access; obtain a free `sk_` or `pk_` key at [enter.pollinations.ai](https://enter.pollinations.ai/)
+- **New model list**: `openai`, `openai-fast`, `openai-large`, `claude`, `claude-fast`, `claude-large`, `gemini`, `gemini-fast`, `mistral`, `deepseek`, `qwen-coder`
+- **Default model** changed from `mistral` → `openai` (old `mistral` endpoint no longer available)
+- Updated `keys_api.py`: added `POLLINATIONS_API_KEYS` to `_ENV_VAR_MAP`, updated provider meta (`key_hint: sk_... or pk_...`, `signup_url: enter.pollinations.ai`), removed "no key required" special cases from `_read_env_keys`, `list_providers`, and `add_key`
+- Updated `.env.example` to include `POLLINATIONS_API_KEYS=your-pollinations-sk_key` (was intentionally omitted)
+
+### 🔧 Modal Deployment Fixes
+
+- **Tokenizers infinite restart loop fixed** — `pip install 'tokenizers==0.20.3'` was being overridden by `vllm`'s transitive dependencies after the image build; changed to `pip install --force-reinstall 'tokenizers==0.20.3'` to guarantee the version sticks after vLLM install
+- **Fixed stale imports** in `modal_deploy.py` auto-registration code — `_redis_keys` and `_save_redis_keys` (removed in v1.10.0 refactor) were still being imported in two places; replaced with `_read_env_keys` / `_write_env_keys`
+
+### 📊 Analytics Page — Full Rebuild
+
+- **6 KPI cards** with animated count-up counters and mini progress bars: Total Requests, Success Rate, Cache Hit Rate, Avg Latency, Tokens Consumed, Active API Keys
+- **5 Chart.js charts**:
+  - Request History (area chart, 4 h of 5-min buckets, 3 datasets: requests/success/errors)
+  - Provider Distribution (donut chart with brand colors)
+  - Avg Latency by Provider (horizontal bar, gradient fill)
+  - Token Consumption by Provider (horizontal bar, purple gradient)
+  - Error Rate Trend (area line chart)
+- **Key Health Matrix** — one card per provider showing live quota usage for each configured API key:
+  - RPM, TPM, and Daily usage bars with color thresholds (green <60%, yellow <85%, red ≥85%)
+  - Per-key status badge (active/limited/exhausted/failed), health score percentage
+  - Pulsing status dot (green=healthy, yellow=degraded, red=unavailable)
+- **Provider Breakdown table** — requests, success, errors, rate-limits, success rate bar, avg latency
+- **Model Breakdown table** — adds tokens/req column, FREE tier badge
+- **Error Analysis section** — error trend chart + ranked list of most error-prone models
+- Extended analytics history window from 20 → 48 buckets (last 4 hours)
+- Analytics API (`/analytics/data`) now returns `key_pools`, `token_by_provider`, `total_tokens`, `active_keys`, `configured_keys`
+
+---
+
+## [1.10.0] – 2026-03-30
 
 ### 🏗️ Key Storage Refactor — `.env` as Single Source of Truth
 

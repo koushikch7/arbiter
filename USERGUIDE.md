@@ -54,7 +54,7 @@ Each provider card shows:
 | Z.ai / Zhipu AI | API key | `your-zai-key` |
 | Lightning.ai LitAI | API key | `your-lightning-key` |
 | **Modal.com** | `endpoint_url\|token` | `https://org--app.modal.run\|ak-abc:xyz` |
-| Pollinations | *(none needed)* | Free, anonymous |
+| Pollinations | API key (`sk_...` or `pk_...`) | [enter.pollinations.ai](https://enter.pollinations.ai/) |
 
 ### Cloudflare Workers AI Setup
 
@@ -296,6 +296,59 @@ DELETE /logs/clear
 
 ---
 
+## Analytics Dashboard
+
+Navigate to `/analytics` (or click **Analytics** in the sidebar).
+
+The analytics page provides a comprehensive view of all gateway traffic, key health, and model usage.
+
+### KPI Summary Cards
+
+Six live cards updated on every refresh:
+
+| Card | What it shows |
+|------|--------------|
+| **Total Requests** | Cumulative request count with ok/failed breakdown |
+| **Success Rate** | % of successful completions; color-coded bar (green/yellow/red) |
+| **Cache Hit Rate** | % of responses served from cache; hits vs misses |
+| **Avg Latency** | Mean round-trip time across all providers (ms) |
+| **Tokens Consumed** | Total tokens processed; top consuming provider shown |
+| **Active API Keys** | Active / configured key ratio across all providers |
+
+### Charts
+
+| Chart | Description |
+|-------|-------------|
+| **Request History** | 4-hour area chart in 5-minute buckets — requests, success, errors |
+| **Provider Distribution** | Donut chart showing request share per vendor |
+| **Avg Latency by Provider** | Horizontal bar ranking providers by response time |
+| **Token Consumption** | Horizontal bar showing tokens used per provider |
+| **Error Rate Trend** | Error count over time matching the history window |
+
+### API Key Health Matrix
+
+One card per configured provider showing **live quota usage** for each API key:
+
+- **Status dot** pulses green (healthy), yellow (degraded), or red (unavailable)
+- **RPM bar** — requests per minute used vs limit
+- **TPM bar** — tokens per minute used vs limit
+- **Daily bar** — daily requests used vs limit
+- Color thresholds: green < 60%, yellow 60–85%, red ≥ 85%
+- **Health score** — composite availability score (0–100%)
+
+### Provider & Model Tables
+
+- **Provider Breakdown** — requests, success, errors, rate-limit hits, success rate bar, avg latency
+- **Model Breakdown** — per-model requests, tokens, tokens/req, errors, success rate, FREE badge for free-tier models
+- **Error Analysis** — error trend chart + ranked list of most error-prone models
+
+### Auto-refresh & Reset
+
+- Refresh intervals: 5s / 15s / 30s / 1m / Off (default 30s)
+- **Reset Stats** — clears all `arbiter:stats:*` counters from Redis (cannot be undone)
+
+---
+
 ## CF Workers & Modal in the Gateway
 
 Deployed CF Workers and Modal endpoints are automatically available as models in the gateway — no extra configuration needed.
@@ -528,21 +581,23 @@ HUGGINGFACE_API_KEYS=hf_your-token-here
 - `HuggingFaceH4/zephyr-7b-beta` — General purpose
 - `google/gemma-2-2b-it` — Smallest/fastest
 
-#### Pollinations.ai — ✅ Completely Free
+#### Pollinations.ai — 🔑 Free tier (key required)
 
-**🎉 NO API KEY REQUIRED!** The gateway auto-enables Pollinations.
+Get a free API key at [enter.pollinations.ai](https://enter.pollinations.ai/) — keys start with `sk_` (secret) or `pk_` (publishable).
 
 ```bash
-# In .env — Leave this empty (or omit entirely)
-# POLLINATIONS_API_KEYS=
+# In .env
+POLLINATIONS_API_KEYS=sk_your-key-here
 ```
 
-**Available models** (3 total, completely free):
-- `mistral` — Fast, general purpose
-- `mistral-large` — Higher quality
-- `openai` — GPT-based (OpenAI-compatible)
-
-**Limits**: No documented rate limits, completely free tier ✨
+**Available models** (11 total):
+- `openai` — GPT-based backend *(default)*
+- `openai-fast` / `openai-large` — Faster or higher quality GPT
+- `claude` / `claude-fast` / `claude-large` — Claude-based backends
+- `gemini` / `gemini-fast` — Gemini-based backends
+- `mistral` — Mistral backend
+- `deepseek` — DeepSeek backend
+- `qwen-coder` — Qwen coding model
 
 ### Step 3: Configure Your `.env` File
 
@@ -591,8 +646,8 @@ COHERE_API_KEYS=key1
 # HuggingFace (https://huggingface.co/settings/tokens)
 HUGGINGFACE_API_KEYS=hf_token_here
 
-# Pollinations.ai (NO KEY NEEDED — leave empty!)
-# POLLINATIONS_API_KEYS=
+# Pollinations.ai (https://enter.pollinations.ai — free key)
+POLLINATIONS_API_KEYS=sk_your-key-here
 ```
 
 ### Step 4: Verify Configuration

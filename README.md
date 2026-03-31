@@ -22,7 +22,7 @@ Designed for **multi-agent frameworks** like OpenClaw that generate concurrent b
 - **Cohere** (4 models, 128–256K context) — 20 RPM, 33 RPD
 - **Z.ai / Zhipu AI** (3 models, 32K–128K context) — ~10 RPM free tier, GLM-4.7/4.5-Flash free
 - **HuggingFace** (4 models, 8K–32K context) — Limited free credits
-- **Pollinations.ai** (3 models, 32K context) — Completely free, no key required
+- **Pollinations.ai** (11 models, 32K context) — Free tier with API key (enter.pollinations.ai)
 - **Lightning.ai LitAI** (5 models, 128K–256K context) — Nemotron 3 Super (256K), gpt-oss-120B, DeepSeek V3.1 (164K); ~37M token welcome credit then $0.09–$0.52/M tokens
 - **Multi-account support** — Unlimited accounts per provider with intelligent scoring
 - **Additive capacity** — Overlapping models (e.g., GLM on both Cerebras+Z.ai) sum their rate limits
@@ -68,12 +68,14 @@ Try Gemini (large context required):
   - **Per-provider table**: Status, active accounts, request counts, success rates
   - **Per-account table**: Availability score (0–100%), RPM/TPM/daily usage bars
   - **Color-coded health**: 🟢 Healthy → 🟡 Degraded → 🔴 Unavailable
-- **Analytics Dashboard** (`/analytics`) — Deep usage analytics:
-  - **Summary KPIs**: total requests, tokens, errors, cache hits
-  - **Per-provider breakdown**: request counts, token usage, error rates
-  - **Per-model breakdown**: requests, tokens, errors per model
-  - **Request history chart**: 5-minute bucket time-series (Chart.js line chart)
-  - **Provider distribution**: doughnut chart of request share by vendor
+- **Analytics Dashboard** (`/analytics`) — Deep usage analytics with animated charts:
+  - **6 KPI cards**: total requests, success rate, cache hit rate, avg latency, tokens, active keys
+  - **Request history**: 4-hour area chart in 5-min buckets (requests/success/errors)
+  - **Provider distribution**: donut chart with brand colors
+  - **Latency ranking**: horizontal bar chart per provider
+  - **Token consumption**: horizontal bar chart per provider
+  - **Key Health Matrix**: live RPM/TPM/Daily quota gauges per API key with color thresholds
+  - **Provider & model tables**: success rates, latency, tokens/req, error analysis
   - **Reset button** — clear all stats counters
 - **Interactive API Docs** (`/api-docs`) — Full playground with live request tester, provider table, authentication guide
 - **Swagger UI** (`/docs`) — Standard OpenAPI documentation
@@ -111,7 +113,7 @@ Try Gemini (large context required):
 - Shared `arbiter.css` + `arbiter.js` across all pages — consistent sidebar, topbar, components
 - **Light / dark mode** — system preference detection + manual toggle, persisted in `localStorage`
 - **Dashboard** — KPI cards, Chart.js line + doughnut charts, provider status table, key details accordion
-- **Analytics** (`/analytics`) — detailed usage charts: time-series requests, provider/model breakdown
+- **Analytics** (`/analytics`) — 6 KPI cards, 5 charts, key health matrix, provider/model tables
 - **API Docs** (`/api-docs`) — 5-tab layout with live playground, provider table, endpoint reference
 - **Settings** (`/settings`) — API Keys, routing, model overrides, image gen, Cloudflare Workers, cache, **Gateway Keys**
 - **Image Generation** (`/images`) — dedicated page with prompt, model selector, count, size, and seed controls
@@ -287,8 +289,8 @@ ZAI_API_KEYS=your-zai-api-key
 # HuggingFace  (https://huggingface.co/settings/tokens)
 HUGGINGFACE_API_KEYS=hf_your-token-here
 
-# Pollinations.ai  (NO KEY NEEDED — completely free!)
-# POLLINATIONS_API_KEYS=  ← leave empty
+# Pollinations.ai  (free key at enter.pollinations.ai — sk_... or pk_...)
+POLLINATIONS_API_KEYS=sk_your-pollinations-key
 ```
 
 ### 3️⃣ Run Locally (Dev)
@@ -375,7 +377,7 @@ open http://localhost:8000/dashboard
 | **Cohere** | 20 | — | 33 | ≈1,000/month |
 | **Z.ai** | ~10 | 200K | 1K | GLM-4.7-Flash free ($0) |
 | **HuggingFace** | 10 | 50K | 500 | Limited free credits |
-| **Pollinations** | 5 | 100K | 1K | Completely free ✅ |
+| **Pollinations** | 5 | 100K | 1K | Free tier — key from enter.pollinations.ai |
 
 The gateway **tracks per-key usage in Redis** and automatically:
 - Selects keys with the most remaining quota

@@ -323,7 +323,9 @@ class IntelligentRouter:
                             f"→ {provider_name}/{model_name}  "
                             f"key=...{key[-4:]}  attempt={len(tried_keys)}"
                         )
+                        _t0 = time.perf_counter()
                         response = await provider.complete(routed, key)
+                        _lat_ms = round((time.perf_counter() - _t0) * 1000)
 
                         # ── SUCCESS ──────────────────────────────────
                         tokens_used = (
@@ -337,6 +339,10 @@ class IntelligentRouter:
                         await self._inc("requests_total")
                         await self._inc("requests_success")
                         await self._inc(f"provider:{provider_name}:success")
+
+                        # ── Latency tracking ──────────────────────────────
+                        await self._incrby(f"latency:{provider_name}:sum", _lat_ms)
+                        await self._inc(f"latency:{provider_name}:count")
 
                         # ── Per-model analytics tracking ──────────────────
                         safe_model = model_name.replace(":", "_").replace("/", "_")[:80]

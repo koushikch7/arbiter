@@ -35,7 +35,8 @@ from app.api.logs_api import router as logs_router, log_buffer
 from app.api.analytics_api import router as analytics_router
 from app.api.gateway_tokens_api import router as gateway_tokens_router
 from app.api.gateway_tokens_api import load_gateway_tokens_to_state
-from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware
+from app.api.auth import router as auth_router
+from app.middleware.auth import GatewayAuthMiddleware, CloudflareAccessMiddleware, GoogleSessionMiddleware
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
@@ -213,6 +214,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Google OAuth2 session middleware (optional) ──────────────────────────────
+google_oauth_enabled = bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
+app.add_middleware(GoogleSessionMiddleware, enabled=google_oauth_enabled)
+if google_oauth_enabled:
+    logger.info("GoogleSessionMiddleware enabled (OAuth2 login required for web UI)")
+
 # ── Cloudflare Access JWT middleware (optional) ─────────────────────────────
 if settings.ENABLE_CF_ACCESS and settings.CLOUDFLARE_ACCESS_TEAM_NAME:
     app.add_middleware(
@@ -257,6 +264,7 @@ app.include_router(modal_deploy_router, tags=["Modal Deploy"])
 app.include_router(logs_router, tags=["Logs"])
 app.include_router(analytics_router, tags=["Analytics"])
 app.include_router(gateway_tokens_router, tags=["Gateway Tokens"])
+app.include_router(auth_router, tags=["Auth"])
 
 
 @app.get("/health", summary="Health check")
@@ -339,6 +347,15 @@ class _InMemoryRedis:
 
     async def aclose(self):
         pass
+
+    async def keys(self, pattern: str = "*") -> list:
+        import fnmatch
+        result = []
+        for key in list(self._store.keys()):
+            self._evict(key)
+            if key in self._store and fnmatch.fnmatch(key, pattern):
+                result.append(key)
+        return result
 
     async def scan_iter(self, pattern: str = "*", count: int = 100):
         import fnmatch

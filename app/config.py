@@ -52,6 +52,22 @@ class Settings(BaseSettings):
     # Set to True to require and validate Cf-Access-Jwt-Assertion on every request
     ENABLE_CF_ACCESS: bool = False
 
+    # ── Google OAuth2 Login (optional) ───────────────────────────────────────
+    # When GOOGLE_CLIENT_ID is set, the web UI requires users to sign in with Google
+    # before accessing dashboard/analytics/settings/etc.
+    # Create credentials at: https://console.cloud.google.com/apis/credentials
+    # Add Authorized redirect URI: http(s)://<your-host>/auth/callback
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
+    # Comma-separated list of allowed email addresses (empty = allow any Google account)
+    GOOGLE_ALLOWED_EMAILS: str = ""
+    # Comma-separated list of allowed email domains e.g. "mycompany.com"
+    GOOGLE_ALLOWED_DOMAINS: str = ""
+    # Secret for signing session JWTs — auto-generated if empty, but set explicitly
+    # for production so sessions survive restarts.
+    SESSION_SECRET: str = ""
+
     # ── Logging ──────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
 

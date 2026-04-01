@@ -27,7 +27,7 @@ from typing import Dict, List, Optional
 import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, RedirectResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,8 @@ _EXEMPT_PATHS: frozenset = frozenset([
     "/api/providers",          # Provider management (settings UI)
     # UI page routes (served as HTML, same-origin from the gateway UI)
     "/images", "/playground", "/analytics", "/logs",
+    # Auth routes — always public
+    "/login",
 ])
 
 
@@ -114,7 +116,8 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
                 or path.startswith("/api/providers")
                 or path.startswith("/api/gateway")
                 or path.startswith("/modal/")
-                or path.startswith("/cloudflare/")):
+                or path.startswith("/cloudflare/")
+                or path.startswith("/auth/")):
             return await call_next(request)
 
         # Validate Authorization header
@@ -217,6 +220,47 @@ def _verify_jwt_rs256(token: str, jwk: dict) -> dict:
         return _decode_jwt_payload(token)
     except Exception as exc:
         raise ValueError(f"JWT verification failed: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Feature 2: Google OAuth2 session middleware (web UI pages only)
+# ---------------------------------------------------------------------------
+
+# Web UI paths that require a valid session when Google OAuth is configured
+_WEB_UI_PATHS: frozenset = frozenset([
+    "/dashboard", "/analytics", "/settings", "/playground",
+    "/logs", "/images", "/api-docs",
+])
+
+
+class GoogleSessionMiddleware(BaseHTTPMiddleware):
+    """
+    Redirect unauthenticated browsers to /login for web UI pages.
+
+    Only active when GOOGLE_CLIENT_ID is configured.
+    API paths (/v1/*, /auth/*) are never intercepted here.
+    """
+
+    def __init__(self, app, enabled: bool):
+        super().__init__(app)
+        self._enabled = enabled
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        if not self._enabled:
+            return await call_next(request)
+
+        path = request.url.path
+        # Only protect web UI pages
+        if path not in _WEB_UI_PATHS:
+            return await call_next(request)
+
+        # Import here to avoid circular import at module load time
+        from app.api.auth import _get_session
+        session = _get_session(request)
+        if not session:
+            return RedirectResponse(f"/login?next={path}", status_code=302)
+
+        return await call_next(request)
 
 
 class CloudflareAccessMiddleware(BaseHTTPMiddleware):

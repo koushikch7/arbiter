@@ -6,7 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.11.0] – 2026-03-31 (Latest)
+## [1.12.0] – 2026-04-01 (Latest)
+
+### 🐛 Analytics & Dashboard Data Fixes
+
+- **Fixed provider/model stats not appearing** — `_InMemoryRedis` (the local-dev fallback when Redis is unavailable) was missing a `keys()` method. Analytics and dashboard both call `redis.keys("arbiter:stats:provider:*:success")` and `redis.keys("arbiter:stats:model:*:requests")` to enumerate stats; without this method the calls failed silently and returned empty lists. Added `async def keys(self, pattern)` using `fnmatch` — identical to the existing `scan_iter` logic but returning a list.
+- **Fixed avg latency always showing 0** — `analytics_api.py` reads `arbiter:stats:latency:{provider}:sum/count` but `router.py` never wrote these keys. Added `time.perf_counter()` measurement around `provider.complete()` and two new `_incrby/inc` calls for `:sum` and `:count` on the success path.
+
+### 🔐 Google OAuth2 Login
+
+- **Optional Google login** — when `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` are set in `.env`, the web UI (dashboard, analytics, settings, playground, logs, images, api-docs) requires users to sign in with their Google account. API endpoints (`/v1/*`) are unaffected — they still use Bearer token auth.
+- **New endpoints**: `GET /login` (sign-in page), `GET /auth/login` (redirect to Google), `GET /auth/callback` (OAuth2 code exchange), `GET /auth/logout` (clear session), `GET /auth/me` (current user JSON)
+- **Session tokens**: signed HS256 JWT stored in an `HttpOnly` cookie (`arbiter_session`), 24-hour TTL. Secret set via `SESSION_SECRET` env var (auto-generated per process if not set — set it explicitly so sessions survive restarts)
+- **Email/domain allowlisting**: `GOOGLE_ALLOWED_EMAILS` and `GOOGLE_ALLOWED_DOMAINS` let you restrict access to specific users or organizations. Both empty = any Google account can sign in.
+- **User info in sidebar**: after sign-in, user avatar, name, and email appear in the sidebar footer with a sign-out button.
+- **New `GoogleSessionMiddleware`** in `app/middleware/auth.py` intercepts web UI paths and redirects unauthenticated browsers to `/login`. Skipped entirely when Google OAuth is not configured.
+- **New files**: `app/api/auth.py`, `static/login.html`
+- **Updated**: `app/config.py` (new settings), `.env.example` (new vars with setup instructions), `static/arbiter.js` (`initAuth()` function)
+
+---
+
+## [1.11.0] – 2026-03-31
 
 ### 🔄 Pollinations API Migration
 

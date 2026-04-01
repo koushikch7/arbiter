@@ -83,8 +83,50 @@ function miniBar(used, limit) {
   return `<div class="mini-bar-wrap"><div class="mini-bar-meta"><span>${used.toLocaleString()}</span><span>${limit.toLocaleString()}</span></div><div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${color}"></div></div></div>`;
 }
 
+// ── Auth / user info ─────────────────────────────────────────────────────────
+async function initAuth() {
+  try {
+    const res = await fetch('/auth/me');
+    const data = await res.json();
+
+    if (!data.enabled) return; // OAuth not configured — no login required
+
+    if (!data.authenticated) {
+      // Redirect to login (preserve current URL so we can come back)
+      window.location.replace('/login?next=' + encodeURIComponent(window.location.pathname));
+      return;
+    }
+
+    // Inject user info into sidebar footer
+    const footer = document.querySelector('.sidebar-footer');
+    if (!footer) return;
+
+    const avatar = data.picture
+      ? `<img src="${data.picture}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;" alt="" />`
+      : `<span style="width:24px;height:24px;border-radius:50%;background:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;">${(data.name||data.email||'?')[0].toUpperCase()}</span>`;
+
+    const userEl = document.createElement('div');
+    userEl.className = 'user-info';
+    userEl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border-1);margin-top:8px;';
+    userEl.innerHTML = `
+      ${avatar}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:500;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.name || data.email}</div>
+        <div style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.email}</div>
+      </div>
+      <a href="/auth/logout" title="Sign out" style="color:var(--text-3);text-decoration:none;flex-shrink:0;" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--text-3)'">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </a>
+    `;
+    footer.appendChild(userEl);
+  } catch (e) {
+    // Network error — don't block the page
+  }
+}
+
 // ── DOMContentLoaded init ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   applyTheme(getSavedTheme());
+  initAuth();
 });

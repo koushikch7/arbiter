@@ -19,8 +19,9 @@ Fixed all 13 fixable CVEs reported by `pip-audit` (Dependabot moderate alerts).
 | python-dotenv      | 1.0.1   | 1.2.2    | CVE-2026-28684                                             |
 | python-multipart   | 0.0.22  | 0.0.26   | CVE-2026-40347                                             |
 | pip (Dockerfile)   | 25.0.1  | ≥26.0    | CVE-2025-8869, CVE-2026-1703                               |
+| **python-jose**    | 3.5.0   | _removed_ | replaced with `PyJWT[crypto]==2.12.0` (eliminates vulnerable transitive `ecdsa` — CVE-2024-23342 Minerva timing attack) |
 
-After patch: 13/14 vulnerabilities resolved. Remaining CVE-2026-3219 (pip) has no upstream fix yet.
+After patch: **only 1 of 14+ vulnerabilities remains** (`pip` CVE-2026-3219 — no upstream fix available yet). All actionable CVEs resolved.
 
 ### �🔒 Repository-Publish Hardening
 

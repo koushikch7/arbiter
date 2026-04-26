@@ -329,16 +329,17 @@ def _decode_jwt_payload(token: str) -> dict:
 
 def _verify_jwt_rs256(token: str, jwk: dict) -> dict:
     try:
-        from jose import jwt as jose_jwt, jwk as jose_jwk  # type: ignore
-        public_key = jose_jwk.construct(jwk, algorithm="RS256")
-        return jose_jwt.decode(
+        import jwt as pyjwt  # PyJWT
+        from jwt.algorithms import RSAAlgorithm
+        public_key = RSAAlgorithm.from_jwk(json.dumps(jwk))
+        return pyjwt.decode(
             token, public_key, algorithms=["RS256"],
             options={"verify_exp": True},
         )
     except ImportError:
         logger.warning(
-            "python-jose not installed — JWT signature not verified. "
-            "Install python-jose[cryptography] for full validation."
+            "PyJWT not installed — JWT signature not verified. "
+            "Install PyJWT[crypto] for full validation."
         )
         return _decode_jwt_payload(token)
     except Exception as exc:

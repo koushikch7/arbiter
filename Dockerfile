@@ -4,7 +4,8 @@ WORKDIR /app
 
 # Install dependencies first (layer caching)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade "pip>=26.0" \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

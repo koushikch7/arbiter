@@ -8,7 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [1.12.1] – 2026-04-26 (Latest) — Security Hardening
 
-### 🔒 Repository-Publish Hardening
+### � Dependency Vulnerability Patches
+
+Fixed all 13 fixable CVEs reported by `pip-audit` (Dependabot moderate alerts).
+
+| Package            | Before  | After    | CVEs fixed                                                 |
+| ------------------ | ------- | -------- | ---------------------------------------------------------- |
+| authlib            | 1.3.2   | 1.6.11   | CVE-2025-59420, -61920, -62706, -68158, -2026-27962, -28490, GHSA-jj8c-mmj3-mmgv |
+| filelock           | 3.16.0  | 3.20.3   | CVE-2025-68146, CVE-2026-22701                             |
+| python-dotenv      | 1.0.1   | 1.2.2    | CVE-2026-28684                                             |
+| python-multipart   | 0.0.22  | 0.0.26   | CVE-2026-40347                                             |
+| pip (Dockerfile)   | 25.0.1  | ≥26.0    | CVE-2025-8869, CVE-2026-1703                               |
+
+After patch: 13/14 vulnerabilities resolved. Remaining CVE-2026-3219 (pip) has no upstream fix yet.
+
+### �🔒 Repository-Publish Hardening
 
 Comprehensive security review prior to making the repository public.
 

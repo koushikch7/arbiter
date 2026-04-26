@@ -366,7 +366,7 @@ async def health(request: Request):
             "status": "ok" if redis_ok else "degraded",
             "redis": "connected" if redis_ok else "disconnected",
             "providers": providers,
-            "version": "1.11.2",
+            "version": "1.12.1",
             "sso_enabled": _SSO_ON,
         }
     )

@@ -40,7 +40,8 @@ class OpenRouterProvider(BaseProvider):
     # Only :free models, ordered best → smallest
     # Context windows confirmed from openrouter.ai model cards
     models: List[str] = [
-        "meta-llama/llama-3.3-70b-instruct:free",          # 131K ctx – quality + size
+        # meta-llama/llama-3.3-70b-instruct:free removed — Venice upstream
+        # chronically rate-limited; use the Routeway variant instead.
         "nousresearch/hermes-3-llama-3.1-405b:free",        # 131K ctx – largest free
         "google/gemma-3-27b-it:free",                       # 131K ctx – Google's Gemma 3
         "mistralai/mistral-small-3.1-24b-instruct:free",    # 128K ctx – Mistral
@@ -50,14 +51,15 @@ class OpenRouterProvider(BaseProvider):
     ]
 
     max_context_tokens = 131_072
-    default_model      = "meta-llama/llama-3.3-70b-instruct:free"
+    default_model      = "nousresearch/hermes-3-llama-3.1-405b:free"
 
     # --------------------------------------------------------------------------
     async def complete(
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
 
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         messages = [
             {"role": m.role, "content": m.content}

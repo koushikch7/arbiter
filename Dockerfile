@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Ensure the persistent data directory exists (for arbiter_state.json:
+# users, custom providers, model enable/disable flags)
+RUN mkdir -p /app/data
+
 # Run as non-root user for security
 RUN adduser --disabled-password --gecos "" appuser \
     && chown -R appuser:appuser /app

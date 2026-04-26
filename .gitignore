@@ -1,0 +1,66 @@
+# ============================================================================
+# Arbiter — secrets, runtime, and developer artifacts. NEVER commit secrets.
+# ============================================================================
+
+# ── Secrets / environment ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials.json
+service-account*.json
+.client_secret*.json
+.modal/
+.modal.toml
+
+# ── Runtime state / locks / data ───────────────────────────────────────────
+data/
+!data/.gitkeep
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Virtual envs ───────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── IDE / OS ───────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs / temp / backups ──────────────────────────────────────────────────
+*.log
+*.bak
+*.tmp
+*.orig
+*.rej
+node_modules/
+
+# ── Test reports (local-only, may contain output snippets) ─────────────────
+TEST-REPORT-*.md
+test-results/
+
+# AI assistant local configs
+.claude/
+.cursor/
+.aider*

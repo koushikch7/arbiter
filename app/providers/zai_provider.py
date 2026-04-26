@@ -59,7 +59,8 @@ class ZaiProvider(BaseProvider):
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
 
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         messages = []
         for msg in request.messages:

@@ -48,32 +48,27 @@ class PollinationsProvider(BaseProvider):
     name = "pollinations"
 
     models: List[str] = [
-        "openai",              # GPT-based — default
-        "openai-fast",         # faster/cheaper GPT
-        "openai-large",        # higher quality GPT
-        "claude",              # Claude-based
-        "claude-fast",         # faster Claude
-        "claude-large",        # higher quality Claude
-        "gemini",              # Gemini-based
-        "gemini-fast",         # faster Gemini
-        "mistral",             # Mistral
-        "deepseek",            # DeepSeek
-        "qwen-coder",          # Qwen coding model
+        # Verified live April 2026 — legacy aliases (`mistral`, `mistral-large`,
+        # `openai`, `claude`) were deprecated for authenticated users; only
+        # `openai-fast` (GPT-OSS 20B on OVH) is reliably available.
+        "openai-fast",
     ]
 
     max_context_tokens = 32768
-    default_model      = "openai"
+    default_model      = "openai-fast"
 
     # ------------------------------------------------------------------
     async def complete(
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
+        """Call the Pollinations.ai OpenAI-compatible text endpoint.
+
+        No Authorization header is sent (free, anonymous service).  Unknown
+        models are passed through so users get a clear upstream 4xx rather
+        than silently being rerouted to a different model.
         """
-        Call the Pollinations.ai OpenAI-compatible text endpoint.
-        Requires a Bearer token from https://enter.pollinations.ai/
-        Falls back to default_model when the requested model is unknown.
-        """
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = requested if requested and requested.lower() != "auto" else self.default_model
 
         messages = [
             {"role": m.role, "content": m.content}
@@ -84,16 +79,20 @@ class PollinationsProvider(BaseProvider):
             "model":       model,
             "messages":    messages,
             "temperature": request.temperature,
-            "top_p":       request.top_p,
         }
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
         if request.stop:
             payload["stop"] = request.stop
 
+        # Note: intentionally NO Authorization header — Pollinations is free / anonymous.
+        # User-Agent required: Cloudflare in front of Pollinations returns 502 to
+        # unrecognised UAs (e.g. bare httpx/0.x).
         headers = {
-            "Content-Type":  "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent":   "Arbiter/1.11.2 (+https://github.com/)",
         }
 
         logger.debug(f"PollinationsProvider POST model={model}")

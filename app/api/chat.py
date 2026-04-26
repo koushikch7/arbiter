@@ -136,6 +136,20 @@ async def chat_completions(
     Use the optional **vendor** query parameter to pin a specific provider
     (e.g. `?vendor=cerebras`).  Use **force_model** to override the model
     (e.g. `?force_model=llama3.1-8b`).
+
+    Smart auto-routing
+    ──────────────────
+    - ``model="auto"`` (or empty) lets Arbiter classify the request and
+      pick the best free-tier model based on capability tags.
+    - Per-request overrides:
+        * Header ``X-Arbiter-Priority: speed|quality|balanced``
+        * Header ``X-Arbiter-Prefer-Provider: <name>``
+        * Header ``X-Arbiter-Fallback: none|same_provider|chain``
+        * Body field ``fallback`` (same values, takes precedence)
+        * Body field ``metadata.arbiter_intent`` (force intent classifier)
+
+    The response includes ``X-Arbiter-Model-Used`` header showing the
+    actual ``provider/model`` that fulfilled the request.
     """
     _check_auth(request)
 
@@ -152,13 +166,52 @@ async def chat_completions(
     if effective_model.startswith("cfworker/"):
         return await _proxy_cfworker(effective_model, body, request)
 
+    # ── Per-request routing overrides (headers + metadata) ────────────────
+    priority_override        = request.headers.get("x-arbiter-priority")
+    prefer_provider_override = request.headers.get("x-arbiter-prefer-provider")
+    fallback_header          = request.headers.get("x-arbiter-fallback")
+
+    meta = body.metadata or {}
+    if isinstance(meta, dict):
+        priority_override        = meta.get("priority", priority_override)
+        prefer_provider_override = meta.get("prefer_provider", prefer_provider_override)
+
+    # Body `fallback` field takes precedence over header.
+    if body.fallback is None and fallback_header:
+        body = body.model_copy(update={"fallback": fallback_header.lower()})
+
+    if priority_override:
+        priority_override = str(priority_override).lower().strip()
+        if priority_override not in ("speed", "quality", "balanced"):
+            priority_override = None
+
     try:
         response = await router_instance.route(
             body,
             vendor=vendor,
             force_model=force_model,
+            priority_override=priority_override,
+            prefer_provider_override=prefer_provider_override,
         )
-        return response
+        # Surface the actual provider/model used so SDK callers can verify.
+        chosen_provider = getattr(response, "_arbiter_provider", "") or ""
+        chosen_model    = getattr(response, "_arbiter_model", response.model)
+        if not chosen_provider and chosen_model:
+            try:
+                from app.providers._free_tier_catalog import provider_of as _po
+                chosen_provider = _po(chosen_model) or ""
+            except Exception:
+                chosen_provider = ""
+        from fastapi.responses import JSONResponse as _JR
+        payload = response.model_dump()
+        return _JR(
+            content=payload,
+            headers={
+                "X-Arbiter-Model-Used": (
+                    f"{chosen_provider}/{chosen_model}" if chosen_provider else str(chosen_model)
+                ),
+            },
+        )
     except RateLimitError as e:
         logger.warning(f"All providers rate-limited: {e}")
         raise HTTPException(
@@ -167,9 +220,17 @@ async def chat_completions(
         )
     except ProviderError as e:
         logger.error(f"Provider error: {e}")
+        # "All keys on cooldown / exhausted" → 503 (service temporarily
+        # unavailable) is more accurate than 502 (bad upstream response).
+        msg = str(e)
+        if "on cooldown" in msg or "quota exhausted" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=msg,
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(e),
+            detail=msg,
         )
     except Exception as e:
         logger.exception(f"Unexpected error in chat completions: {e}")

@@ -144,7 +144,7 @@
     <div class="sidebar-brand">
       <div class="sidebar-logo">A</div>
       <span class="sidebar-brand-name">Arbiter</span>
-      <span class="sidebar-brand-ver">v1.1</span>
+      <span class="sidebar-brand-ver">v1.11</span>
     </div>
     <nav class="sidebar-nav">
       <span class="sidebar-section">Main</span>
@@ -171,10 +171,6 @@
       <a href="/logs" class="nav-item">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
         Logs
-      </a>
-      <a href="/analytics" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Analytics
       </a>
       <div class="sidebar-divider"></div>
       <span class="sidebar-section">Developer</span>
@@ -323,6 +319,23 @@ async function loadEndpoints() {
     var r = await fetch('/api/providers', {cache:'no-store'});
     var providers = await r.json();
     var activeProviders = providers.filter(function(p) { return p.configured && !p.disabled; });
+
+    // 1a. Smart Auto Route (no vendor pin — lets Arbiter pick the best healthy provider)
+    if (activeProviders.length) {
+      var ogAuto = document.createElement('optgroup');
+      ogAuto.label = 'Smart Routing';
+      _endpoints.push({
+        id: 'auto:smart', label: 'Auto (Smart Route)', type: 'gateway',
+        vendor: '', model: '',
+        note: 'Arbiter picks the best available provider automatically',
+      });
+      var optAuto = document.createElement('option');
+      optAuto.value = 'auto:smart';
+      optAuto.textContent = '⚡ Auto (Smart Route — any provider)';
+      ogAuto.appendChild(optAuto);
+      sel.appendChild(ogAuto);
+    }
+
     if (activeProviders.length) {
       var og = document.createElement('optgroup');
       og.label = 'Gateway Providers';
@@ -637,7 +650,7 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
 
   } else {
     // Gateway routing (standard providers + modal via gateway)
-    payload.model = ep.model;
+    payload.model = ep.model || 'auto';
     var qs = ep.vendor ? '?vendor=' + encodeURIComponent(ep.vendor) : '';
     var r = await fetch('/v1/chat/completions' + qs, {
       method: 'POST',

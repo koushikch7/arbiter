@@ -1,0 +1,59 @@
+# ============================================================================
+# Arbiter — exclude secrets and dev artifacts from Docker build context.
+# CRITICAL: prevents .env (with real keys) from being baked into the image.
+# ============================================================================
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials.json
+service-account*.json
+.modal/
+.modal.toml
+
+# Git metadata (huge + unnecessary in image)
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs / temp / backups
+*.log
+*.bak
+*.tmp
+node_modules/
+
+# Runtime state (mounted at runtime via volume)
+data/
+
+# Test artefacts
+TEST-REPORT-*.md
+test-results/
+
+# Docs not needed in image
+*.md
+!README.md

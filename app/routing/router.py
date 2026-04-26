@@ -42,6 +42,15 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers._free_tier_catalog import (
+    FREE_TIER_CATALOG,
+    PAID_FALLBACK_CATALOG,
+    find_spec,
+    provider_of,
+    vendor_model_hierarchy,
+)
+from app.routing.auto_router import auto_candidate_chain
+from app.routing.intent_classifier import classify
 from app.cache.cache import CacheLayer
 from app.key_management.key_pool import KeyPool
 
@@ -59,144 +68,35 @@ CODE_KEYWORDS: Set[str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Per-vendor model hierarchies  (verified March 2026 – official docs)
+# Per-vendor model hierarchies — derived from FREE_TIER_CATALOG (v1.12+).
 #
-# Format : List of (model_id, context_window_tokens)
-# Order  : preferred first — fastest / highest-quota → largest / best-quality
-# Router walks this list top→bottom for intra-vendor fallback.
-#
-# Sources:
-#   Gemini       https://ai.google.dev/gemini-api/docs/models
-#   Groq         https://console.groq.com/docs/models
-#   OpenRouter   https://openrouter.ai/models?q=free
-#   Cohere       https://docs.cohere.com/docs/models
-#   Cloudflare   https://developers.cloudflare.com/workers-ai/models/
-#   Cerebras     https://inference-docs.cerebras.ai/models
-#   HuggingFace  https://huggingface.co/docs/api-inference/en/tasks/chat-completion
-#   Pollinations https://github.com/pollinations/pollinations
+# To add / remove / reorder free-tier models, edit
+# ``app/providers/_free_tier_catalog.py`` — this dict is built from it at
+# import time so there is exactly one place to change.  Paid fallback
+# entries (Routeway only) are appended last per provider.
 # ---------------------------------------------------------------------------
-VENDOR_MODEL_HIERARCHY: Dict[str, List[Tuple[str, int]]] = {
+VENDOR_MODEL_HIERARCHY: Dict[str, List[Tuple[str, int]]] = vendor_model_hierarchy(include_paid=True)
 
-    # ── Gemini (free-tier only, non-deprecated) ──────────────────────────────
-    # gemini-1.5-*        SHUT DOWN Sep 24 2025
-    # gemini-2.0-*        DEPRECATED, retiring Jun 1 2026
-    # gemini-2.5-pro      PAID-ONLY — excluded
-    # gemini-3.1-pro-*    PAID-ONLY — excluded
-    "gemini": [
-        ("gemini-3.1-flash-lite-preview", 1_048_576),  # newest · free tier · fastest
-        ("gemini-3-flash-preview",        1_048_576),  # free tier · frontier quality
-        ("gemini-2.5-flash-lite",         1_048_576),  # stable · 15 RPM · 1 000 RPD
-        ("gemini-2.5-flash",              1_048_576),  # stable · 10 RPM ·   250 RPD
-    ],
-
-    # ── Groq (active models only) ────────────────────────────────────────────
-    # llama3-8b-8192 / llama3-70b-8192 / mixtral-8x7b-32768 / gemma2-9b-it
-    # are NO LONGER in the active model list.
-    "groq": [
-        ("llama-3.1-8b-instant",                   131_072),  # 30 RPM · 14 400 RPD  fastest
-        ("llama-3.3-70b-versatile",                131_072),  # 30 RPM ·  1 000 RPD  best quality
-        ("meta-llama/llama-4-scout-17b-16e-instruct", 131_072),  # 30 RPM · 1 000 RPD  Llama 4
-        ("qwen/qwen3-32b",                         131_072),  # 60 RPM ·  1 000 RPD  high RPM
-        ("moonshotai/kimi-k2-instruct",            131_072),  # 60 RPM ·  1 000 RPD  high RPM
-        ("moonshotai/kimi-k2-instruct-0905",       131_072),  # 60 RPM ·  1 000 RPD  alt version
-        ("openai/gpt-oss-20b",                     131_072),  # 30 RPM ·  1 000 RPD  GPT-OSS small
-        ("openai/gpt-oss-120b",                    131_072),  # 30 RPM ·  1 000 RPD  GPT-OSS large
-    ],
-
-    # ── OpenRouter (:free models, Mar 2026) ──────────────────────────────────
-    "openrouter": [
-        ("meta-llama/llama-3.3-70b-instruct:free",        131_072),  # quality flagship
-        ("nousresearch/hermes-3-llama-3.1-405b:free",     131_072),  # largest free
-        ("google/gemma-3-27b-it:free",                    131_072),  # Gemma 3 27B
-        ("mistralai/mistral-small-3.1-24b-instruct:free", 128_000),  # Mistral 24B
-        ("google/gemma-3-12b-it:free",                    131_072),  # Gemma 3 12B
-        ("qwen/qwen3-4b:free",                            128_000),  # fast 4B
-        ("meta-llama/llama-3.2-3b-instruct:free",         131_072),  # smallest/fastest
-    ],
-
-    # ── Cohere (non-deprecated models) ───────────────────────────────────────
-    "cohere": [
-        ("command-r7b-12-2024",    128_000),  # fastest, 7B
-        ("command-r-08-2024",      128_000),  # balanced R-series
-        ("command-r-plus-08-2024", 128_000),  # highest quality R-series
-        ("command-a-03-2025",      256_000),  # newest flagship (256K ctx)
-    ],
-
-    # ── Cloudflare Workers AI (verified March 2026) ───────────────────────────
-    "cloudflare": [
-        ("@cf/meta/llama-4-scout-17b-16e-instruct",       131_072),  # Llama 4 — newest
-        ("@cf/meta/llama-3.3-70b-instruct-fp8-fast",      131_072),  # Llama 3.3 70B fast
-        ("@cf/moonshot/kimi-k2.5",                        262_144),  # 256K context
-        ("@cf/qwen/qwen3-30b-a3b-fp8",                    131_072),  # Qwen 3 30B
-        ("@cf/mistralai/mistral-small-3.1-24b-instruct",  131_072),  # Mistral Small 24B
-        ("@cf/deepseek/deepseek-r1-distill-qwen-32b",     131_072),  # DeepSeek R1 reasoning
-        ("@cf/qwen/qwq-32b",                              131_072),  # QwQ reasoning
-        ("@cf/qwen/qwen2.5-coder-32b-instruct",           131_072),  # coding specialist
-        ("@cf/google/gemma-3-12b-it",                     131_072),  # Gemma 3 12B (128K)
-        ("@cf/meta/llama-3.1-8b-instruct",                131_072),  # fastest 8B fallback
-        ("@cf/meta/llama-3.2-3b-instruct",                131_072),  # smallest 3B fallback
-    ],
-
-    # ── Cerebras Inference (verified March 2026) ──────────────────────────────
-    "cerebras": [
-        ("llama3.1-8b",                    8192),  # production · 30 RPM · 60K TPM · 1M/day
-        ("gpt-oss-120b",                   8192),  # production · 30 RPM · 64K TPM · 1M/day
-        ("qwen-3-235b-a22b-instruct-2507", 8192),  # preview · Qwen 3 235B · best reasoning
-        ("zai-glm-4.7",                    8192),  # preview · Z.ai GLM 4.7  (Cerebras-hosted)
-        # NOTE: zai-glm-4.7 is ALSO available via the Z.ai provider directly.
-        # Both are intentionally kept: Cerebras limits + Z.ai limits = combined capacity.
-    ],
-
-    # ── Z.ai / Zhipu AI (free-tier, March 2026) ───────────────────────────────
-    # GLM-4.7-Flash and GLM-4.5-Flash are $0 (completely free).
-    # These are separate from the Cerebras-hosted zai-glm-4.7 above —
-    # different API key, different rate-limit bucket → additive capacity.
-    "zai": [
-        ("glm-4.7-flash", 128_000),  # free · fastest · general purpose
-        ("glm-4.5-flash", 128_000),  # free · balanced
-        ("glm-z1-flash",   32_000),  # free · flash reasoning
-    ],
-
-    # ── HuggingFace Inference Router ──────────────────────────────────────────
-    "huggingface": [
-        ("Qwen/Qwen2.5-7B-Instruct",              32768),  # most reliable free
-        ("mistralai/Mistral-7B-Instruct-v0.3",    32768),  # Mistral base
-        ("HuggingFaceH4/zephyr-7b-beta",          32768),  # general purpose
-        ("google/gemma-2-2b-it",                   8192),  # smallest / fallback
-    ],
-
-    # ── Pollinations.ai ───────────────────────────────────────────────────────
-    "pollinations": [
-        ("mistral",       32768),  # fast, general
-        ("mistral-large", 32768),  # higher quality
-        ("openai",        32768),  # GPT-based
-    ],
-
-    # ── Lightning.ai (LitAI — natively hosted open-weight models) ────────────
-    # Free tier: ~37M token welcome credit on signup, then pay-per-token
-    # API: https://lightning.ai/api/v1 (OpenAI-compatible)
-    # Pricing: $0.09–$0.52/M tokens blended
-    "lightning": [
-        ("nvidia/nemotron-3-super",    256_000),  # ultra-fast, 256K ctx
-        ("lightning-ai/gpt-oss-120b",  131_072),  # flagship 120B model
-        ("deepseek/deepseek-v3.1",     164_000),  # DeepSeek V3.1, 164K ctx
-        ("lightning-ai/gpt-oss-20b",   131_072),  # efficient 20B
-        ("meta/llama-3.3-70b",         128_000),  # Llama 3.3 70B
-    ],
-}
 
 # Default provider priority (updated to include all new providers)
+# ── Free-first strategy ───────────────────────────────────────────────────
+# Providers with unlimited / generous free tiers come first. Paid-with-trial
+# providers (routeway, lightning) are last-resort so unbilled user traffic
+# hits zero-cost providers by default.  See VENDOR_MODEL_HIERARCHY above —
+# each provider's model list is also sorted free-tier first.
 _DEFAULT_PROVIDER_ORDER: List[str] = [
-    "gemini",
-    "groq",
-    "cerebras",
-    "zai",
-    "cloudflare",
-    "openrouter",
-    "cohere",
-    "huggingface",
-    "pollinations",
-    "lightning",
+    "gemini",        # 1M ctx · free tier · 10-15 RPM
+    "groq",          # fastest · free tier · 30 RPM
+    "cerebras",      # fast · free tier · 30 RPM
+    "zai",           # GLM flash models are $0
+    "cloudflare",    # Workers AI free tier
+    "openrouter",    # all :free models in hierarchy
+    "cohere",        # trial key 1000 req/month free
+    "huggingface",   # free inference router
+    "pollinations",  # fully free, no auth
+    "ollama",        # Ollama Cloud: free :cloud models (gpt-oss, deepseek, kimi …)
+    "routeway",      # free + paid mix (free-first hierarchy, 9 free models)
+    "lightning",     # $0.09-0.52/M tokens (paid only — last resort)
 ]
 
 
@@ -251,14 +151,19 @@ class IntelligentRouter:
         request: ChatCompletionRequest,
         vendor: Optional[str] = None,
         force_model: Optional[str] = None,
+        priority_override: Optional[str] = None,
+        prefer_provider_override: Optional[str] = None,
     ) -> ChatCompletionResponse:
         """
         Route *request* to the best available provider/model/key.
 
         Parameters
         ──────────
-        vendor      If provided, put this provider first in the ordering.
-        force_model If provided, override request.model with this value.
+        vendor                    If provided, put this provider first.
+        force_model               Override the model field (legacy).
+        priority_override         "speed" | "quality" | "balanced" — per-request
+                                  priority for auto routing.
+        prefer_provider_override  Boost a specific provider in auto routing.
         """
         # Apply overrides
         if force_model:
@@ -278,128 +183,244 @@ class IntelligentRouter:
                 return cached
         await self._inc("cache_misses")
 
-        # ── 2. Provider order ────────────────────────────────────────
-        provider_order = self._provider_order(request, vendor=vendor, cfg=cfg)
-        token_est      = self._estimate_tokens(request)
+        # ── 2. Build the unified (provider, model) candidate chain ───
+        token_est = self._estimate_tokens(request)
+        candidates = self._build_candidate_chain(
+            request,
+            vendor=vendor,
+            cfg=cfg,
+            token_est=token_est,
+            priority_override=priority_override,
+            prefer_provider_override=prefer_provider_override,
+        )
         logger.info(
             f"Routing  model={request.model!r}  tokens≈{token_est}  "
-            f"providers={provider_order}"
+            f"candidates={candidates[:8]}{'…' if len(candidates) > 8 else ''}"
         )
 
         last_error: Optional[Exception] = None
+        attempted_providers: List[str] = []
 
-        # ── 3. Two-level fallback ─────────────────────────────────────
-        for provider_name in provider_order:
+        # ── 3. Walk the chain — key rotation per (provider, model) ────
+        for provider_name, model_name in candidates:
             provider = self.providers.get(provider_name)
             key_pool = self.key_pools.get(provider_name)
             if provider is None or key_pool is None:
                 logger.debug(f"Provider {provider_name!r} not configured, skipping")
                 continue
+            if provider_name not in attempted_providers:
+                attempted_providers.append(provider_name)
 
-            model_list = self._model_hierarchy(provider_name, request, token_est, cfg=cfg)
-            logger.debug(
-                f"[{provider_name}] model candidates: {model_list}"
-            )
+            tried_keys: Set[str] = set()
 
-            for model_name in model_list:
-                tried_keys: Set[str] = set()
+            while True:
+                key = await key_pool.get_best_key(exclude=tried_keys)
+                if key is None:
+                    logger.warning(
+                        f"[{provider_name}/{model_name}] "
+                        f"No available key after trying {len(tried_keys)} account(s)"
+                    )
+                    break  # → next candidate
 
-                # Inner key-rotation loop for this (provider, model) pair
-                while True:
-                    key = await key_pool.get_best_key(exclude=tried_keys)
-                    if key is None:
-                        # All accounts exhausted for this model
-                        logger.warning(
-                            f"[{provider_name}/{model_name}] "
-                            f"No available key after trying {len(tried_keys)} account(s)"
-                        )
-                        break  # → try next model in hierarchy
+                tried_keys.add(key)
+                routed = request.model_copy(update={"model": model_name})
 
-                    tried_keys.add(key)
-                    routed = request.model_copy(update={"model": model_name})
+                try:
+                    logger.info(
+                        f"→ {provider_name}/{model_name}  "
+                        f"key=...{key[-4:]}  attempt={len(tried_keys)}"
+                    )
+                    response = await provider.complete(routed, key)
 
-                    try:
-                        logger.info(
-                            f"→ {provider_name}/{model_name}  "
-                            f"key=...{key[-4:]}  attempt={len(tried_keys)}"
-                        )
-                        _t0 = time.perf_counter()
-                        response = await provider.complete(routed, key)
-                        _lat_ms = round((time.perf_counter() - _t0) * 1000)
+                    # ── SUCCESS ──────────────────────────────────
+                    tokens_used = (
+                        response.usage.total_tokens if response.usage else 0
+                    )
+                    await key_pool.record_usage(key, tokens_used)
 
-                        # ── SUCCESS ──────────────────────────────────
-                        tokens_used = (
-                            response.usage.total_tokens if response.usage else 0
-                        )
-                        await key_pool.record_usage(key, tokens_used)
+                    if request.temperature <= 0.3:
+                        await self.cache.set(cache_key, response)
 
-                        if request.temperature <= 0.3:
-                            await self.cache.set(cache_key, response)
+                    await self._inc("requests_total")
+                    await self._inc("requests_success")
+                    await self._inc(f"provider:{provider_name}:success")
 
-                        await self._inc("requests_total")
-                        await self._inc("requests_success")
-                        await self._inc(f"provider:{provider_name}:success")
+                    # Per-model analytics
+                    safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
+                    await self._inc(f"model:{safe_model}:requests")
+                    if tokens_used > 0:
+                        await self._incrby(f"model:{safe_model}:tokens", tokens_used)
 
-                        # ── Latency tracking ──────────────────────────────
-                        await self._incrby(f"latency:{provider_name}:sum", _lat_ms)
-                        await self._inc(f"latency:{provider_name}:count")
+                    bucket = (int(time.time()) // 300) * 300
+                    await self._inc(f"history:{bucket}:requests")
+                    await self._inc(f"history:{bucket}:success")
 
-                        # ── Per-model analytics tracking ──────────────────
-                        safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
-                        await self._inc(f"model:{safe_model}:requests")
-                        if tokens_used > 0:
-                            await self._incrby(f"model:{safe_model}:tokens", tokens_used)
+                    logger.info(
+                        f"✓ {provider_name}/{model_name}  tokens={tokens_used}"
+                    )
+                    # Surface chosen pair so chat.py can emit response headers
+                    setattr(response, "_arbiter_provider", provider_name)
+                    setattr(response, "_arbiter_model", model_name)
+                    return response
 
-                        # ── Time-bucketed history (5-min buckets) ─────────
-                        bucket = (int(time.time()) // 300) * 300
-                        await self._inc(f"history:{bucket}:requests")
-                        await self._inc(f"history:{bucket}:success")
+                except RateLimitError as exc:
+                    logger.warning(
+                        f"✗ RateLimit {provider_name}/{model_name}  "
+                        f"key=...{key[-4:]}: {exc}"
+                    )
+                    await key_pool.mark_failed(key)
+                    await self._inc(f"provider:{provider_name}:rate_limited")
+                    last_error = exc
+                    # try next account for the SAME (provider, model)
 
-                        logger.info(
-                            f"✓ {provider_name}/{model_name}  tokens={tokens_used}"
-                        )
-                        return response
+                except ProviderError as exc:
+                    logger.error(
+                        f"✗ ProviderError {provider_name}/{model_name}: {exc}"
+                    )
+                    await self._inc(f"provider:{provider_name}:errors")
+                    safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
+                    await self._inc(f"model:{safe_model}:errors")
+                    bucket = (int(time.time()) // 300) * 300
+                    await self._inc(f"history:{bucket}:errors")
+                    last_error = exc
+                    break  # → next candidate
 
-                    except RateLimitError as exc:
-                        logger.warning(
-                            f"✗ RateLimit {provider_name}/{model_name}  "
-                            f"key=...{key[-4:]}: {exc}"
-                        )
-                        await key_pool.mark_failed(key)
-                        await self._inc(f"provider:{provider_name}:rate_limited")
-                        last_error = exc
-                        # ← continue: try next account for the SAME model
-
-                    except ProviderError as exc:
-                        logger.error(
-                            f"✗ ProviderError {provider_name}/{model_name}: {exc}"
-                        )
-                        await self._inc(f"provider:{provider_name}:errors")
-                        safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
-                        await self._inc(f"model:{safe_model}:errors")
-                        bucket = (int(time.time()) // 300) * 300
-                        await self._inc(f"history:{bucket}:errors")
-                        last_error = exc
-                        break  # model-level error → next model in hierarchy
-
-                    except Exception as exc:
-                        logger.exception(
-                            f"✗ Unexpected {provider_name}/{model_name}: {exc}"
-                        )
-                        last_error = exc
-                        break  # unexpected → next model
+                except Exception as exc:
+                    logger.exception(
+                        f"✗ Unexpected {provider_name}/{model_name}: {exc}"
+                    )
+                    last_error = exc
+                    break
 
         # ── 4. All options exhausted ──────────────────────────────────
         await self._inc("requests_total")
         await self._inc("requests_failed")
-        raise ProviderError(
-            f"All providers/models/keys failed for model={request.model!r}. "
-            f"Last error: {last_error}"
-        )
+        if last_error is None:
+            detail = (
+                f"All keys for provider(s) {attempted_providers} are currently on "
+                f"cooldown or daily-quota exhausted. Try again later, add more "
+                f"keys in Settings, or switch vendor."
+            )
+        else:
+            detail = (
+                f"All providers/models/keys failed for model={request.model!r}. "
+                f"Last error: {last_error}"
+            )
+        raise ProviderError(detail)
 
     # ------------------------------------------------------------------
     # Provider ordering
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Candidate-chain builder
+    # ------------------------------------------------------------------
+
+    def _build_candidate_chain(
+        self,
+        request: ChatCompletionRequest,
+        *,
+        vendor: Optional[str],
+        cfg: dict,
+        token_est: int,
+        priority_override: Optional[str] = None,
+        prefer_provider_override: Optional[str] = None,
+    ) -> List[Tuple[str, str]]:
+        """
+        Return the unified ordered list of ``(provider, model_id)`` to try.
+
+        Three modes:
+          - vendor pinned        → ``[(vendor, m) for m in vendor_hierarchy]``
+          - model="auto" / empty → smart auto-router via auto_candidate_chain()
+          - explicit model       → starts with the pinned (provider, model);
+                                   honours request.fallback ("none"|"same_provider"|"chain")
+        """
+        requested = (request.model or "").strip()
+        is_auto = (not requested) or requested.lower() == "auto"
+        configured = list(self.providers.keys())
+
+        # ── (a) explicit vendor pin  → only that vendor ─────────────
+        if vendor:
+            if vendor not in self.providers:
+                return []
+            chain: List[Tuple[str, str]] = []
+            for m in self._model_hierarchy(vendor, request, token_est, cfg=cfg):
+                chain.append((vendor, m))
+            return chain
+
+        # ── (b) auto-routing (model="auto" / empty) ─────────────────
+        if is_auto:
+            return auto_candidate_chain(
+                request,
+                token_est=token_est,
+                priority_override=priority_override,
+                prefer_provider_override=prefer_provider_override,
+                available_providers=configured,
+            )
+
+        # ── (c) explicit model — strict pin by default ──────────────
+        fallback_mode = (request.fallback or "none").strip().lower()
+        if fallback_mode not in ("none", "same_provider", "chain"):
+            fallback_mode = "none"
+
+        owning_provider = provider_of(requested) or self._infer_provider(requested)
+        primary: List[Tuple[str, str]]
+        if owning_provider and owning_provider in self.providers:
+            primary = [(owning_provider, requested)]
+        else:
+            # Unknown model — try every configured provider in default order.
+            # The provider's own response will surface a clear 404 if invalid.
+            primary = [(p, requested) for p in _DEFAULT_PROVIDER_ORDER if p in self.providers]
+
+        if fallback_mode == "none":
+            return primary
+
+        if fallback_mode == "same_provider":
+            extra: List[Tuple[str, str]] = []
+            seen = {(p, m) for p, m in primary}
+            if owning_provider and owning_provider in self.providers:
+                for m in self._model_hierarchy(owning_provider, request, token_est, cfg=cfg):
+                    if (owning_provider, m) not in seen:
+                        extra.append((owning_provider, m))
+                        seen.add((owning_provider, m))
+            return primary + extra
+
+        # fallback_mode == "chain"
+        auto_chain = auto_candidate_chain(
+            request,
+            token_est=token_est,
+            priority_override=priority_override,
+            prefer_provider_override=prefer_provider_override,
+            available_providers=configured,
+        )
+        seen = {(p, m) for p, m in primary}
+        merged = list(primary)
+        for p, m in auto_chain:
+            if (p, m) not in seen:
+                merged.append((p, m))
+                seen.add((p, m))
+        return merged
+
+    def _infer_provider(self, model_id: str) -> Optional[str]:
+        """Best-effort provider guess from a model ID prefix/suffix."""
+        m = model_id.lower()
+        if m.startswith("gemini"):
+            return "gemini"
+        if m.startswith("@cf/"):
+            return "cloudflare"
+        if m.startswith("command-"):
+            return "cohere"
+        if m.startswith("glm-") or m.startswith("zai-glm"):
+            return "zai"
+        if m.endswith(":cloud"):
+            return "ollama"
+        if m.endswith(":free"):
+            return "routeway"
+        if m.startswith("openai-"):
+            return "pollinations"
+        if "/" in m:
+            return "openrouter"
+        return None
 
     def _provider_order(
         self,
@@ -423,6 +444,12 @@ class IntelligentRouter:
         # is confusing and misleading.
         if vendor:
             return [vendor] if vendor in self.providers else []
+
+        # "auto" is a magic sentinel for "let the router pick freely" —
+        # skip all explicit-name heuristics and fall through to token/
+        # capability routing below.
+        if model == "auto":
+            model = ""
 
         # ── Explicit model-name routing ──
         if "gemini" in model:
@@ -528,14 +555,52 @@ class IntelligentRouter:
 
         model_ids = [m for m, _ in eligible]
 
-        # Bubble up explicitly requested model
-        requested = request.model.lower()
-        for m, _ in full_hierarchy:
-            if requested == m or (requested in m) or (m in requested):
-                if m in model_ids and model_ids[0] != m:
-                    model_ids.remove(m)
-                    model_ids.insert(0, m)
-                break
+        # ── Explicit-model pinning ────────────────────────────────────
+        # If the caller named a specific model AND that model is present in
+        # the provider's catalogue, try ONLY that model (with key rotation).
+        # Silently falling back to a different model leads to the "I chose
+        # #4 but got #1" bug the user reported in the playground.
+        # "auto" is a magic value meaning "let the router pick freely".
+        requested_raw = (request.model or "").strip()
+        requested     = requested_raw.lower()
+        if requested and requested != "auto":
+            full_ids_lower = {m.lower(): m for m, _ in full_hierarchy}
+            # Exact match (case-insensitive) → pin to that single model
+            if requested in full_ids_lower:
+                return [full_ids_lower[requested]]
+            # Not in our curated list, but caller is explicit — try as-is
+            # against the provider (Routeway/OpenRouter have 100+ models we
+            # don't enumerate; upstream will return a clear 404 if invalid).
+            return [requested_raw]
+
+        # ── Auto-routing: bubble up a partial match if any ─────────────
+        # Kept for backwards compat when callers pass e.g. "gpt-4o" without
+        # knowing the exact canonical id.  Uses longest-match to avoid the
+        # classic "gpt-4o" matching "gpt-4o-mini" first.
+        if requested:
+            matches = [
+                m for m, _ in full_hierarchy
+                if requested == m.lower() or requested in m.lower() or m.lower() in requested
+            ]
+            if matches:
+                # Prefer longest match (most specific); stable otherwise
+                best = max(matches, key=len)
+                if best in model_ids and model_ids[0] != best:
+                    model_ids.remove(best)
+                    model_ids.insert(0, best)
+
+        # ── Per-model enable/disable filter (from state_store) ──
+        # User can toggle individual models off in Settings → Models;
+        # those are excluded from routing here.
+        try:
+            from app.state_store import filter_enabled_models
+            filtered = filter_enabled_models(provider_name, model_ids)
+            # Keep at least one model — if the user disabled everything, fall
+            # back to the full list so we never silently drop the provider.
+            if filtered:
+                model_ids = filtered
+        except Exception as exc:
+            logger.debug(f"Model-enable filter skipped for {provider_name}: {exc}")
 
         return model_ids
 

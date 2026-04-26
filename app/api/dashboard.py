@@ -59,18 +59,6 @@ async def images_page() -> HTMLResponse:
         return RedirectResponse(url="/settings?tab=images")
 
 
-@router.get("/analytics", response_class=HTMLResponse, summary="Analytics dashboard")
-async def analytics_page() -> HTMLResponse:
-    """Serve the analytics dashboard page."""
-    path = os.path.join(_STATIC_DIR, "analytics.html")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return HTMLResponse(content=html_content, status_code=200, headers=_NO_CACHE_HEADERS)
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Analytics page not found</h1>", status_code=404)
-
-
 @router.get("/settings", response_class=HTMLResponse, summary="Settings dashboard")
 async def settings_page() -> HTMLResponse:
     """Serve the settings management page."""

@@ -50,15 +50,15 @@ class GeminiProvider(BaseProvider):
 
     # Free-tier models ordered: newest preview first → stable fallback
     # gemini-3.1-pro-preview and gemini-2.5-pro are PAID-only — excluded
+    # Only gemini-2.5-flash-lite is reliably available on a free-tier key —
+    # the preview / newer-flagship models (3.1-flash-lite-preview, 3-flash-
+    # preview, 2.5-flash) returned 4xx/502 during live probes.
     models: List[str] = [
-        "gemini-3.1-flash-lite-preview",  # newest, free tier, frontier-class fast
-        "gemini-3-flash-preview",         # free tier, frontier-class quality
         "gemini-2.5-flash-lite",          # stable, 15 RPM, 1 000 RPD (highest quota)
-        "gemini-2.5-flash",               # stable, 10 RPM, 250 RPD
     ]
 
-    max_context_tokens = 1_048_576   # 1 M tokens (all models)
-    default_model      = "gemini-3.1-flash-lite-preview"
+    max_context_tokens = 1_048_576   # 1 M tokens
+    default_model      = "gemini-2.5-flash-lite"
 
     # --------------------------------------------------------------------------
     def _map_messages(self, messages: List[Message]) -> tuple:
@@ -108,7 +108,8 @@ class GeminiProvider(BaseProvider):
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
 
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
         url   = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
 
         system_parts, contents = self._map_messages(request.messages)

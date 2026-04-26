@@ -465,3 +465,64 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: 
   /* Playground sidebar becomes full-width */
   .pg-chat { height: calc(100vh - 240px); min-height: 280px; }
 }
+
+/* ═══════════════ User chip (topbar) ═══════════════ */
+.user-chip { position: relative; }
+.user-chip-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: 999px; padding: 4px 10px 4px 4px;
+  color: var(--text-1); cursor: pointer; font-size: 12px;
+  transition: background .15s, border-color .15s;
+}
+.user-chip-btn:hover { background: var(--bg-3); border-color: var(--border-2); }
+.user-chip-avatar {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+  display: flex; align-items: center; justify-content: center;
+}
+.user-chip-avatar-fallback {
+  background: linear-gradient(135deg,#4f8cff,#7a5cff);
+  color: #fff; font-weight: 600; font-size: 11px;
+}
+.user-chip-email {
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.user-chip-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
+  min-width: 220px; background: var(--bg-1); border: 1px solid var(--border-1);
+  border-radius: 10px; padding: 6px 0;
+  box-shadow: 0 8px 28px rgba(0,0,0,.25);
+}
+.user-chip-menu[hidden] { display: none; }
+.user-chip-menu-hd {
+  padding: 10px 14px 8px 14px; border-bottom: 1px solid var(--border-1); margin-bottom: 4px;
+}
+.user-chip-menu-item {
+  display: block; padding: 8px 14px; font-size: 12px;
+  color: var(--text-1); text-decoration: none;
+}
+.user-chip-menu-item:hover { background: var(--bg-2); }
+
+/* ═══════════════ Badges (extras) ═══════════════ */
+.badge-blue { background: rgba(79,140,255,.15); color: #4f8cff; }
+.btn-xs { padding: 4px 8px; font-size: 11px; margin-left: 4px; }
+.btn-danger { background: var(--red, #e5484d); color: #fff; border-color: transparent; }
+.btn-danger:hover { filter: brightness(1.1); }
+
+/* ═══════════════ Custom providers / Models refresh ═══════════════ */
+.model-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border: 1px solid var(--border-1); border-radius: 6px;
+  margin-bottom: 6px; font-size: 12px; background: var(--bg-1);
+}
+.model-toggle-row .model-id { font-family: var(--mono); color: var(--text-1); }
+.model-toggle-row .model-flags { font-size: 10px; color: var(--text-3); margin-left: 8px; }
+.custom-provider-card {
+  padding: 12px; border: 1px solid var(--border-1); border-radius: 8px;
+  background: var(--bg-1); margin-bottom: 10px;
+}
+.custom-provider-card .cp-hd {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+}
+.custom-provider-card .cp-name { font-weight: 600; font-size: 13px; color: var(--text-0); }
+.custom-provider-card .cp-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); }

@@ -1,8 +1,16 @@
 # Arbiter – Intelligent LLM Router & Gateway
 
-A self-hosted, production-ready gateway that aggregates **9 free-tier LLM providers** behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **weighted scoring, model hierarchies, and automatic fallback**.
+A self-hosted, production-ready gateway that aggregates **12+ LLM providers** (plus unlimited custom OpenAI-compatible endpoints) behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **weighted scoring, model hierarchies, and automatic fallback**.
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.
+
+> **v1.12.0 highlights:** 🚀 **Smart auto-routing** — send `model="auto"` and Arbiter picks the best free-tier model (1ms heuristic classifier across 7 intents: code · reasoning · long-context · vision · creative · fast · balanced).  Fully overridable per request via headers (`X-Arbiter-Priority`, `X-Arbiter-Prefer-Provider`, `X-Arbiter-Fallback`) and per deployment via the new **Auto Routing** tab in Settings.  Optional `fallback` modes (`none` · `same_provider` · `chain`) for explicit model pins — strict-pin remains the default.  Single-source-of-truth catalog at [app/providers/_free_tier_catalog.py](app/providers/_free_tier_catalog.py) replaces 200+ lines of hardcoded model hierarchy.  Response now includes `X-Arbiter-Model-Used: <provider>/<model>`.  See `scripts/test_auto_routing.py` (7/7 pass).
+>
+> **v1.11.2 highlights:** ✨ **Ollama Cloud added** as an 11th provider (6 free :cloud-tagged MoE models — gpt-oss, deepseek-v3.1, glm-4.6, qwen3-coder, minimax-m2) · explicit model selection now pins exactly (was silently falling back to default) · HuggingFace no-longer-silent model rewrite · Pollinations User-Agent fix (Cloudflare was returning 502 to bare `httpx`) · Routeway 503 no longer cooldown-cascades the whole key · model-hierarchy cleanup: removed ~12 consistently-broken models across Gemini/Groq/OpenRouter/Cloudflare/Cerebras/HuggingFace/Pollinations/Routeway (see CHANGELOG for the pruning table).
+>
+> **v1.11.1 highlights:** Free-tier-first strategy across all providers (Routeway now seeds with 15 `:free` models) · Playground "⚡ Auto (Smart Route)" option · 502 → 503 for cooldown-exhaustion with actionable error messages · middleware-stack ordering fix for SSO sessions · Routeway/Z.ai visible in Settings UI · Analytics page removed (redundant with Dashboard) · admin-gated mutating endpoints (custom providers, model toggles) · `_wants_json` chained-comparison fix.
+>
+> **v1.11.0 highlights:** Routeway provider · add-any-provider from the UI · dynamic model discovery with per-model enable/disable · Google SSO with admin approval · hardened middleware stack (CSP, SSRF, session revocation, log redaction).
 
 ---
 
@@ -24,6 +32,7 @@ Designed for **multi-agent frameworks** like OpenClaw that generate concurrent b
 - **HuggingFace** (4 models, 8K–32K context) — Limited free credits
 - **Pollinations.ai** (11 models, 32K context) — Free tier with API key (enter.pollinations.ai)
 - **Lightning.ai LitAI** (5 models, 128K–256K context) — Nemotron 3 Super (256K), gpt-oss-120B, DeepSeek V3.1 (164K); ~37M token welcome credit then $0.09–$0.52/M tokens
+- **Routeway** (192-model unified gateway — 15 `:free` models seeded by default) — Llama 3.3 70B `:free`, GPT-OSS-120B `:free`, Kimi K2 `:free` (256K ctx), MiniMax M2 `:free`, Devstral `:free`, Gemma 4 31B `:free`, Nemotron Nano `:free` etc. Paid fallback (GPT-4o, Claude 3.5, DeepSeek) only on explicit opt-in.
 - **Multi-account support** — Unlimited accounts per provider with intelligent scoring
 - **Additive capacity** — Overlapping models (e.g., GLM on both Cerebras+Z.ai) sum their rate limits
 
@@ -173,6 +182,25 @@ Gateway starts successfully **even without Redis**:
 - Caching disabled but routing functional
 - Rate-limit tracking in memory (per-process, not distributed)
 - Perfect for local development
+
+### ✅ Custom Providers from the UI *(v1.11)*
+- **Templates** for OpenAI, Anthropic, DeepSeek, Together, Fireworks, Mistral, Perplexity, or "fully custom"
+- **Any OpenAI-compatible** (`/chat/completions`) or **Anthropic-compatible** (`/messages`) endpoint works out of the box
+- Configure from **Settings → Custom Providers** — no code, no restart; providers are hot-loaded
+- Built-in **SSRF guard** rejects `localhost`, private IPs, and cloud metadata endpoints
+- API keys persisted to `.env` as `CUSTOM_PROVIDER_<NAME>_KEY`; config lives in `data/arbiter_state.json`
+
+### ✅ Dynamic Model Discovery *(v1.11)*
+- **Refresh from provider** button on each provider in Settings → Models calls the live `/models` endpoint
+- Discovered **free-tier models auto-enable**; **paid models stay disabled** until an admin enables them (quota safety)
+- Per-model state persisted on disk and respected by `/v1/models` and the router
+- Manual refresh only — **no Redis, no periodic polling**
+
+### ✅ Google SSO + Admin Approval *(v1.11)*
+- **Google OAuth 2.0** sign-in for the dashboard; `/v1/*` API still uses Bearer tokens
+- First sign-in from `ADMIN_EMAIL` is auto-approved as admin; everyone else lands in **Pending** until approved from `/users`
+- Rejecting or deleting a user **revokes their session immediately** (server-side `session_version`)
+- Hardened middleware: CSP, `X-Frame-Options: DENY`, CORS allowlist (wildcard forbidden), bearer-token log redaction
 
 ---
 

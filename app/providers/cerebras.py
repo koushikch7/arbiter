@@ -57,7 +57,8 @@ class CerebrasProvider(BaseProvider):
         Send a chat completion request to the Cerebras OpenAI-compatible API.
         Falls back to default_model when the requested model is unknown.
         """
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         messages = [
             {"role": m.role, "content": m.content}

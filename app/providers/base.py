@@ -40,3 +40,26 @@ class BaseProvider(ABC):
                     if isinstance(part, dict) and "text" in part:
                         total += int(len(part["text"].split()) * 1.3)
         return total
+
+    # ------------------------------------------------------------------
+    # Optional: dynamic model discovery
+    # ------------------------------------------------------------------
+    async def fetch_models(self, api_key: str) -> list[dict]:
+        """
+        Optional — fetch the provider's live model catalogue.
+
+        Providers that expose a `/v1/models` endpoint (or equivalent) can
+        override this method. Callers must handle NotImplementedError
+        gracefully (fall back to the hardcoded ``models`` list).
+
+        Return shape::
+            [{"id": str, "context": int | None, "free": bool | None}, ...]
+
+        Raises:
+            NotImplementedError — if the provider has no discovery endpoint.
+            RateLimitError      — on 429.
+            ProviderError       — on any other failure.
+        """
+        raise NotImplementedError(
+            f"Provider {self.name!r} does not support dynamic model discovery"
+        )

@@ -82,7 +82,8 @@ class CohereProvider(BaseProvider):
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
 
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         cohere_msgs = self._build_cohere_messages(request.messages)
 

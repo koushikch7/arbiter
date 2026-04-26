@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Users — Arbiter</title>
+  <link rel="stylesheet" href="/static/arbiter.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">A</div>
+        <div>
+          <div class="sidebar-brand-name">Arbiter</div>
+          <div class="sidebar-brand-ver">v1.11</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="nav-item">Dashboard</a>
+        <a href="/api-docs" class="nav-item">API Docs</a>
+        <a href="/settings" class="nav-item">Settings</a>
+        <a href="/images" class="nav-item">Images</a>
+        <a href="/playground" class="nav-item">Playground</a>
+        <a href="/logs" class="nav-item">Logs</a>
+
+        <div class="sidebar-divider"></div>
+        <span class="sidebar-section">Admin</span>
+        <a href="/users" class="nav-item active">Users</a>
+        <div class="sidebar-divider"></div>
+        <span class="sidebar-section">Developer</span>
+        <a href="/docs" class="nav-item" target="_blank">Swagger UI</a>
+        <a href="/redoc" class="nav-item" target="_blank">ReDoc</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
+          <span class="theme-icon">🌙</span>
+          <span class="theme-label">Dark mode</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main-wrapper">
+      <header class="topbar">
+        <button class="sidebar-toggle" id="sidebar-toggle">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <h1 class="page-title">Users &amp; Access</h1>
+        <div class="topbar-right" id="topbar-right"></div>
+      </header>
+
+      <main class="page-content">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd">
+            <span class="card-title">Pre-approve a Gmail Account</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-2);margin:0 0 12px 0">
+              Approve an email in advance so the user gets access immediately on first Google sign-in.
+              New unapproved users land in <em>Pending</em> until an admin approves them.
+            </p>
+            <form id="preapprove-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+              <div style="flex:1;min-width:220px">
+                <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:4px">Email</label>
+                <input type="email" id="pre-email" class="input" required placeholder="someone@example.com">
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:4px">Role</label>
+                <select id="pre-role" class="input">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">Add &amp; Approve</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">All Users</span>
+            <button class="btn btn-ghost" onclick="loadUsers()">Refresh</button>
+          </div>
+          <div class="card-body">
+            <div id="users-loading" style="padding:32px;text-align:center;color:var(--text-3)">Loading…</div>
+            <div id="users-empty" style="display:none;padding:32px;text-align:center;color:var(--text-3)">
+              No users yet. Users appear here after they attempt their first Google sign-in.
+            </div>
+            <table id="users-table" style="display:none;width:100%;border-collapse:collapse">
+              <thead>
+                <tr style="text-align:left;border-bottom:1px solid var(--border-1);color:var(--text-3);font-size:11px">
+                  <th style="padding:10px 8px">Email</th>
+                  <th style="padding:10px 8px">Name</th>
+                  <th style="padding:10px 8px">Status</th>
+                  <th style="padding:10px 8px">Role</th>
+                  <th style="padding:10px 8px">Last login</th>
+                  <th style="padding:10px 8px;text-align:right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/arbiter.js"></script>
+  <script>
+    const ADMIN_BASE = '/api/users';
+
+    function fmtDate(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts * 1000);
+      return d.toLocaleString();
+    }
+
+    function statusBadgeEl(status) {
+      const map = {
+        approved: ['badge-green', 'Approved'],
+        pending:  ['badge-yellow', 'Pending'],
+        rejected: ['badge-red', 'Rejected'],
+      };
+      const [cls, label] = map[status] || ['badge-gray', status || 'Unknown'];
+      return `<span class="badge ${cls}">${label}</span>`;
+    }
+
+    async function loadUsers() {
+      const loadingEl = document.getElementById('users-loading');
+      const tableEl   = document.getElementById('users-table');
+      const emptyEl   = document.getElementById('users-empty');
+      loadingEl.style.display = 'block';
+      tableEl.style.display = 'none';
+      emptyEl.style.display = 'none';
+      try {
+        const res = await fetch(ADMIN_BASE, { credentials: 'same-origin' });
+        if (res.status === 401 || res.status === 403) {
+          loadingEl.textContent = 'You must be signed in as an administrator to view this page.';
+          return;
+        }
+        const data = await res.json();
+        const users = Array.isArray(data.users) ? data.users : [];
+        loadingEl.style.display = 'none';
+        if (!users.length) { emptyEl.style.display = 'block'; return; }
+        const tbody = document.getElementById('users-tbody');
+        tbody.innerHTML = users.map(u => `
+          <tr style="border-bottom:1px solid var(--border-1)">
+            <td style="padding:10px 8px;font-family:var(--mono);font-size:12px">${u.email || ''}</td>
+            <td style="padding:10px 8px;font-size:12px;color:var(--text-2)">${u.name || '—'}</td>
+            <td style="padding:10px 8px">${statusBadgeEl(u.status)}</td>
+            <td style="padding:10px 8px;font-size:12px">${u.is_admin ? '<span class="badge badge-blue">Admin</span>' : 'User'}</td>
+            <td style="padding:10px 8px;font-size:11px;color:var(--text-3)">${fmtDate(u.last_login)}</td>
+            <td style="padding:10px 8px;text-align:right">
+              ${u.status !== 'approved' ? `<button class="btn btn-xs btn-primary" onclick="setStatus('${u.email}','approved')">Approve</button>` : ''}
+              ${u.status !== 'rejected' ? `<button class="btn btn-xs btn-ghost" onclick="setStatus('${u.email}','rejected')">Reject</button>` : ''}
+              <button class="btn btn-xs btn-danger" onclick="deleteUser('${u.email}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+        tableEl.style.display = 'table';
+      } catch (e) {
+        loadingEl.textContent = 'Failed to load users: ' + e.message;
+      }
+    }
+
+    async function setStatus(email, status) {
+      try {
+        const res = await fetch(`${ADMIN_BASE}/${encodeURIComponent(email)}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ status }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+        toast(`User ${email} marked ${status}`, 'success');
+        loadUsers();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }
+
+    async function deleteUser(email) {
+      if (!confirm(`Delete user ${email}? They will lose access immediately.`)) return;
+      try {
+        const res = await fetch(`${ADMIN_BASE}/${encodeURIComponent(email)}`, {
+          method: 'DELETE', credentials: 'same-origin',
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+        toast(`Deleted ${email}`, 'success');
+        loadUsers();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }
+
+    document.getElementById('preapprove-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('pre-email').value.trim();
+      const role  = document.getElementById('pre-role').value;
+      if (!email) return;
+      try {
+        const res = await fetch(ADMIN_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ email, is_admin: role === 'admin', status: 'approved' }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+        toast(`Pre-approved ${email}`, 'success');
+        document.getElementById('pre-email').value = '';
+        loadUsers();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
+
+    document.addEventListener('DOMContentLoaded', loadUsers);
+  </script>
+</body>
+</html>

@@ -44,12 +44,13 @@ import time
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from app.api.users_api import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/modal/deploy", tags=["Modal Deploy"])
+router = APIRouter(prefix="/modal/deploy", tags=["Modal Deploy"], dependencies=[Depends(require_admin)])
 
 # Redis keys
 _KEY_TOKEN       = "arbiter:modal:account_token"      # ak-id:secret

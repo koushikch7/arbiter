@@ -144,10 +144,6 @@
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
         Logs
       </a>
-      <a href="/analytics" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Analytics
-      </a>
       <div class="sidebar-divider"></div>
       <span class="sidebar-section">Developer</span>
       <a href="/docs" class="nav-item" target="_blank">
@@ -219,6 +215,14 @@
         <button class="tab-btn" onclick="switchTab('gateway', this)">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
           Gateway Keys
+        </button>
+        <button class="tab-btn" onclick="switchTab('custom', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v16m8-8H4"/></svg>
+          Custom Providers
+        </button>
+        <button class="tab-btn" onclick="switchTab('autoroute', this)">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h12"/></svg>
+          Auto Routing
         </button>
       </div>
 
@@ -843,6 +847,164 @@ class Model:
         </div>
       </div>
 
+      <!-- ═══════════════ Custom Providers Tab ═══════════════ -->
+      <div id="tab-custom" class="tab-panel">
+        <div class="grid-2" style="align-items:start">
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Add a Custom Provider</span>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--text-2);margin-bottom:12px">
+                Plug in any OpenAI-compatible or Anthropic-compatible inference endpoint.
+                Pick a template or choose <em>Custom</em> for a fully manual setup.
+              </p>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Template</label>
+                <select id="cp-template" class="form-control" onchange="applyCustomTemplate()"></select>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Name <span style="color:var(--red)">*</span></label>
+                <input type="text" id="cp-name" class="form-control" placeholder="e.g. deepseek-primary" pattern="[a-z0-9_-]+">
+                <small style="font-size:11px;color:var(--text-3)">Lowercase letters, digits, <code>_</code>, <code>-</code>. Used as routing key.</small>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Base URL <span style="color:var(--red)">*</span></label>
+                <input type="url" id="cp-base-url" class="form-control" placeholder="https://api.example.com/v1">
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">API Key <span style="color:var(--red)">*</span></label>
+                <input type="password" id="cp-api-key" class="form-control" placeholder="sk-…">
+                <small style="font-size:11px;color:var(--text-3)">Stored in <code>.env</code> as <code>CUSTOM_PROVIDER_&lt;NAME&gt;_KEY</code>.</small>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Auth Scheme</label>
+                <select id="cp-auth-scheme" class="form-control">
+                  <option value="bearer">Bearer (OpenAI-style)</option>
+                  <option value="anthropic">Anthropic (x-api-key + messages)</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Models (one per line)</label>
+                <textarea id="cp-models" class="form-control" rows="4" placeholder="gpt-4o-mini&#10;claude-3-haiku"></textarea>
+                <small style="font-size:11px;color:var(--text-3)">Can be refreshed later from the Models tab.</small>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary" onclick="createCustomProvider()">
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Provider
+                </button>
+                <button class="btn btn-ghost" onclick="testCustomProvider()">Test Connection</button>
+              </div>
+              <div id="cp-result" style="display:none;margin-top:12px;padding:10px 12px;border-radius:6px;font-size:12px"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Configured Custom Providers</span>
+              <button class="btn btn-sm btn-ghost" onclick="loadCustomProviders()">Refresh</button>
+            </div>
+            <div class="card-body">
+              <div id="custom-providers-list">
+                <div style="padding:32px;text-align:center;color:var(--text-3)">Loading…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ Auto Routing Tab ═══════════════ -->
+      <div id="tab-autoroute" class="tab-panel">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-title">Smart Auto-Routing Preferences</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:12px">
+              Tunes how Arbiter picks a free-tier model when a request uses
+              <code>model="auto"</code> (or no model). The classifier inspects
+              the prompt, tags an intent (code, reasoning, vision, …) and
+              picks the highest-scoring model that matches.
+            </p>
+
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Priority bias</label>
+              <select id="ar-priority" class="form-control" onchange="markAutoRouteDirty()">
+                <option value="balanced">Balanced (default)</option>
+                <option value="quality">Quality — prefer larger / better models</option>
+                <option value="speed">Speed — prefer fast / low-latency models</option>
+              </select>
+              <small style="font-size:11px;color:var(--text-3)">
+                Per-request override:
+                <code>X-Arbiter-Priority: speed|quality|balanced</code> header,
+                or <code>metadata.priority</code> in the body.
+              </small>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">
+                <input type="checkbox" id="ar-allow-paid" onchange="markAutoRouteDirty()">
+                Allow paid Routeway fallback when no free model can serve the request
+              </label>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:14px;align-items:start">
+              <div class="form-group">
+                <label class="form-label">Prefer providers (boost ranking)</label>
+                <input type="text" id="ar-prefer-providers" class="form-control"
+                       placeholder="e.g. cerebras, groq" oninput="markAutoRouteDirty()">
+                <small style="font-size:11px;color:var(--text-3)">
+                  Comma-separated provider names.
+                </small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Avoid providers (skip)</label>
+                <input type="text" id="ar-avoid-providers" class="form-control"
+                       placeholder="e.g. pollinations" oninput="markAutoRouteDirty()">
+              </div>
+            </div>
+
+            <details style="margin-bottom:12px">
+              <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-1)">
+                Per-intent model preferences (advanced)
+              </summary>
+              <div style="margin-top:10px;display:grid;gap:8px">
+                <label class="form-label" style="font-size:11px">Code intent — preferred model order
+                  <input type="text" id="ar-code-pref" class="form-control" oninput="markAutoRouteDirty()" placeholder="qwen/qwen3-32b, @cf/qwen/qwen2.5-coder-32b-instruct">
+                </label>
+                <label class="form-label" style="font-size:11px">Reasoning intent
+                  <input type="text" id="ar-reasoning-pref" class="form-control" oninput="markAutoRouteDirty()">
+                </label>
+                <label class="form-label" style="font-size:11px">Creative intent
+                  <input type="text" id="ar-creative-pref" class="form-control" oninput="markAutoRouteDirty()">
+                </label>
+                <label class="form-label" style="font-size:11px">Vision intent
+                  <input type="text" id="ar-vision-pref" class="form-control" oninput="markAutoRouteDirty()">
+                </label>
+                <label class="form-label" style="font-size:11px">Long-context intent
+                  <input type="text" id="ar-long-context-pref" class="form-control" oninput="markAutoRouteDirty()">
+                </label>
+                <label class="form-label" style="font-size:11px">Fast intent
+                  <input type="text" id="ar-fast-pref" class="form-control" oninput="markAutoRouteDirty()">
+                </label>
+                <small style="font-size:11px;color:var(--text-3)">
+                  Comma-separated model IDs (must exist in /v1/models).
+                  These are tried first for that intent before normal scoring.
+                </small>
+              </div>
+            </details>
+
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" onclick="saveAutoRoute()">Save preferences</button>
+              <button class="btn" onclick="resetAutoRoute()">Reset to defaults</button>
+              <button class="btn" onclick="loadAutoRoute()">Reload</button>
+              <span id="ar-status" style="margin-left:auto;font-size:12px;color:var(--text-3)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </main>
     <footer class="page-footer">Arbiter — Intelligent LLM Gateway</footer>
   </div>
@@ -866,6 +1028,9 @@ var PROVIDER_COLORS = {
   pollinations: '#ec4899',
   lightning:    '#792de4',
   modal:        '#6366f1',
+  zai:          '#ff6a3d',
+  routeway:     '#10b981',
+  ollama:       '#0ea5e9',
 };
 
 var PROVIDER_DESCS = {
@@ -879,6 +1044,9 @@ var PROVIDER_DESCS = {
   pollinations: 'Pollinations — free, no auth needed',
   lightning:    'Lightning.ai LitAI — gpt-oss-120B, Nemotron 3 Super, DeepSeek V3.1',
   modal:        'Modal.com — serverless GPU, $30/month free',
+  zai:          'Z.ai / Zhipu — GLM-4.7-Flash is free',
+  routeway:     'Routeway — unified OpenAI / Anthropic / DeepSeek gateway',
+  ollama:       'Ollama Cloud — free :cloud tier (gpt-oss, deepseek-v3.1, kimi-k2, qwen3-coder)',
 };
 
 // ── Tab switching ────────────────────────────────────────────────────────────
@@ -898,6 +1066,7 @@ function switchTab(name, btn) {
   if (name === 'routing' && !routingData) { loadRouting(); }
   if (name === 'models' && !routingData)  { loadRouting(); }
   if (name === 'gateway') { loadGatewayTokens(); }
+  if (name === 'autoroute') { loadAutoRoute(); }
 }
 
 function switchTabByName(name) {
@@ -1331,6 +1500,9 @@ function buildModelAccordion(provider, models) {
     '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
     '</button>' +
     '<div class="accordion-body" style="display:none">' +
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">' +
+    '<button class="btn btn-xs btn-ghost" onclick="refreshProviderModels(\'' + provider + '\')" title="Discover models from the provider API">↻ Refresh from provider</button>' +
+    '</div>' +
     '<div id="' + id + '">' + (rows || '<div style="font-size:12px;color:var(--text-3);padding:8px 0">No models (using provider defaults)</div>') + '</div>' +
     '<div class="add-model-row">' +
     '<input type="text" id="model-input-' + provider + '" class="form-control" placeholder="model-id" style="font-family:\'JetBrains Mono\',monospace;font-size:11px" />' +
@@ -2208,12 +2380,234 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Custom Providers ─────────────────────────────────────────────────────────
+var CUSTOM_TEMPLATES = [];
+
+async function loadCustomTemplates() {
+  try {
+    var res = await fetch('/api/custom-providers/templates', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    var data = await res.json();
+    CUSTOM_TEMPLATES = Array.isArray(data) ? data : (data.templates || []);
+    var sel = document.getElementById('cp-template');
+    if (sel) {
+      sel.innerHTML = CUSTOM_TEMPLATES.map(function(t) {
+        return '<option value="' + t.id + '">' + _esc(t.label) + '</option>';
+      }).join('');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function applyCustomTemplate() {
+  var id = document.getElementById('cp-template').value;
+  var tpl = CUSTOM_TEMPLATES.find(function(t) { return t.id === id; });
+  if (!tpl) return;
+  document.getElementById('cp-base-url').value    = tpl.base_url || '';
+  document.getElementById('cp-auth-scheme').value = tpl.auth_scheme || 'bearer';
+  document.getElementById('cp-models').value      = (tpl.models || []).join('\n');
+}
+
+function _cpPayload() {
+  var name = document.getElementById('cp-name').value.trim();
+  var baseUrl = document.getElementById('cp-base-url').value.trim();
+  var apiKey  = document.getElementById('cp-api-key').value;
+  var auth    = document.getElementById('cp-auth-scheme').value;
+  var models  = document.getElementById('cp-models').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  return { name: name, base_url: baseUrl, api_key: apiKey, auth_scheme: auth, models: models };
+}
+
+function _cpResult(msg, ok) {
+  var el = document.getElementById('cp-result');
+  el.style.display = 'block';
+  el.style.background = ok ? 'rgba(57,211,83,.1)' : 'rgba(229,72,77,.1)';
+  el.style.border = ok ? '1px solid rgba(57,211,83,.4)' : '1px solid rgba(229,72,77,.4)';
+  el.style.color = 'var(--text-1)';
+  el.textContent = msg;
+}
+
+async function createCustomProvider() {
+  var body = _cpPayload();
+  if (!body.name || !body.base_url || !body.api_key) {
+    _cpResult('Name, base URL, and API key are required.', false); return;
+  }
+  try {
+    var res = await fetch('/api/custom-providers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    _cpResult('✓ Provider "' + body.name + '" created.', true);
+    document.getElementById('cp-name').value = '';
+    document.getElementById('cp-api-key').value = '';
+    loadCustomProviders();
+  } catch (e) { _cpResult('Failed: ' + e.message, false); }
+}
+
+async function testCustomProvider() {
+  var body = _cpPayload();
+  if (!body.base_url || !body.api_key) {
+    _cpResult('Base URL and API key are required to test.', false); return;
+  }
+  try {
+    var res = await fetch('/api/custom-providers/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || data.error || 'Test failed');
+    _cpResult('✓ Reached endpoint. Discovered ' + (data.models_found || 0) + ' models.', true);
+  } catch (e) { _cpResult('Test failed: ' + e.message, false); }
+}
+
+async function loadCustomProviders() {
+  var host = document.getElementById('custom-providers-list');
+  if (!host) return;
+  host.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-3)">Loading…</div>';
+  try {
+    var res = await fetch('/api/custom-providers', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(res.statusText);
+    var data = await res.json();
+    var list = Array.isArray(data) ? data : (data.providers || []);
+    if (!list.length) {
+      host.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-3)">No custom providers yet.</div>';
+      return;
+    }
+    host.innerHTML = list.map(function(p) {
+      return '<div class="custom-provider-card">' +
+        '<div class="cp-hd">' +
+          '<div><div class="cp-name">' + _esc(p.name) + '</div><div class="cp-meta">' + _esc(p.base_url) + '</div></div>' +
+          '<button class="btn btn-xs btn-danger" onclick="deleteCustomProvider(\'' + _esc(p.name) + '\')">Remove</button>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text-3)">Auth: ' + _esc(p.auth_scheme) + ' · Models: ' + (p.models || []).length + '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    host.innerHTML = '<div style="padding:24px;color:var(--red);font-size:12px">Failed to load: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function deleteCustomProvider(name) {
+  if (!confirm('Remove custom provider "' + name + '"? Any saved API key will be removed from .env.')) return;
+  try {
+    var res = await fetch('/api/custom-providers/' + encodeURIComponent(name), {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (!res.ok) { var d = await res.json(); throw new Error(d.detail || res.statusText); }
+    toast('Removed ' + name, 'success');
+    loadCustomProviders();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ── Refresh models from provider API ─────────────────────────────────────────
+async function refreshProviderModels(provider) {
+  try {
+    var res = await fetch('/api/models/' + encodeURIComponent(provider) + '/refresh', {
+      method: 'POST', credentials: 'same-origin',
+    });
+    var data = await res.json();
+    if (!res.ok || data.ok === false) throw new Error(data.detail || data.error || 'Refresh failed');
+    toast('Discovered ' + (data.discovered || data.count || 0) + ' models for ' + provider, 'success');
+    loadRouting();
+  } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initSidebar();
   loadProviders();
   loadRouting();
+  loadCustomTemplates();
+  loadCustomProviders();
 });
+
+// ── Auto-Routing Preferences ────────────────────────────────────────────────
+var _arDirty = false;
+function markAutoRouteDirty() {
+  _arDirty = true;
+  var s = document.getElementById('ar-status');
+  if (s) { s.textContent = 'Unsaved changes'; s.style.color = 'var(--orange, #d77a00)'; }
+}
+function _arSetStatus(text, color) {
+  var s = document.getElementById('ar-status');
+  if (s) { s.textContent = text; s.style.color = color || 'var(--text-3)'; }
+}
+function _arListToString(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
+function _arStringToList(v) {
+  return (v || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+}
+
+async function loadAutoRoute() {
+  _arSetStatus('Loading…');
+  try {
+    var res = await fetch('/api/preferences/auto-route', { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var d = await res.json();
+    var p = d.preferences || {};
+    document.getElementById('ar-priority').value          = p.priority || 'balanced';
+    document.getElementById('ar-allow-paid').checked      = !!p.allow_paid_fallback;
+    document.getElementById('ar-prefer-providers').value  = _arListToString(p.prefer_providers);
+    document.getElementById('ar-avoid-providers').value   = _arListToString(p.avoid_providers);
+    document.getElementById('ar-code-pref').value         = _arListToString(p.code_models_preference);
+    document.getElementById('ar-reasoning-pref').value    = _arListToString(p.reasoning_models_preference);
+    document.getElementById('ar-creative-pref').value     = _arListToString(p.creative_models_preference);
+    document.getElementById('ar-vision-pref').value       = _arListToString(p.vision_models_preference);
+    document.getElementById('ar-long-context-pref').value = _arListToString(p.long_context_models_preference);
+    document.getElementById('ar-fast-pref').value         = _arListToString(p.fast_models_preference);
+    _arDirty = false;
+    _arSetStatus('Loaded', 'var(--green, #2ea046)');
+  } catch (e) {
+    _arSetStatus('Failed to load: ' + e.message, 'var(--red, #c43)');
+  }
+}
+
+async function saveAutoRoute() {
+  var body = {
+    priority:                     document.getElementById('ar-priority').value,
+    allow_paid_fallback:          document.getElementById('ar-allow-paid').checked,
+    prefer_providers:             _arStringToList(document.getElementById('ar-prefer-providers').value),
+    avoid_providers:              _arStringToList(document.getElementById('ar-avoid-providers').value),
+    code_models_preference:       _arStringToList(document.getElementById('ar-code-pref').value),
+    reasoning_models_preference:  _arStringToList(document.getElementById('ar-reasoning-pref').value),
+    creative_models_preference:   _arStringToList(document.getElementById('ar-creative-pref').value),
+    vision_models_preference:     _arStringToList(document.getElementById('ar-vision-pref').value),
+    long_context_models_preference: _arStringToList(document.getElementById('ar-long-context-pref').value),
+    fast_models_preference:       _arStringToList(document.getElementById('ar-fast-pref').value),
+  };
+  _arSetStatus('Saving…');
+  try {
+    var res = await fetch('/api/preferences/auto-route', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _arDirty = false;
+    _arSetStatus('Saved', 'var(--green, #2ea046)');
+  } catch (e) {
+    _arSetStatus('Save failed: ' + e.message, 'var(--red, #c43)');
+  }
+}
+
+async function resetAutoRoute() {
+  if (!confirm('Reset auto-routing preferences to defaults?')) return;
+  _arSetStatus('Resetting…');
+  try {
+    var res = await fetch('/api/preferences/auto-route/reset', {
+      method: 'POST', credentials: 'include',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await loadAutoRoute();
+    _arSetStatus('Reset to defaults', 'var(--green, #2ea046)');
+  } catch (e) {
+    _arSetStatus('Reset failed: ' + e.message, 'var(--red, #c43)');
+  }
+}
 </script>
 </body>
 </html>

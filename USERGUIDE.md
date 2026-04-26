@@ -702,6 +702,52 @@ This starts:
 
 ## Making Your First Request
 
+### Smart Auto-Routing (v1.12+)
+
+The simplest call: send `"model": "auto"` and Arbiter classifies the prompt and picks the best free-tier model for you.
+
+```bash
+curl -i -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role":"user","content":"Write a python function to reverse a string"}]
+  }'
+```
+
+Look at the response — Arbiter adds an **`X-Arbiter-Model-Used: <provider>/<model>`** header showing which model fulfilled the request.
+
+#### Per-request overrides (no Settings change required)
+
+| Header | Body field | Values |
+| --- | --- | --- |
+| `X-Arbiter-Priority` | `metadata.priority` | `speed` · `quality` · `balanced` |
+| `X-Arbiter-Prefer-Provider` | `metadata.prefer_provider` | any provider name (e.g. `cerebras`) |
+| `X-Arbiter-Fallback` | `fallback` | `none` · `same_provider` · `chain` |
+| — | `metadata.arbiter_intent` | `code` · `reasoning` · `long-context` · `vision` · `creative` · `fast` · `balanced` |
+
+#### Explicit pin + optional fallback
+
+```bash
+# Strict pin — only use this exact model (default behaviour)
+curl ... -d '{"model":"qwen/qwen3-32b","messages":[…]}'
+
+# Walk other models on the same provider if it fails
+curl ... -d '{"model":"qwen/qwen3-32b","fallback":"same_provider","messages":[…]}'
+
+# Cross-provider fallback via the auto-router
+curl ... -d '{"model":"qwen/qwen3-32b","fallback":"chain","messages":[…]}'
+```
+
+#### Deployment-wide preferences
+
+The **Settings → Auto Routing** tab (or the `/api/preferences/auto-route` REST endpoint) lets you set:
+
+- Priority bias (speed / quality / balanced)
+- Prefer/avoid provider lists
+- Per-intent preferred model order (code, reasoning, creative, vision, long-context, fast)
+- Allow paid Routeway fallback when no free model can serve the request
+
 ### Test 1: List Models
 
 ```bash

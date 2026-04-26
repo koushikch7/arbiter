@@ -34,7 +34,7 @@
     <div class="sidebar-brand">
       <div class="sidebar-logo">A</div>
       <span class="sidebar-brand-name">Arbiter</span>
-      <span class="sidebar-brand-ver">v1.1</span>
+      <span class="sidebar-brand-ver">v1.11</span>
     </div>
     <nav class="sidebar-nav">
       <span class="sidebar-section">Main</span>
@@ -61,10 +61,6 @@
       <a href="/logs" class="nav-item">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
         Logs
-      </a>
-      <a href="/analytics" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Analytics
       </a>
       <div class="sidebar-divider"></div>
       <span class="sidebar-section">Developer</span>
@@ -205,18 +201,54 @@ client = OpenAI(
             <table class="param-table">
               <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
-                <tr><td class="param-name">model</td><td class="param-type">string</td><td class="param-req">required</td><td style="font-size:12px;color:var(--text-2)">Model identifier. Use <code>auto</code> for smart routing, or specify a provider model name.</td></tr>
+                <tr><td class="param-name">model</td><td class="param-type">string</td><td class="param-req">required</td><td style="font-size:12px;color:var(--text-2)">Model identifier. Use <code>auto</code> for smart routing (intent-classified) or specify an exact model ID for a strict pin.</td></tr>
                 <tr><td class="param-name">messages</td><td class="param-type">array</td><td class="param-req">required</td><td style="font-size:12px;color:var(--text-2)">Array of message objects with <code>role</code> and <code>content</code>.</td></tr>
                 <tr><td class="param-name">temperature</td><td class="param-type">float</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)">Sampling temperature 0–2. Values ≤ 0.3 enable semantic caching.</td></tr>
                 <tr><td class="param-name">max_tokens</td><td class="param-type">integer</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)">Maximum tokens in the response.</td></tr>
                 <tr><td class="param-name">stream</td><td class="param-type">boolean</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)">Not yet supported — pass false or omit.</td></tr>
                 <tr><td class="param-name">vendor</td><td class="param-type">string</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)">Force a specific provider: <code>gemini</code>, <code>groq</code>, <code>cerebras</code>, etc.</td></tr>
+                <tr><td class="param-name">fallback</td><td class="param-type">string</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)"><strong>v1.12+</strong> · How to behave when an explicit pin fails. <code>none</code> (default, strict-pin) · <code>same_provider</code> (try other models on the same provider) · <code>chain</code> (cross-provider fallback via auto-router).</td></tr>
+                <tr><td class="param-name">metadata</td><td class="param-type">object</td><td class="param-opt">optional</td><td style="font-size:12px;color:var(--text-2)"><strong>v1.12+</strong> · Recognised keys: <code>arbiter_intent</code> (force one of <code>code · reasoning · long-context · vision · creative · fast · balanced</code>), <code>priority</code> (<code>speed · quality · balanced</code>), <code>prefer_provider</code>.</td></tr>
               </tbody>
             </table>
+
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 6px"><strong>Request headers (v1.12+ overrides — useful for OpenAI-SDK callers):</strong></p>
+            <table class="param-table">
+              <tbody>
+                <tr><td class="param-name">X-Arbiter-Priority</td><td style="font-size:12px;color:var(--text-2)"><code>speed</code> · <code>quality</code> · <code>balanced</code> — auto-routing scoring bias.</td></tr>
+                <tr><td class="param-name">X-Arbiter-Prefer-Provider</td><td style="font-size:12px;color:var(--text-2)">Boost a specific provider when scoring auto candidates.</td></tr>
+                <tr><td class="param-name">X-Arbiter-Fallback</td><td style="font-size:12px;color:var(--text-2)">Equivalent to body <code>fallback</code> field (body wins if both set).</td></tr>
+              </tbody>
+            </table>
+
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 6px"><strong>Response headers:</strong></p>
+            <table class="param-table">
+              <tbody>
+                <tr><td class="param-name">X-Arbiter-Model-Used</td><td style="font-size:12px;color:var(--text-2)"><strong>v1.12+</strong> · The actual <code>provider/model</code> pair that fulfilled the request — useful when <code>model="auto"</code> or <code>fallback</code> is used.</td></tr>
+              </tbody>
+            </table>
+
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 6px"><strong>Smart auto example:</strong></p>
+            <div class="code-block">curl -i http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role":"user","content":"Write a python function to reverse a string"}],
+    "metadata": {"priority": "quality"}
+  }'
+
+# Response includes:  X-Arbiter-Model-Used: cerebras/qwen-3-235b-a22b-instruct-2507</div>
+
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 6px"><strong>Pinned model with fallback:</strong></p>
+            <div class="code-block">curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "X-Arbiter-Fallback: chain" \
+  -d '{"model":"qwen/qwen3-32b","messages":[…]}'</div>
+
             <div class="response-block">{
   "id": "chatcmpl-abc123",
   "object": "chat.completion",
-  "model": "gemini-3.1-flash-lite-preview",
+  "model": "qwen-3-235b-a22b-instruct-2507",
   "choices": [{
     "index": 0,
     "message": { "role": "assistant", "content": "..." },
@@ -344,6 +376,73 @@ Content-Type: application/json
           </div>
           <div class="endpoint-body">
             <div class="response-block">{ "status": "cleared", "entries_deleted": 25 }</div>
+          </div>
+        </div>
+
+        <div class="section-hd" style="margin-top:20px"><span class="section-label">Auto-Routing Preferences <span class="badge badge-accent" style="font-size:10px">v1.12+</span></span></div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-hd" onclick="toggleEndpoint(this)">
+            <span class="method method-get">GET</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:13px">/api/preferences/auto-route</span>
+            <span style="font-size:12px;color:var(--text-3);margin-left:8px">Get auto-routing preferences</span>
+            <svg style="margin-left:auto;transition:transform 0.15s" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
+          </div>
+          <div class="endpoint-body">
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:8px">Returns the active deployment-wide preferences plus the catalog of available providers and models for the UI.</p>
+            <div class="response-block">{
+  "preferences": {
+    "priority": "balanced",
+    "prefer_providers": [],
+    "avoid_providers": [],
+    "code_models_preference": [],
+    "reasoning_models_preference": [],
+    "creative_models_preference": [],
+    "vision_models_preference": [],
+    "long_context_models_preference": [],
+    "fast_models_preference": [],
+    "allow_paid_fallback": false
+  },
+  "available_providers": ["gemini","groq","openrouter",…],
+  "available_free_models": { "gemini": ["gemini-2.5-flash-lite"], … },
+  "available_paid_fallback_models": { "routeway": ["gpt-4o-mini",…] },
+  "supported_priorities": ["speed","quality","balanced"],
+  "supported_intents": ["code","reasoning","creative","vision","long_context","fast"]
+}</div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-hd" onclick="toggleEndpoint(this)">
+            <span class="method method-post">PUT</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:13px">/api/preferences/auto-route</span>
+            <span style="font-size:12px;color:var(--text-3);margin-left:8px">Update preferences (partial)</span>
+            <svg style="margin-left:auto;transition:transform 0.15s" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
+          </div>
+          <div class="endpoint-body">
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:8px">Partial update — only fields explicitly set in the body are changed.</p>
+            <div class="code-block">PUT /api/preferences/auto-route
+Content-Type: application/json
+
+{
+  "priority": "quality",
+  "prefer_providers": ["cerebras","groq"],
+  "avoid_providers": ["pollinations"],
+  "code_models_preference": ["qwen/qwen3-32b","@cf/qwen/qwen2.5-coder-32b-instruct"],
+  "allow_paid_fallback": false
+}</div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-hd" onclick="toggleEndpoint(this)">
+            <span class="method method-post">POST</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:13px">/api/preferences/auto-route/reset</span>
+            <span style="font-size:12px;color:var(--text-3);margin-left:8px">Reset preferences to defaults</span>
+            <svg style="margin-left:auto;transition:transform 0.15s" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
+          </div>
+          <div class="endpoint-body">
+            <div class="response-block">{ "preferences": { … defaults … }, "reset": true }</div>
           </div>
         </div>
 

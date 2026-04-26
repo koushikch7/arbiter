@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # Lightning.ai LitAI — natively hosted open-weight models (pay-per-token)
     LIGHTNING_API_KEYS: str = ""
 
+    # Routeway — unified gateway to OpenAI, Anthropic, DeepSeek, etc.
+    # https://routeway.ai (docs: https://docs.routeway.ai)
+    ROUTEWAY_API_KEYS: str = ""
+
+    # Ollama Cloud — free-tier cloud-hosted open-weight models
+    # https://ollama.com/settings/keys
+    OLLAMA_API_KEYS: str = ""
+
     # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
     MODAL_API_KEYS: str = ""
     # Modal account token (used by the one-click deploy feature)
@@ -51,23 +59,32 @@ class Settings(BaseSettings):
     CLOUDFLARE_ACCESS_AUD: str = ""
     # Set to True to require and validate Cf-Access-Jwt-Assertion on every request
     ENABLE_CF_ACCESS: bool = False
+    # ── Google SSO ──────────────────────────────────────────────────────────
+    # Create OAuth 2.0 Web-application credentials at
+    # https://console.cloud.google.com/apis/credentials . Authorized redirect
+    # URI must be <APP_BASE_URL>/auth/callback
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    # Email address that is auto-bootstrapped as admin on first login.
+    # All other users land in "pending" status and require admin approval.
+    ADMIN_EMAIL: str = ""
+    # Base URL used to build the OAuth redirect URI (when behind a proxy /
+    # Cloudflare Tunnel the request URL may look like http://localhost).
+    APP_BASE_URL: str = ""
+    # Random 32+ char string used to sign the session cookie. REQUIRED when
+    # SSO is enabled. Rotate to invalidate all existing sessions.
+    SESSION_SECRET_KEY: str = ""
+    # Set to True in production (requires HTTPS) so the session cookie is
+    # only sent over TLS. Leave False for local dev over http://localhost.
+    SESSION_COOKIE_SECURE: bool = False
+    # Session lifetime in seconds (default 24h).
+    SESSION_MAX_AGE: int = 86_400
 
-    # ── Google OAuth2 Login (optional) ───────────────────────────────────────
-    # When GOOGLE_CLIENT_ID is set, the web UI requires users to sign in with Google
-    # before accessing dashboard/analytics/settings/etc.
-    # Create credentials at: https://console.cloud.google.com/apis/credentials
-    # Add Authorized redirect URI: http(s)://<your-host>/auth/callback
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
-    # Comma-separated list of allowed email addresses (empty = allow any Google account)
-    GOOGLE_ALLOWED_EMAILS: str = ""
-    # Comma-separated list of allowed email domains e.g. "mycompany.com"
-    GOOGLE_ALLOWED_DOMAINS: str = ""
-    # Secret for signing session JWTs — auto-generated if empty, but set explicitly
-    # for production so sessions survive restarts.
-    SESSION_SECRET: str = ""
-
+    # ── CORS ─────────────────────────────────────────────────────────────────
+    # Comma-separated list of allowed origins. Empty value means same-origin
+    # only (no CORS). "*" is rejected when SSO is enabled (insecure with
+    # credentials).
+    ALLOWED_CORS_ORIGINS: str = ""
     # ── Logging ──────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
 
@@ -84,6 +101,8 @@ class Settings(BaseSettings):
             "cerebras":     self.CEREBRAS_API_KEYS,
             "zai":          self.ZAI_API_KEYS,
             "lightning":    self.LIGHTNING_API_KEYS,
+            "routeway":     self.ROUTEWAY_API_KEYS,
+            "ollama":       self.OLLAMA_API_KEYS,
             "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")

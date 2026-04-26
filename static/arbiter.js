@@ -83,44 +83,99 @@ function miniBar(used, limit) {
   return `<div class="mini-bar-wrap"><div class="mini-bar-meta"><span>${used.toLocaleString()}</span><span>${limit.toLocaleString()}</span></div><div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${color}"></div></div></div>`;
 }
 
-// ── Auth / user info ─────────────────────────────────────────────────────────
-async function initAuth() {
+// ── Auth-aware UI ───────────────────────────────────────────────────────────
+// Fetches /auth/me, renders a user chip + logout button, injects the admin
+// "Users" nav item for admins, and redirects to /login on 401 for UI pages.
+
+async function fetchAuthState() {
   try {
-    const res = await fetch('/auth/me');
+    const res = await fetch('/auth/me', { credentials: 'same-origin' });
+    if (res.status === 401) return { authenticated: false, sso: true };
+    if (!res.ok) return { authenticated: false, sso: false };
     const data = await res.json();
+    return { authenticated: !!data.email, sso: true, ...data };
+  } catch (_e) { return { authenticated: false, sso: false }; }
+}
 
-    if (!data.enabled) return; // OAuth not configured — no login required
-
-    if (!data.authenticated) {
-      // Redirect to login (preserve current URL so we can come back)
-      window.location.replace('/login?next=' + encodeURIComponent(window.location.pathname));
-      return;
-    }
-
-    // Inject user info into sidebar footer
-    const footer = document.querySelector('.sidebar-footer');
-    if (!footer) return;
-
-    const avatar = data.picture
-      ? `<img src="${data.picture}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;" alt="" />`
-      : `<span style="width:24px;height:24px;border-radius:50%;background:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;">${(data.name||data.email||'?')[0].toUpperCase()}</span>`;
-
-    const userEl = document.createElement('div');
-    userEl.className = 'user-info';
-    userEl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border-1);margin-top:8px;';
-    userEl.innerHTML = `
-      ${avatar}
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:500;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.name || data.email}</div>
-        <div style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.email}</div>
+function renderUserChip(me) {
+  const host = document.querySelector('.topbar-right') || document.getElementById('topbar-right');
+  if (!host || !me || !me.email) return;
+  if (host.querySelector('.user-chip')) return;
+  const initial = (me.name || me.email || '?').trim().charAt(0).toUpperCase();
+  const chip = document.createElement('div');
+  chip.className = 'user-chip';
+  chip.innerHTML = `
+    <button class="user-chip-btn" aria-haspopup="true" aria-expanded="false" title="${me.email}">
+      ${me.picture ? `<img src="${me.picture}" alt="" class="user-chip-avatar">` : `<span class="user-chip-avatar user-chip-avatar-fallback">${initial}</span>`}
+      <span class="user-chip-email">${me.email}</span>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="user-chip-menu" hidden>
+      <div class="user-chip-menu-hd">
+        <div style="font-size:12px;font-weight:600">${me.name || me.email}</div>
+        <div style="font-size:11px;color:var(--text-3)">${me.email}</div>
+        ${me.is_admin ? '<div style="font-size:10px;margin-top:4px"><span class="badge badge-blue">Admin</span></div>' : ''}
       </div>
-      <a href="/auth/logout" title="Sign out" style="color:var(--text-3);text-decoration:none;flex-shrink:0;" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--text-3)'">
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
-      </a>
-    `;
-    footer.appendChild(userEl);
-  } catch (e) {
-    // Network error — don't block the page
+      ${me.is_admin ? '<a href="/users" class="user-chip-menu-item">Manage users</a>' : ''}
+      <a href="/auth/logout" class="user-chip-menu-item">Sign out</a>
+    </div>`;
+  host.appendChild(chip);
+  const btn  = chip.querySelector('.user-chip-btn');
+  const menu = chip.querySelector('.user-chip-menu');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !menu.hasAttribute('hidden');
+    if (open) menu.setAttribute('hidden', ''); else menu.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded', String(!open));
+  });
+  document.addEventListener('click', (e) => {
+    if (!chip.contains(e.target)) menu.setAttribute('hidden', '');
+  });
+}
+
+function injectAdminNav(me) {
+  if (!me || !me.is_admin) return;
+  const nav = document.querySelector('.sidebar-nav');
+  if (!nav || nav.querySelector('a[href="/users"]')) return;
+  const firstDivider = nav.querySelector('.sidebar-divider');
+  const frag = document.createDocumentFragment();
+  const divider = document.createElement('div'); divider.className = 'sidebar-divider'; frag.appendChild(divider);
+  const label = document.createElement('span'); label.className = 'sidebar-section'; label.textContent = 'Admin'; frag.appendChild(label);
+  const link = document.createElement('a');
+  link.href = '/users'; link.className = 'nav-item';
+  link.innerHTML = `<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> Users`;
+  if (window.location.pathname.startsWith('/users')) link.classList.add('active');
+  frag.appendChild(link);
+  if (firstDivider) nav.insertBefore(frag, firstDivider); else nav.appendChild(frag);
+}
+
+function installFetchAuthGuard() {
+  if (window.__arbiterFetchGuardInstalled) return;
+  window.__arbiterFetchGuardInstalled = true;
+  const orig = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await orig.apply(this, args);
+    try {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+      // Only redirect on UI pages; leave /v1/* API calls untouched.
+      if (res.status === 401 && !url.startsWith('/v1/') && !url.startsWith('/auth/')) {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const next = encodeURIComponent(window.location.pathname + window.location.search);
+          window.location.href = '/login?next=' + next;
+        }
+      }
+    } catch (_e) {}
+    return res;
+  };
+}
+
+async function initAuthUI() {
+  installFetchAuthGuard();
+  const me = await fetchAuthState();
+  if (me && me.authenticated) {
+    renderUserChip(me);
+    injectAdminNav(me);
   }
 }
 
@@ -128,5 +183,5 @@ async function initAuth() {
 document.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   applyTheme(getSavedTheme());
-  initAuth();
+  initAuthUI();
 });

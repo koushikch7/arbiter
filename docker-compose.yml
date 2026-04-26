@@ -11,6 +11,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./static:/app/static
+      - ./data:/app/data           # persistent state: users, custom providers, model toggles
     restart: unless-stopped
     environment:
       # Override REDIS_URL to use the compose service name regardless of .env

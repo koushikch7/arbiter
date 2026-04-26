@@ -107,6 +107,21 @@ PROVIDER_LIMITS = {
         "tpm":   500_000,     # no published TPM limit; sentinel
         "daily": 1_000,       # no published daily limit; conservative sentinel
     },
+    "routeway": {
+        # Routeway — unified gateway. Limits are not publicly documented in
+        # the provider docs; conservative sentinel values. Update after
+        # checking your Routeway dashboard.
+        "rpm":   60,          # sentinel — Routeway advertises "high throughput"
+        "tpm":   500_000,     # sentinel
+        "daily": 10_000,      # sentinel — mix of free + paid models
+    },
+    "custom": {
+        # Default limits for user-added custom OpenAI-compatible providers.
+        # Users can override per-provider in the UI in the future.
+        "rpm":   60,
+        "tpm":   500_000,
+        "daily": 10_000,
+    },
 }
 
 # Score weights

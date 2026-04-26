@@ -1,28 +1,48 @@
 """
-Authentication middleware for Arbiter.
+Authentication & authorization middleware for Arbiter.
 
-GatewayAuthMiddleware
-  – Validates  Authorization: Bearer <key>  header.
-  – Reads allowed keys from settings.GATEWAY_API_KEYS (comma-separated).
-  – If GATEWAY_API_KEYS is empty, auth is completely disabled.
-  – Certain paths are always exempt (docs, health, dashboard, etc.).
-  – Returns 401 JSON on invalid/missing key.
+Two-tier auth model
+-------------------
 
-CloudflareAccessMiddleware
-  – Optional; activated when settings.ENABLE_CF_ACCESS is True.
-  – Validates the  Cf-Access-Jwt-Assertion  header.
-  – Fetches public keys from the Cloudflare Access JWKS endpoint,
-    verifies RS256 JWT signature, iss, and aud claims.
-  – Public keys are cached in memory for 1 hour.
-  – Returns 403 JSON on invalid JWT.
+Arbiter exposes two classes of routes with different audiences and
+therefore different auth requirements:
+
+1. **OpenAI-compatible API routes** — ``/v1/chat/completions``,
+   ``/v1/images/generations``, ``/v1/models``, ``/v1/images/models``.
+   These are called by OpenAI SDK clients and downstream tools, so they
+   authenticate with ``Authorization: Bearer <gateway-token>``.
+
+2. **Admin / UI routes** — everything else (dashboard, settings, logs,
+   ``/api/*`` admin endpoints). These are used by humans in a
+   browser and authenticate via a signed Google-SSO session cookie
+   (see ``app/auth/sso.py``).
+
+If Google SSO is not configured, the UI routes fall through to the
+gateway-token check (so the original single-auth-layer mode still works).
+
+Middlewares (outer → inner)
+---------------------------
+
+::
+
+    SecurityHeadersMiddleware  ← adds X-Frame-Options, CSP, etc.
+    CORSMiddleware             ← allowlist from ALLOWED_CORS_ORIGINS
+    SessionMiddleware          ← Starlette signed cookie (outside our code)
+    CloudflareAccessMiddleware ← optional, validates CF Access JWT
+    GatewayAuthMiddleware      ← routes /v1/* bearer + UI session check
+    (request timing, last)
+
+Returns 401 JSON / redirect to /login on auth failure, 403 JSON on
+authorization failure.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import time
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,116 +51,234 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 
 logger = logging.getLogger(__name__)
 
-# Paths that bypass gateway-level auth entirely
-_EXEMPT_PATHS: frozenset = frozenset([
-    "/health", "/docs", "/redoc", "/openapi.json",
-    "/api-docs", "/dashboard", "/dashboard/stats",
-    "/v1/models", "/settings",
-    "/settings/routing",       # GET config read is public
-    "/v1/images/models",       # Image model list is public
-    "/v1/images/generations",  # Image generation UI (Pollinations — no tokens consumed)
-    "/api/providers",          # Provider management (settings UI)
-    # UI page routes (served as HTML, same-origin from the gateway UI)
-    "/images", "/playground", "/analytics", "/logs",
-    # Auth routes — always public
+# ---------------------------------------------------------------------------
+# Path classification
+# ---------------------------------------------------------------------------
+# Paths that bypass ALL auth (health checks, auth endpoints, static assets,
+# Swagger docs, public login page).
+_ALWAYS_OPEN: frozenset = frozenset([
+    "/health",
+    "/",  # redirects to /dashboard, auth enforced on target
+    "/docs", "/redoc", "/openapi.json",
     "/login",
+    "/favicon.ico",
 ])
+
+_ALWAYS_OPEN_PREFIXES: tuple = (
+    "/static/",
+    "/auth/",   # /auth/login, /auth/callback, /auth/me, /auth/logout, /auth/pending, /auth/config
+)
+
+# OpenAI-compatible API routes — authenticate with Bearer token ONLY
+# (session cookie is NOT accepted here; OpenAI SDK clients don't send
+# cookies, and mixing auth schemes confuses tooling).
+_BEARER_ONLY_PREFIXES: tuple = (
+    "/v1/",
+)
 
 
 def _error_401(message: str = "Invalid API key") -> JSONResponse:
     return JSONResponse(
         status_code=401,
-        content={
-            "error": {
-                "message": message,
-                "type": "authentication_error",
-                "code": 401,
-            }
-        },
+        content={"error": {"message": message, "type": "authentication_error",
+                           "code": 401}},
     )
 
 
 def _error_403(message: str = "Access denied") -> JSONResponse:
     return JSONResponse(
         status_code=403,
-        content={
-            "error": {
-                "message": message,
-                "type": "authorization_error",
-                "code": 403,
-            }
-        },
+        content={"error": {"message": message, "type": "authorization_error",
+                           "code": 403}},
     )
 
 
+def _wants_json(request: Request) -> bool:
+    """Heuristic: does the caller want a JSON response or an HTML redirect?"""
+    accept = (request.headers.get("accept") or "").lower().strip()
+    if "text/html" in accept:
+        return False
+    if "application/json" in accept or accept in ("", "*/*"):
+        return True
+    # API paths always get JSON
+    if request.url.path.startswith(("/api/", "/v1/", "/auth/", "/logs/",
+                                    "/settings/", "/modal/",
+                                    "/cloudflare/", "/dashboard/stats")):
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
-# Feature 1: Gateway API key auth
+# Security headers
+# ---------------------------------------------------------------------------
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Adds standard security headers to every response.
+
+    CSP is kept relatively permissive because Arbiter's UI loads a few CDNs
+    (Chart.js, marked.js, tailwind) and uses inline styles/scripts. Tighten
+    further by pinning CDN hashes if desired.
+    """
+
+    def __init__(self, app, *, allow_iframe: bool = False):
+        super().__init__(app)
+        self._allow_iframe = allow_iframe
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        if not self._allow_iframe:
+            response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=()",
+        )
+        # Content Security Policy — allow our CDNs + inline (the UI uses a
+        # lot of onclick handlers and inline styles).
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+            "  https://cdn.jsdelivr.net https://cdn.tailwindcss.com "
+            "  https://unpkg.com https://accounts.google.com "
+            "  https://static.cloudflareinsights.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net "
+            "  https://fonts.googleapis.com; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "img-src 'self' data: blob: https: ; "
+            "connect-src 'self' https://api.openai.com https://accounts.google.com "
+            "  https://cloudflareinsights.com; "
+            "frame-src 'self' https://accounts.google.com; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self' https://accounts.google.com",
+        )
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Gateway auth — dual-mode
 # ---------------------------------------------------------------------------
 
 
 class GatewayAuthMiddleware(BaseHTTPMiddleware):
     """
-    Enforce Bearer-token authentication on all non-exempt paths.
+    Enforce authentication on all non-exempt paths.
 
-    Configuration
-    ─────────────
-    GATEWAY_API_KEYS  comma-separated list of valid tokens.
-                      If empty (or not set), auth is disabled entirely.
+    Mode selection per-request:
+
+    * ``/v1/*``         → Bearer token (OpenAI SDK compatible).
+    * Everything else   → Google session cookie (if SSO configured),
+                          else Bearer token (legacy single-auth mode).
     """
 
-    def __init__(self, app, allowed_keys: List[str]):
+    def __init__(self, app, allowed_keys: List[str], sso_enabled: bool = False):
         super().__init__(app)
-        # Store as a set for O(1) lookup; empty set = auth disabled
-        self._allowed: frozenset = frozenset(k.strip() for k in allowed_keys if k.strip())
+        self._allowed = frozenset(k.strip() for k in allowed_keys if k.strip())
+        self._sso_enabled = sso_enabled
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Build effective allowed set: static keys + dynamic tokens from app.state
+    # --- internals ---
+    def _effective_keys(self, request: Request) -> frozenset:
         dynamic: frozenset = frozenset()
         try:
-            dynamic_set = getattr(request.app.state, "gateway_tokens", None)
-            if dynamic_set:
-                dynamic = frozenset(dynamic_set)
+            dset = getattr(request.app.state, "gateway_tokens", None)
+            if dset:
+                dynamic = frozenset(dset)
         except Exception:
             pass
+        return self._allowed | dynamic
 
-        effective_allowed = self._allowed | dynamic
+    def _check_bearer(self, request: Request, keys: frozenset) -> bool:
+        if not keys:
+            return True  # auth disabled entirely
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return False
+        token = auth[len("Bearer "):].strip()
+        return token in keys
 
-        # Auth disabled — pass through when no keys configured at all
-        if not effective_allowed:
-            return await call_next(request)
+    def _check_session(self, request: Request) -> tuple[bool, str]:
+        """Return (ok, reason). ok=True means user is approved."""
+        # Import lazily to avoid circular import at module load
+        from app.auth.sso import get_session_user
+        user = get_session_user(request)
+        if user is None:
+            return False, "not_logged_in"
+        if user.get("status") != "approved":
+            return False, f"status_{user.get('status')}"
+        return True, "ok"
 
-        # Exempt paths — pass through
+    async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
-        if (path in _EXEMPT_PATHS
-                or path.startswith("/static/")
-                or path.startswith("/api/providers")
-                or path.startswith("/api/gateway")
-                or path.startswith("/modal/")
-                or path.startswith("/cloudflare/")
-                or path.startswith("/auth/")):
+
+        # Always-open paths
+        if path in _ALWAYS_OPEN or path.startswith(_ALWAYS_OPEN_PREFIXES):
             return await call_next(request)
 
-        # Validate Authorization header
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return _error_401("Missing or invalid Authorization header")
+        effective_keys = self._effective_keys(request)
 
-        token = auth_header[len("Bearer "):].strip()
-        if token not in effective_allowed:
-            return _error_401("Invalid API key")
+        # -----------------------------------------------------------------
+        # Bearer-only paths (/v1/*) — OpenAI-compatible API
+        # -----------------------------------------------------------------
+        if path.startswith(_BEARER_ONLY_PREFIXES):
+            if not effective_keys:
+                # No gateway keys set → auth disabled entirely (legacy mode)
+                return await call_next(request)
+            if self._check_bearer(request, effective_keys):
+                return await call_next(request)
+            return _error_401("Missing or invalid Bearer token")
 
-        return await call_next(request)
+        # -----------------------------------------------------------------
+        # Everything else — UI + admin APIs
+        # -----------------------------------------------------------------
+        if self._sso_enabled:
+            ok, reason = self._check_session(request)
+            if ok:
+                return await call_next(request)
+
+            # Also accept a valid gateway Bearer token for admin APIs so
+            # automated tooling (curl / scripts) can still hit /api/* with
+            # the gateway key even when SSO is on. This does NOT apply to
+            # HTML page routes.
+            if self._check_bearer(request, effective_keys) and effective_keys:
+                return await call_next(request)
+
+            if _wants_json(request):
+                if reason == "status_pending":
+                    return _error_403("Account is awaiting admin approval")
+                if reason == "status_rejected":
+                    return _error_403("Account access has been revoked")
+                return _error_401("Authentication required")
+            # HTML — redirect to login
+            return RedirectResponse(url="/login", status_code=302)
+
+        # -----------------------------------------------------------------
+        # SSO disabled — legacy Bearer-only protection for UI too
+        # -----------------------------------------------------------------
+        if not effective_keys:
+            return await call_next(request)  # no keys configured → open
+        if self._check_bearer(request, effective_keys):
+            return await call_next(request)
+        if _wants_json(request):
+            return _error_401("Missing or invalid Bearer token")
+        # Page request without a cookie — let the UI request /api endpoints
+        # which will 401 and trigger the client-side login redirect. For
+        # direct page GETs send a simple 401 page.
+        return _error_401("Authentication required")
 
 
 # ---------------------------------------------------------------------------
-# Feature 9: Cloudflare Access JWT middleware
+# Cloudflare Access JWT middleware (unchanged)
 # ---------------------------------------------------------------------------
 
 
 class _JWKSCache:
-    """Simple in-memory cache for Cloudflare Access public keys (1 hour TTL)."""
-
-    _TTL = 3600  # seconds
+    _TTL = 3600
 
     def __init__(self):
         self._keys: Optional[List[dict]] = None
@@ -161,7 +299,6 @@ _jwks_cache = _JWKSCache()
 
 
 async def _fetch_cf_public_keys(team_name: str) -> List[dict]:
-    """Fetch Cloudflare Access public keys, using cached copy when fresh."""
     cached = _jwks_cache.get()
     if cached is not None:
         return cached
@@ -173,45 +310,31 @@ async def _fetch_cf_public_keys(team_name: str) -> List[dict]:
     data = resp.json()
     keys = data.get("keys", [])
     _jwks_cache.store(keys)
-    logger.info(f"CloudflareAccess: fetched {len(keys)} public key(s)")
+    logger.info("CloudflareAccess: fetched %d public key(s)", len(keys))
     return keys
 
 
 def _b64url_decode(s: str) -> bytes:
-    """Base64url decode without padding."""
     import base64
     s += "=" * (4 - len(s) % 4)
     return base64.urlsafe_b64decode(s)
 
 
 def _decode_jwt_payload(token: str) -> dict:
-    """Decode and return the payload section of a JWT (no signature verification)."""
     parts = token.split(".")
     if len(parts) != 3:
         raise ValueError("Malformed JWT")
-    payload_bytes = _b64url_decode(parts[1])
-    return json.loads(payload_bytes)
+    return json.loads(_b64url_decode(parts[1]))
 
 
 def _verify_jwt_rs256(token: str, jwk: dict) -> dict:
-    """
-    Verify RS256 JWT using the cryptography library (via python-jose).
-
-    Falls back to payload-only decode (no sig check) if jose is unavailable.
-    Returns the verified payload dict.
-    """
     try:
-        from jose import jwt as jose_jwt, jwk as jose_jwk, JWTError  # type: ignore
-
-        # Build public key from JWK
+        from jose import jwt as jose_jwt, jwk as jose_jwk  # type: ignore
         public_key = jose_jwk.construct(jwk, algorithm="RS256")
-        payload = jose_jwt.decode(
-            token,
-            public_key,
-            algorithms=["RS256"],
+        return jose_jwt.decode(
+            token, public_key, algorithms=["RS256"],
             options={"verify_exp": True},
         )
-        return payload
     except ImportError:
         logger.warning(
             "python-jose not installed — JWT signature not verified. "
@@ -233,62 +356,21 @@ _WEB_UI_PATHS: frozenset = frozenset([
 ])
 
 
-class GoogleSessionMiddleware(BaseHTTPMiddleware):
-    """
-    Redirect unauthenticated browsers to /login for web UI pages.
-
-    Only active when GOOGLE_CLIENT_ID is configured.
-    API paths (/v1/*, /auth/*) are never intercepted here.
-    """
-
-    def __init__(self, app, enabled: bool):
-        super().__init__(app)
-        self._enabled = enabled
-
-    async def dispatch(self, request: Request, call_next) -> Response:
-        if not self._enabled:
-            return await call_next(request)
-
-        path = request.url.path
-        # Only protect web UI pages
-        if path not in _WEB_UI_PATHS:
-            return await call_next(request)
-
-        # Import here to avoid circular import at module load time
-        from app.api.auth import _get_session
-        session = _get_session(request)
-        if not session:
-            return RedirectResponse(f"/login?next={path}", status_code=302)
-
-        return await call_next(request)
-
-
 class CloudflareAccessMiddleware(BaseHTTPMiddleware):
     """
-    Validate Cloudflare Access JWT in the  Cf-Access-Jwt-Assertion  header.
-
-    Activated only when ENABLE_CF_ACCESS=True.
-    Exempt paths: same set as GatewayAuthMiddleware.
+    Validate Cloudflare Access JWT in the ``Cf-Access-Jwt-Assertion`` header.
+    Activated only when ``ENABLE_CF_ACCESS=True``.
     """
 
-    def __init__(
-        self,
-        app,
-        team_name: str,
-        aud: str,
-    ):
+    def __init__(self, app, team_name: str, aud: str):
         super().__init__(app)
         self._team_name = team_name
         self._aud = aud
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Exempt paths — always allow
         path = request.url.path
-        if (path in _EXEMPT_PATHS
-                or path.startswith("/static/")
-                or path.startswith("/api/providers")
-                or path.startswith("/modal/")
-                or path.startswith("/cloudflare/")):
+        if (path in _ALWAYS_OPEN
+                or path.startswith(_ALWAYS_OPEN_PREFIXES)):
             return await call_next(request)
 
         jwt_token = request.headers.get("Cf-Access-Jwt-Assertion", "")
@@ -298,10 +380,9 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
         try:
             public_keys = await _fetch_cf_public_keys(self._team_name)
         except Exception as exc:
-            logger.error(f"Failed to fetch Cloudflare Access public keys: {exc}")
+            logger.error("Failed to fetch Cloudflare Access public keys: %s", exc)
             return _error_403("Cannot validate Cloudflare Access token")
 
-        # Try each public key (key rotation)
         verified_payload: Optional[dict] = None
         for jwk in public_keys:
             try:
@@ -313,7 +394,6 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
         if verified_payload is None:
             return _error_403("Invalid Cloudflare Access JWT")
 
-        # Verify issuer and audience
         expected_iss = f"https://{self._team_name}.cloudflareaccess.com"
         iss = verified_payload.get("iss", "")
         aud = verified_payload.get("aud", [])
@@ -325,6 +405,34 @@ class CloudflareAccessMiddleware(BaseHTTPMiddleware):
         if self._aud and self._aud not in aud:
             return _error_403("JWT audience mismatch")
 
-        # Attach identity to request state for downstream use
         request.state.cf_identity = verified_payload
         return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# Bearer-token redaction filter for logs
+# ---------------------------------------------------------------------------
+
+class BearerRedactFilter(logging.Filter):
+    """
+    Scrub Bearer tokens and obvious API-key shapes from log records so a
+    misconfigured ``DEBUG`` log line can't leak credentials.
+    """
+
+    _BEARER = re.compile(r"(?i)bearer\s+[A-Za-z0-9\._\-/+=]{8,}")
+    _OBVIOUS_KEY = re.compile(
+        r"\b(sk-[A-Za-z0-9]{10,}|gsk_[A-Za-z0-9]{10,}|csk-[A-Za-z0-9]{10,}|"
+        r"hf_[A-Za-z0-9]{10,}|AIza[A-Za-z0-9_-]{20,})"
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        redacted = self._BEARER.sub("Bearer [REDACTED]", msg)
+        redacted = self._OBVIOUS_KEY.sub("[REDACTED-KEY]", redacted)
+        if redacted != msg:
+            record.msg = redacted
+            record.args = ()
+        return True

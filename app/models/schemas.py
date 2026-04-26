@@ -20,6 +20,28 @@ class ChatCompletionRequest(BaseModel):
     top_p: float = 1.0
     stop: Optional[list] = None
 
+    # ── Arbiter routing controls (non-OpenAI extensions, all optional) ──
+    fallback: Optional[str] = Field(
+        default=None,
+        description=(
+            "Arbiter v1.12+. Fallback policy when caller pins a specific model. "
+            "'none' (default): strict pin, return 502 if it fails. "
+            "'same_provider': try other models on the same provider. "
+            "'chain': cross-provider capability-matched fallback via auto-router."
+        ),
+        examples=["none", "same_provider", "chain"],
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Arbiter v1.12+. Optional routing metadata. Recognised keys: "
+            "'arbiter_intent' (code|reasoning|long-context|vision|creative|fast|balanced) — "
+            "force intent classification; "
+            "'priority' (speed|quality|balanced) — auto-routing scoring bias; "
+            "'prefer_provider' (provider name) — boost a provider in auto routing."
+        ),
+    )
+
     model_config = {"extra": "allow"}
 
 

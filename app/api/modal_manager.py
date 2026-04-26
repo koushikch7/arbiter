@@ -21,12 +21,13 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.api.users_api import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/modal", tags=["Modal"])
+router = APIRouter(prefix="/modal", tags=["Modal"], dependencies=[Depends(require_admin)])
 
 _REDIS_KEY = "arbiter:modal:endpoints"   # JSON list of endpoint dicts
 

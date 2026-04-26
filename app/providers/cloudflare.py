@@ -85,7 +85,10 @@ class CloudflareProvider(BaseProvider):
         in the supported list.
         """
         account_id, api_token = _split_key(api_key)
-        model = request.model if request.model in self.models else self.default_model
+        # Honour explicit model pins (router has already validated/curated).
+        # Fall back to default only when caller passes empty / "auto".
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         url = _CF_API_BASE.format(account_id=account_id)
 

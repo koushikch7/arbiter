@@ -6,60 +6,250 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.12.0] – 2026-04-01 (Latest)
+## [1.12.1] – 2026-04-26 (Latest) — Security Hardening
 
-### 🐛 Analytics & Dashboard Data Fixes
+### 🔒 Repository-Publish Hardening
 
-- **Fixed provider/model stats not appearing** — `_InMemoryRedis` (the local-dev fallback when Redis is unavailable) was missing a `keys()` method. Analytics and dashboard both call `redis.keys("arbiter:stats:provider:*:success")` and `redis.keys("arbiter:stats:model:*:requests")` to enumerate stats; without this method the calls failed silently and returned empty lists. Added `async def keys(self, pattern)` using `fnmatch` — identical to the existing `scan_iter` logic but returning a list.
-- **Fixed avg latency always showing 0** — `analytics_api.py` reads `arbiter:stats:latency:{provider}:sum/count` but `router.py` never wrote these keys. Added `time.perf_counter()` measurement around `provider.complete()` and two new `_incrby/inc` calls for `:sum` and `:count` on the success path.
+Comprehensive security review prior to making the repository public.
 
-### 🔐 Google OAuth2 Login
+- **Hardened `.gitignore`**: now covers `.env*` (with `.env.example` whitelist), `*.pem`, `*.key`, `secrets/`, `credentials.json`, `service-account*.json`, `.modal/`, `data/` (runtime state), `__pycache__/`, `*.py[cod]`, `.venv/`, `.idea/`, `.vscode/`, `*.log`, `*.bak`, `TEST-REPORT-*.md`. Previously only 3 lines.
+- **Added `.dockerignore`**: prevents `.env`, `.git/`, `__pycache__/`, runtime `data/`, virtualenvs and IDE files from being baked into the Docker image build context.
+- **Secret scan (clean)**: tracked tree and full `git log -p` history scanned for the live key patterns of every supported provider (`AIzaSy…`, `gsk_…`, `sk-or-v1-…`, `csk-…`, `hf_…`, `nvapi-…`, `ak-…`, `as-…`, `sk_…`) — zero hits. `.env.example` contains placeholder strings only.
 
-- **Optional Google login** — when `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` are set in `.env`, the web UI (dashboard, analytics, settings, playground, logs, images, api-docs) requires users to sign in with their Google account. API endpoints (`/v1/*`) are unaffected — they still use Bearer token auth.
-- **New endpoints**: `GET /login` (sign-in page), `GET /auth/login` (redirect to Google), `GET /auth/callback` (OAuth2 code exchange), `GET /auth/logout` (clear session), `GET /auth/me` (current user JSON)
-- **Session tokens**: signed HS256 JWT stored in an `HttpOnly` cookie (`arbiter_session`), 24-hour TTL. Secret set via `SESSION_SECRET` env var (auto-generated per process if not set — set it explicitly so sessions survive restarts)
-- **Email/domain allowlisting**: `GOOGLE_ALLOWED_EMAILS` and `GOOGLE_ALLOWED_DOMAINS` let you restrict access to specific users or organizations. Both empty = any Google account can sign in.
-- **User info in sidebar**: after sign-in, user avatar, name, and email appear in the sidebar footer with a sign-out button.
-- **New `GoogleSessionMiddleware`** in `app/middleware/auth.py` intercepts web UI paths and redirects unauthenticated browsers to `/login`. Skipped entirely when Google OAuth is not configured.
-- **New files**: `app/api/auth.py`, `static/login.html`
-- **Updated**: `app/config.py` (new settings), `.env.example` (new vars with setup instructions), `static/arbiter.js` (`initAuth()` function)
+### 🔐 RBAC — Admin-only Configuration Endpoints
+
+All endpoints that mutate provider keys, routing config, gateway tokens, infrastructure (Cloudflare/Modal) or preferences are now gated by `Depends(require_admin)`. Non-admin authenticated users get **403**; unauthenticated requests get **401**.
+
+| Endpoint family                     | Admin-only methods                    |
+| ----------------------------------- | ------------------------------------- |
+| `/api/providers/*`                  | POST/DELETE keys, enable/disable, test, reload |
+| `/api/gateway/tokens/*`             | All methods (router-level dep)        |
+| `/api/preferences/auto-route`       | PUT, /reset                           |
+| `/settings/routing`, `/settings/cache` | POST, DELETE                       |
+| `/cloudflare/*`, `/modal/*`, `/modal/deploy/*` | All methods (router-level dep) |
+
+Read-only listing endpoints remain available to approved users.
+
+### ✅ Verification
+
+- 7/7 auto-routing tests still passing post-change.
+- Free-tier catalog audit: **55 free models across 12 providers**, 8 vision-capable specs (Gemini 2.5 Flash-Lite, Llama-4-Scout × 2, Mistral Small 3.1 × 2, Gemma-3 12B/27B).
+- Container rebuilt clean: `docker compose down && docker compose up -d --build`.
+- Curl-tested: `/api/users`, `/api/providers/{p}/keys`, `/settings/routing`, `/api/preferences/auto-route`, `/api/gateway/tokens`, `/cloudflare/workers/*` all return 401 unauthenticated.
 
 ---
 
-## [1.11.0] – 2026-03-31
+## [1.12.0] – 2026-04-26
 
-### 🔄 Pollinations API Migration
+### 🚀 Smart Auto-Routing — `model="auto"`
 
-- **Endpoint changed**: `text.pollinations.ai/openai` → `gen.pollinations.ai/v1/chat/completions`
-- **Authentication now required** — Pollinations moved from anonymous/free to key-based access; obtain a free `sk_` or `pk_` key at [enter.pollinations.ai](https://enter.pollinations.ai/)
-- **New model list**: `openai`, `openai-fast`, `openai-large`, `claude`, `claude-fast`, `claude-large`, `gemini`, `gemini-fast`, `mistral`, `deepseek`, `qwen-coder`
-- **Default model** changed from `mistral` → `openai` (old `mistral` endpoint no longer available)
-- Updated `keys_api.py`: added `POLLINATIONS_API_KEYS` to `_ENV_VAR_MAP`, updated provider meta (`key_hint: sk_... or pk_...`, `signup_url: enter.pollinations.ai`), removed "no key required" special cases from `_read_env_keys`, `list_providers`, and `add_key`
-- Updated `.env.example` to include `POLLINATIONS_API_KEYS=your-pollinations-sk_key` (was intentionally omitted)
+Arbiter now classifies the incoming prompt and picks the best free-tier model for the job, automatically.  No LLM call, no extra latency (<1ms heuristic classifier).  Fully overridable per-request and per-deployment.
 
-### 🔧 Modal Deployment Fixes
+#### New Components
 
-- **Tokenizers infinite restart loop fixed** — `pip install 'tokenizers==0.20.3'` was being overridden by `vllm`'s transitive dependencies after the image build; changed to `pip install --force-reinstall 'tokenizers==0.20.3'` to guarantee the version sticks after vLLM install
-- **Fixed stale imports** in `modal_deploy.py` auto-registration code — `_redis_keys` and `_save_redis_keys` (removed in v1.10.0 refactor) were still being imported in two places; replaced with `_read_env_keys` / `_write_env_keys`
+- **[app/providers/_free_tier_catalog.py](app/providers/_free_tier_catalog.py)** — single source of truth for all 11 free-tier providers.  Each model is described by a `ModelSpec` with capability tags (`code`, `reasoning`, `long-context`, `vision`, `creative`, `fast`, `balanced`, `large`), modality (`text`/`vision`/`multimodal`), context window, RPM/RPD quota, quality (1–5), and speed (1–5).  Replaces the previous 200-line hardcoded `VENDOR_MODEL_HIERARCHY` block — that dict is now derived from the catalog at import time.  A separate `PAID_FALLBACK_CATALOG` lists Routeway paid models for opt-in fallback.
+- **[app/routing/intent_classifier.py](app/routing/intent_classifier.py)** — pure-Python regex/keyword heuristic that maps a request to one of seven intents: `code`, `reasoning`, `long-context`, `vision`, `creative`, `fast`, `balanced`.  Inputs considered (in priority order): explicit `metadata.arbiter_intent` hint → multimodal image part → token-count threshold (>16K → long-context) → code-fence regex → keyword scoring (code keywords weighted 2×) → length fallback.
+- **[app/routing/auto_router.py](app/routing/auto_router.py)** — scoring engine that returns an ordered `List[(provider, model_id)]` chain.  Score formula: `cap_score (40 - rank·8) + quality·priority_weight + speed·priority_weight + intent_pref_score`.  Hard filters: vision intent requires `multimodal`/`vision` modality; context window must fit prompt with 10% margin.  Honours user preferences (`prefer_providers`, `avoid_providers`, per-intent model lists, `allow_paid_fallback`) and the model-enabled state from `state_store`.
+- **[app/api/preferences_api.py](app/api/preferences_api.py)** — admin-gated REST surface at `/api/preferences/auto-route` (GET / PUT / POST `…/reset`).  Persists to `data/arbiter_state.json` via the existing file-locked `state_store`.
 
-### 📊 Analytics Page — Full Rebuild
+#### New Request Fields & Headers
 
-- **6 KPI cards** with animated count-up counters and mini progress bars: Total Requests, Success Rate, Cache Hit Rate, Avg Latency, Tokens Consumed, Active API Keys
-- **5 Chart.js charts**:
-  - Request History (area chart, 4 h of 5-min buckets, 3 datasets: requests/success/errors)
-  - Provider Distribution (donut chart with brand colors)
-  - Avg Latency by Provider (horizontal bar, gradient fill)
-  - Token Consumption by Provider (horizontal bar, purple gradient)
-  - Error Rate Trend (area line chart)
-- **Key Health Matrix** — one card per provider showing live quota usage for each configured API key:
-  - RPM, TPM, and Daily usage bars with color thresholds (green <60%, yellow <85%, red ≥85%)
-  - Per-key status badge (active/limited/exhausted/failed), health score percentage
-  - Pulsing status dot (green=healthy, yellow=degraded, red=unavailable)
-- **Provider Breakdown table** — requests, success, errors, rate-limits, success rate bar, avg latency
-- **Model Breakdown table** — adds tokens/req column, FREE tier badge
-- **Error Analysis section** — error trend chart + ranked list of most error-prone models
-- Extended analytics history window from 20 → 48 buckets (last 4 hours)
-- Analytics API (`/analytics/data`) now returns `key_pools`, `token_by_provider`, `total_tokens`, `active_keys`, `configured_keys`
+- `body.model = "auto"` (or empty) — engages the auto-router.
+- `body.fallback`: `"none"` (default; preserves the strict-pin contract from v1.11.2), `"same_provider"` (walk other models on the pinned provider), or `"chain"` (cross-provider fallback via auto-router).
+- `body.metadata`: free-form dict; recognised keys are `arbiter_intent`, `priority`, `prefer_provider`, `opt_in_paid`.
+- Request headers: `X-Arbiter-Priority: speed|quality|balanced`, `X-Arbiter-Prefer-Provider: <name>`, `X-Arbiter-Fallback: none|same_provider|chain` — useful for OpenAI-SDK callers that can't set body extras.
+- Response header: `X-Arbiter-Model-Used: <provider>/<model>` — the actual pair that fulfilled the request.
+
+#### Router Changes
+
+- **[app/routing/router.py](app/routing/router.py)** — `route()` now builds a single unified `(provider, model)` candidate chain via `_build_candidate_chain()` instead of nested provider-order × model-hierarchy loops.  Three modes: vendor-pinned (only that vendor) · auto (`auto_candidate_chain`) · explicit-model (strict pin by default; honours `fallback`).  The chosen pair is stamped onto the response object so `chat.py` can echo it via the `X-Arbiter-Model-Used` header.
+
+#### State Store
+
+- **[app/state_store.py](app/state_store.py)** — extended `_DEFAULT_STATE` with `auto_route_preferences` (priority, prefer/avoid lists, six per-intent preference lists, `allow_paid_fallback`).  New helpers `get_auto_route_preferences()` and `update_auto_route_preferences()` validate enum/shape, dedupe, merge, and persist atomically.
+
+#### UI
+
+- **[static/settings.html](static/settings.html)** — new **Auto Routing** tab with priority dropdown, paid-fallback opt-in, prefer/avoid provider inputs, and an advanced collapsible panel for per-intent model preferences.  Live-saves to `/api/preferences/auto-route`.
+
+#### Validation
+
+- **[scripts/test_auto_routing.py](scripts/test_auto_routing.py)** — sends one prompt per intent (`code`, `reasoning`, `long-context`, `creative`, `fast`, `balanced`, `vision`) with `model="auto"` and asserts the `X-Arbiter-Model-Used` header points at a model that owns the expected capability tag.  Live result on this deployment: **7/7 pass**.
+  - code → `cerebras/qwen-3-235b-a22b-instruct-2507`
+  - reasoning → `cerebras/qwen-3-235b-a22b-instruct-2507`
+  - long-context → `groq/llama-3.3-70b-versatile`
+  - creative → `cerebras/qwen-3-235b-a22b-instruct-2507`
+  - fast → `gemini/gemini-2.5-flash-lite`
+  - balanced → `groq/llama-3.3-70b-versatile`
+  - vision → `cloudflare/@cf/meta/llama-4-scout-17b-16e-instruct`
+
+#### Compatibility
+
+- **Strict-pin contract preserved**: explicit `model="…"` with no `fallback` field still uses *only* that model (the v1.11.2 fix).  Fallback is opt-in.
+- **Existing `/v1/chat/completions` semantics unchanged** for callers that don't set `model="auto"`, `fallback`, `metadata`, or any of the new headers.
+
+---
+
+
+
+### ✨ New Provider — Ollama Cloud
+
+- **Ollama Cloud added as an 11th provider** — free personal API key at <https://ollama.com/settings/keys> grants access to 6 large open-weight MoE models through an OpenAI-compatible endpoint (no billing required, server-side rate limits apply).  Models added to the free-first hierarchy (slot between `pollinations` and `routeway`):
+  - `gpt-oss:20b-cloud` · 131K ctx · default
+  - `glm-4.6:cloud` · 128K ctx
+  - `minimax-m2:cloud` · 192K ctx
+  - `qwen3-coder:480b-cloud` · 256K ctx · coding specialist
+  - `gpt-oss:120b-cloud` · 131K ctx · flagship
+  - `deepseek-v3.1:671b-cloud` · 164K ctx
+
+  Implementation: [app/providers/ollama_provider.py](app/providers/ollama_provider.py).  Wired through [app/config.py](app/config.py), [app/main.py](app/main.py), [app/api/keys_api.py](app/api/keys_api.py) (‘Ollama Cloud’ card in Settings), and [app/routing/router.py](app/routing/router.py) (hierarchy + default order).  `kimi-k2:1t-cloud` excluded — Ollama upstream returns 500 Internal Server Error consistently.
+
+### 🐛 Bug Fixes
+
+- **Systemic silent-default-substitution removed across 8 providers** — discovered via end-to-end audit: Gemini, Groq, OpenRouter, Cohere, Cloudflare, Cerebras, Z.ai, and Lightning all silently rewrote `request.model` to `self.default_model` whenever the requested ID wasn't in their hardcoded `self.models` list.  Combined with the cross-provider fallback chain, an unknown / mistyped model would walk through every provider's default until one of them returned 200 — so the caller's pin was completely ignored and the response came from a totally different model.  All eight providers now pass the explicit model through verbatim and only fall back to `default_model` for `"auto"` or empty.  This is the same fix previously applied to HuggingFace, now standardised everywhere.  Verified by `curl -d '{"model":"nonexistent/model",...}'` → returns HTTP 502 with clear "All providers/models/keys failed for model='nonexistent/model'" instead of silently returning gemini-2.5-flash-lite.
+- **Explicit model selection now pins exactly** — when the caller named a specific model (e.g. Playground selected the 4th entry in a list), the router's `_model_hierarchy` used a substring-bubble (`requested in m OR m in requested`) that caused false matches (e.g. `gpt-4o` matched `gpt-4o-mini`) and silently fell through to other entries on the first failure. The router now returns a **single-entry hierarchy** for any exact match and passes unknown caller-specified models through as-is. Only the sentinel `"auto"` (or empty model field) triggers the full free-first fallback chain. Fixes: "selected 4th model but response came from 1st/default".
+- **HuggingFace provider silently substituted the default model** — if the requested model wasn't in the hardcoded `self.models` list the provider rewrote it to `default_model` before calling HF Router, so every call returned a single model regardless of selection. Removed the rewrite; any model the caller explicitly names is now forwarded to HF verbatim.
+- **Pollinations 502 behind Cloudflare** — Pollinations sits behind Cloudflare, which returns **502 Bad Gateway** to bare `httpx/0.x` User-Agent. Added `User-Agent: Arbiter/1.11.2 (+https://github.com/)` to the provider's HTTP client. Also dropped the deprecated legacy model aliases — only `openai-fast` (GPT-OSS 20B on OVH) is reliably reachable anonymously.
+- **Routeway 503 no longer cooldown-cascades the whole key** — a single model returning `503` (upstream "no eligible providers") previously raised `RateLimitError`, which cooldowned the shared Routeway API key for 300s and knocked out all 15 `:free` models. 503s (status and in-body `code==503`) now raise `ProviderError` instead, so only that model is skipped and the other free models on the same key stay reachable.
+
+### 🧹 Model Cleanup (verified via live probe × 2)
+
+Pruned consistently-broken models from every provider's fallback hierarchy and default seed lists. Transient-upstream failures were left in place per the "if it's temporary it's fine" rule.
+
+| Provider       | Removed                                                                                                                           | Kept |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------|------|
+| **Gemini**     | `gemini-3.1-flash-lite-preview`, `gemini-3-flash-preview`, `gemini-2.5-flash`                                                     | `gemini-2.5-flash-lite` (1 working) |
+| **Groq**       | `moonshotai/kimi-k2-instruct{,-0905}` (returned `model_not_found`)                                                                | 6 working |
+| **OpenRouter** | `meta-llama/llama-3.3-70b-instruct:free` (Venice upstream chronically 429)                                                        | 6 working (same model kept on Routeway) |
+| **Cloudflare** | `@cf/moonshot/kimi-k2.5`, `@cf/qwen/qwen3-30b-a3b-fp8`, `@cf/deepseek/deepseek-r1-distill-qwen-32b`                                | 8 working |
+| **Cerebras**   | `gpt-oss-120b`, `zai-glm-4.7` (not in Cerebras free-tier catalogue)                                                                | 2 working |
+| **HuggingFace**| `mistralai/Mistral-7B-Instruct-v0.3`, `HuggingFaceH4/zephyr-7b-beta`, `google/gemma-2-2b-it` (no HF-Router provider)               | 4 working (now includes Llama 3.1 8B, Llama 3.2 1B, GPT-OSS 20B) |
+| **Pollinations**| legacy `mistral`, `mistral-large`, `openai`, `claude` aliases (deprecated)                                                        | `openai-fast` (1 working) |
+| **Routeway**   | `gpt-oss-120b:free`, `gemma-4-31b-it:free`, `kimi-k2-0905:free`, `glm-4.5-air:free`, `minimax-m2:free`, `nemotron-3-nano-30b-a3b:free` | 9 free + 7 paid fallback |
+
+Final live probe result: **100% OK on Gemini, Groq, Cohere, Cloudflare, Cerebras, HuggingFace, Pollinations**; OpenRouter and Routeway free models work in isolation but currently show upstream rate-limits (RATE, not failure) that recover automatically.
+
+### 📝 Infrastructure
+
+- `scripts/test_curated_models.py` — probe harness that exercises every curated `(provider, model)` pair against the live gateway and categorises each as `OK | RATE | FAIL`. Re-run after any hierarchy change.
+
+---
+
+## [1.11.1] – 2026-04-24
+
+### ✨ Free-Tier First Strategy
+
+- **Routeway free models added by default** — Routeway tags 15 zero-cost models with a `:free` suffix (verified via their `/v1/models` pricing API: `price_per_million_t == 0`). These are now the default seed list for the Routeway provider and occupy the top slots of its fallback hierarchy, so unbilled accounts can use Routeway out-of-the-box without credits. Paid models (`gpt-4o`, `claude-3-5-sonnet`, etc.) remain available as last-resort fallback. Free models included: `llama-3.3-70b-instruct:free`, `gpt-oss-120b:free`, `kimi-k2-0905:free` (256K ctx), `glm-4.5-air:free`, `minimax-m2:free`, `devstral-2512:free`, `ling-2.6-flash:free`, `step-3.5-flash:free`, `gemma-4-31b-it:free`, `nemotron-3-nano-30b-a3b:free`, `nemotron-nano-9b-v2:free`, `llama-3.1-8b-instruct:free`, `llama-3.2-3b-instruct:free`, `llama-3.2-1b-instruct:free`, `mistral-nemo-instruct:free`.
+- **Provider order documented as free-first** — `_DEFAULT_PROVIDER_ORDER` in `app/routing/router.py` now carries inline annotations confirming the priority: Gemini → Groq → Cerebras → Z.ai → Cloudflare → OpenRouter → Cohere → HuggingFace → Pollinations → Routeway → Lightning. Paid-only providers (Lightning) are unconditionally last so zero-cost traffic hits free providers first.
+- **Routeway default model** changed from `gpt-4o-mini` (paid, 402 without credits) to `llama-3.3-70b-instruct:free` (free tier).
+
+### 🐛 Bug Fixes
+
+- **500 / AssertionError on every UI request when SSO enabled** — Starlette wraps the latest-added middleware as the OUTERMOST layer, so the previous ordering (SessionMiddleware added before GatewayAuthMiddleware) meant GatewayAuth ran *before* Session had populated `request.scope["session"]`, raising `AssertionError: SessionMiddleware must be installed to access request.session` on the first UI hit. Swapped the registration order in `app/main.py` and added a defensive `"session" in request.scope` guard in `get_session_user()` so future reorderings can't resurrect this bug.
+- **Login page wrongly showed "Google SSO is not configured" even when it was** — `static/login.html` read `cfg.enabled` but `/auth/config` returns `{"sso_enabled": true, ...}`. Field-name mismatch caused the warning to always appear. Login page now accepts both keys.
+- **Playground "Auto (Smart Route)" endpoint** — the playground used to force-pin a single vendor via `?vendor=X` on every request, so when that vendor's keys were on cooldown (e.g. Routeway 402 "Insufficient funds", OpenRouter 429) the request 502'd with no fallback. Added a new top-level **⚡ Auto (Smart Route)** option that omits `?vendor=` and lets Arbiter's router pick the healthiest available provider (exactly what Arbiter is designed for).
+- **Misleading 502 "Last error: None"** — when every candidate provider's keys were already on cooldown, the router never attempted a call, so `last_error` stayed `None` and clients saw an empty/useless detail. Router now surfaces a clear `"All keys for provider(s) [...] are currently on cooldown or daily-quota exhausted..."` message.
+- **Cooldown-exhaustion now returns HTTP 503** (not 502) — when the failure is "every key is resting" rather than an actual bad upstream response, 503 Service Unavailable is the accurate status code. Makes retries and monitoring more sensible.
+- **Routeway / Z.ai missing in Settings UI** — backend was wired correctly, but `PROVIDER_COLORS` and `PROVIDER_DESCS` dicts in `static/settings.html` were missing both providers, so cards rendered with fallback color and no description. Added both entries.
+- **Login never prompted** — `.env` had no Google OAuth credentials or `SESSION_SECRET_KEY`, so middleware correctly fell through to open mode. Added a Google SSO block to `.env` with a pre-generated `SESSION_SECRET_KEY`; user only needs to fill `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET`.
+- **`_wants_json()` chained-comparison bug** in `app/middleware/auth.py` — `"*/*" in accept == accept.strip()` was accidentally using Python chained comparison. Replaced with explicit `accept in ("", "*/*")`.
+
+### 🧹 Cleanup
+
+- **Removed Analytics page** — data was fully redundant with the Dashboard. Deleted `static/analytics.html`, `app/api/analytics_api.py`, the `/analytics` route in `dashboard.py`, the `include_router(analytics_router, …)` line in `main.py`, the sidebar nav link, and the `/analytics/` entry in `_wants_json`.
+
+### 🔐 Security Hardening
+
+- **Admin-gated mutating admin endpoints** — added `Depends(require_admin)` on all Custom Providers write/test/probe routes (`POST`, `PATCH`, `DELETE`, `/test`, `/probe`) and on the Models `/refresh` + `/{model_id}/toggle` endpoints. Previously these were only protected by the global gateway middleware, meaning any approved non-admin Google user could add/remove providers once SSO was on.
+- **Session cookie Secure flag enabled by default in prod `.env`** (`SESSION_COOKIE_SECURE=true`).
+- **CORS allowlist pinned** — `.env` now defaults to `ALLOWED_CORS_ORIGINS=https://arbiter.chkoushik.com`; wildcard continues to be rejected when SSO is on.
+
+### 📝 Docs
+
+- `TEST-REPORT-v1.11.1.md` — full audit covering requirements coverage, security checklist, performance review, and smoke-test curls.
+
+---
+
+## [1.11.0] – 2026-04-23
+
+### 🚀 New Provider — Routeway
+
+- Added **Routeway** provider (`app/providers/routeway.py`) — OpenAI-compatible inference gateway at `https://api.routeway.ai/v1`
+- Bearer-token auth, dynamic model discovery via `GET /models`, proper handling of 429 (retry-after) and 402 (quota)
+- Wired through `VENDOR_MODEL_HIERARCHY`, `_DEFAULT_PROVIDER_ORDER`, `PROVIDER_LIMITS`, `_ENV_VAR_MAP`, `_PROVIDER_META`, free-tier table
+- New env var: `ROUTEWAY_API_KEYS` (comma-separated; multi-key rotation supported)
+
+### 🧩 Custom Providers — Add from the UI
+
+- New **Custom Providers** tab in Settings with preset templates (OpenAI, Anthropic, DeepSeek, Together, Fireworks, Mistral, Perplexity, fully custom)
+- `GenericOpenAIProvider` — instance-configured provider supporting both **Bearer** and **Anthropic (x-api-key + /messages)** auth schemes
+- API surface (`/api/custom-providers`):
+  - `GET  /templates`     — list preset templates
+  - `GET  /`              — list configured custom providers
+  - `POST /`              — add a new provider
+  - `POST /probe`         — test connectivity without persisting
+  - `POST /{name}/test`   — run a live probe against an existing provider
+  - `PATCH /{name}`       — update label / key / models / base URL
+  - `DELETE /{name}`      — remove provider and its API key
+- **SSRF protection** — base URL is validated with `ipaddress`; rejects `localhost`, `127.0.0.1`, link-local, private IP ranges, and `metadata.google.internal`
+- API keys persisted to `.env` as `CUSTOM_PROVIDER_<NAME>_KEY`; the rest of the config lives in `data/arbiter_state.json`
+- Custom providers are hot-loaded at startup via `load_custom_providers_to_app()` — no restart needed after adding one
+
+### 🔄 Dynamic Model Discovery — Manual Refresh
+
+- `BaseProvider.fetch_models()` optional method lets any provider expose its live catalogue
+- Per-provider **Refresh from provider** button on the Models tab calls `POST /api/models/{provider}/refresh`
+- Per-model enable/disable state tracked in `data/arbiter_state.json`
+  - Free-tier providers default-enable discovered models
+  - Paid-tier discoveries are added as disabled until an admin enables them (quota safety)
+- Router `_model_hierarchy()` filters out disabled models; `/v1/models` and `/api/models/info` merge state-store data over the static hierarchy
+- **No Redis**, **no periodic polling** — refresh is strictly user-initiated (per user preference: "Redis causes cache issues")
+
+### 🔐 Google SSO + Security Hardening
+
+- **Google OAuth 2.0 sign-in** via Authlib for the admin dashboard and all UI pages
+- Dual-mode auth:
+  - `/v1/*` endpoints — Bearer-token only (unchanged for API clients)
+  - Everything else — Google session cookie; unauthenticated HTML visits are redirected to `/login`, JSON requests receive `401`
+- **Approval workflow** — first sign-in from the configured `ADMIN_EMAIL` is auto-approved and marked admin; all other users land in `pending` until an admin approves via `/users`
+- `session_version` field on every user → rejecting or deleting a user **revokes their session immediately** on the next request
+- New middleware stack (applied in order):
+  1. `SecurityHeadersMiddleware` — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, strict `Referrer-Policy`, tight `Permissions-Policy`, full `Content-Security-Policy`
+  2. `CORSMiddleware` — **allowlist** (`ALLOWED_CORS_ORIGINS`); wildcard `*` is rejected when SSO is on
+  3. `SessionMiddleware` (signed cookies, HttpOnly, SameSite=lax, `Secure` in production)
+  4. `CloudflareAccessMiddleware` (unchanged)
+  5. `GatewayAuthMiddleware` (rewritten, dual-mode)
+- `BearerRedactFilter` — log formatter that regex-scrubs `Authorization: Bearer …`, `sk-…`, `gsk_…`, `csk-…`, `hf_…`, `AIza…` tokens before they hit stdout
+- New env vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `ADMIN_EMAIL`, `APP_BASE_URL`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE`, `SESSION_MAX_AGE`, `ALLOWED_CORS_ORIGINS`
+- `/auth/config`, `/auth/me`, `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/pending` routes
+- `/api/users` admin API (list / approve / reject / delete / pre-approve) protected by `require_admin` dependency; admin cannot self-lock-out
+
+### 🗂️ State Store (Disk-backed, No Redis)
+
+- New `app/state_store.py` — JSON-on-disk at `data/arbiter_state.json` with `filelock` + atomic temp-file+rename writes
+- Schema: `{version, users[], custom_providers[], models{provider → {model_id → {enabled, discovered_at, is_free, …}}}}`
+- `data/` directory mounted as a docker volume so state survives `docker compose down`
+
+### 🎨 UI
+
+- New `/login` — branded Google sign-in page that detects SSO disabled state
+- New `/users` — admin-only user management (pending / approved / rejected + pre-approve form)
+- Topbar **user chip** with avatar, email, admin badge, Manage-users link, and Sign out — auto-injected into every page by `arbiter.js`
+- Admin-only **Users** nav item auto-injected into the sidebar for admins
+- Global fetch guard redirects to `/login?next=…` on 401 for UI JSON responses
+- Added "Custom Providers" tab + "Refresh from provider" per-provider button in Models tab
+
+### 🔧 Dependencies
+
+- `authlib==1.3.2` (Google OAuth)
+- `itsdangerous==2.2.0` (session cookie signing)
+- `filelock==3.16.0` (state store concurrency)
+
+### ⚠️ Breaking Changes
+
+- **CORS** — if `GOOGLE_OAUTH_CLIENT_ID` is set, `ALLOWED_CORS_ORIGINS=*` is rejected at startup; set an explicit origin list
+- **UI 401 behaviour** — HTML visits to protected pages now redirect to `/login` instead of returning JSON. API clients should continue using Bearer tokens against `/v1/*`
+- **`SESSION_SECRET_KEY` is required** when SSO is enabled; missing it disables SSO and emits a startup warning
 
 ---
 

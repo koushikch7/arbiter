@@ -22,14 +22,19 @@ import secrets
 import time
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.api.users_api import require_admin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/gateway", tags=["Gateway Tokens"])
+router = APIRouter(
+    prefix="/api/gateway",
+    tags=["Gateway Tokens"],
+    dependencies=[Depends(require_admin)],
+)
 
 _REDIS_TOKENS_KEY = "arbiter:gateway:tokens"
 

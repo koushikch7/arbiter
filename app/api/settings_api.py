@@ -1,9 +1,10 @@
 """Settings API — runtime routing config management."""
 import json
 import logging
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from app.routing.router import VENDOR_MODEL_HIERARCHY, _DEFAULT_PROVIDER_ORDER
+from app.api.users_api import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -34,7 +35,7 @@ async def get_routing(request: Request) -> JSONResponse:
     })
 
 
-@router.post("/routing")
+@router.post("/routing", dependencies=[Depends(require_admin)])
 async def save_routing(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     body = await request.json()
@@ -45,7 +46,7 @@ async def save_routing(request: Request) -> JSONResponse:
     return JSONResponse({"status": "saved"})
 
 
-@router.delete("/routing")
+@router.delete("/routing", dependencies=[Depends(require_admin)])
 async def reset_routing(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     try:
@@ -60,7 +61,7 @@ async def reset_routing(request: Request) -> JSONResponse:
     return JSONResponse({"status": "reset", "provider_order": list(_DEFAULT_PROVIDER_ORDER)})
 
 
-@router.delete("/cache")
+@router.delete("/cache", dependencies=[Depends(require_admin)])
 async def clear_cache(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     count = 0

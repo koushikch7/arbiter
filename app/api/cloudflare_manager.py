@@ -28,13 +28,14 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.api.users_api import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/cloudflare", tags=["Cloudflare Workers AI"])
+router = APIRouter(prefix="/cloudflare", tags=["Cloudflare Workers AI"], dependencies=[Depends(require_admin)])
 
 _CF_API        = "https://api.cloudflare.com/client/v4"
 _REDIS_WORKERS = "arbiter:cf:workers"          # JSON dict  name → {url,model,created_on,...}

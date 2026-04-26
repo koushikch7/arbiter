@@ -744,7 +744,37 @@ def _provider_order(self, request: ChatCompletionRequest) -> List[str]:
 
 ### Change Model Hierarchy
 
-Edit `VENDOR_MODEL_HIERARCHY` in `app/routing/router.py`:
+> **v1.12+**: hierarchies are derived from a single catalog at
+> [`app/providers/_free_tier_catalog.py`](app/providers/_free_tier_catalog.py).
+> The `VENDOR_MODEL_HIERARCHY` dict in `router.py` is now generated from it
+> by `vendor_model_hierarchy(include_paid=True)` — *do not edit the dict
+> directly*; edit the catalog instead.
+
+```python
+# app/providers/_free_tier_catalog.py
+"groq": [
+    ModelSpec(
+        id="qwen/qwen3-32b", context=131_072,
+        tags={"balanced", "code", "reasoning"},
+        rpm=60, rpd=1_000, quality=4, speed=4,
+        notes="60 RPM (highest)",
+    ),
+    # … add a new entry, reorder, or change tags here
+],
+```
+
+The auto-router (see [`app/routing/auto_router.py`](app/routing/auto_router.py))
+uses the `tags`, `quality`, `speed`, `context`, and `modality` fields to
+score candidates per intent.  The `intent_classifier` module categorises
+the prompt into one of: `code`, `reasoning`, `long-context`, `vision`,
+`creative`, `fast`, `balanced`.
+
+To extend the classifier with a new keyword, edit
+[`app/routing/intent_classifier.py`](app/routing/intent_classifier.py) and
+add to the appropriate `*_KEYWORDS` set; the regex is rebuilt at module
+import.
+
+#### Legacy direct edit (still supported for ad-hoc overrides)
 
 ```python
 VENDOR_MODEL_HIERARCHY = {

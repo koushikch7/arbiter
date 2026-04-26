@@ -27,11 +27,12 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.key_management.key_pool import KeyPool, PROVIDER_LIMITS
+from app.api.users_api import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/providers", tags=["Provider Management"])
@@ -52,6 +53,8 @@ _ENV_VAR_MAP: dict = {
     "cerebras":    "CEREBRAS_API_KEYS",
     "zai":         "ZAI_API_KEYS",
     "lightning":   "LIGHTNING_API_KEYS",
+    "routeway":    "ROUTEWAY_API_KEYS",
+    "ollama":      "OLLAMA_API_KEYS",
     "modal":       "MODAL_API_KEYS",
     "pollinations": "POLLINATIONS_API_KEYS",
 }
@@ -87,8 +90,8 @@ _PROVIDER_META = {
         "signup_url": "https://openrouter.ai/keys",
         "free":       True,
         "models": [
-            "meta-llama/llama-3.3-70b-instruct:free",
             "nousresearch/hermes-3-llama-3.1-405b:free",
+            "google/gemma-3-27b-it:free",
         ],
     },
     "cohere": {
@@ -186,6 +189,43 @@ _PROVIDER_META = {
             "nvidia/nemotron-3-super", "lightning-ai/gpt-oss-120b",
             "deepseek/deepseek-v3.1", "lightning-ai/gpt-oss-20b",
             "meta/llama-3.3-70b",
+        ],
+    },
+    "routeway": {
+        "label":      "Routeway",
+        "key_format": "API key",
+        "key_hint":   "rw-...",
+        "signup_url": "https://routeway.ai/dashboard",
+        "free":       True,  # mixed: free + paid models
+        "setup_steps": [
+            "Sign up at routeway.ai",
+            "Open the API Keys section in your dashboard",
+            "Click 'Create API Key' and copy the token",
+            "Paste it here — models from OpenAI/Anthropic/DeepSeek and more become available",
+            "Click 'Refresh Models' in the Models tab to discover the full catalogue",
+        ],
+        "models": [
+            "gpt-4o-mini", "gpt-4o", "claude-3-5-sonnet", "claude-3-haiku",
+            "deepseek-chat", "deepseek-coder", "llama-3.3-70b",
+        ],
+    },
+    "ollama": {
+        "label":      "Ollama Cloud",
+        "key_format": "API key",
+        "key_hint":   "abc123.xyz456",
+        "signup_url": "https://ollama.com/settings/keys",
+        "free":       True,
+        "setup_steps": [
+            "Sign up at ollama.com (free)",
+            "Open https://ollama.com/settings/keys and click 'Create API key'",
+            "Copy the key and paste it here",
+            "All :cloud-tagged models (gpt-oss, deepseek-v3.1, kimi-k2, glm-4.6, "
+            "qwen3-coder, minimax-m2) become available immediately",
+        ],
+        "models": [
+            "gpt-oss:20b-cloud", "gpt-oss:120b-cloud",
+            "deepseek-v3.1:671b-cloud", "qwen3-coder:480b-cloud",
+            "glm-4.6:cloud", "minimax-m2:cloud",
         ],
     },
 }
@@ -286,6 +326,7 @@ async def _reload_provider(name: str, request: Request) -> None:
     from app.providers.modal_provider   import ModalProvider
     from app.providers.lightning_provider import LightningProvider
     from app.providers.zai_provider     import ZaiProvider
+    from app.providers.routeway         import RoutewayProvider
 
     _classes = {
         "gemini": GeminiProvider, "groq": GroqProvider,
@@ -293,8 +334,11 @@ async def _reload_provider(name: str, request: Request) -> None:
         "cloudflare": CloudflareProvider, "cerebras": CerebrasProvider,
         "huggingface": HuggingFaceProvider, "pollinations": PollinationsProvider,
         "modal": ModalProvider, "lightning": LightningProvider,
-        "zai": ZaiProvider,
+        "zai": ZaiProvider, "routeway": RoutewayProvider,
     }
+    # Ollama is imported lazily to avoid circular imports on reload
+    from app.providers.ollama_provider import OllamaProvider
+    _classes["ollama"] = OllamaProvider
 
     redis     = request.app.state.redis
     providers = request.app.state.providers
@@ -382,7 +426,8 @@ class AddKeyBody(BaseModel):
     key: str
 
 
-@router.post("/{name}/keys", summary="Add a key", status_code=201)
+@router.post("/{name}/keys", summary="Add a key", status_code=201,
+             dependencies=[Depends(require_admin)])
 async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
@@ -408,7 +453,8 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
     )
 
 
-@router.delete("/{name}/keys/{key_hash}", summary="Remove a key by hash")
+@router.delete("/{name}/keys/{key_hash}", summary="Remove a key by hash",
+               dependencies=[Depends(require_admin)])
 async def remove_key(name: str, key_hash: str, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
@@ -424,7 +470,8 @@ async def remove_key(name: str, key_hash: str, request: Request) -> JSONResponse
     return JSONResponse(content={"success": True})
 
 
-@router.post("/{name}/enable", summary="Enable a provider")
+@router.post("/{name}/enable", summary="Enable a provider",
+             dependencies=[Depends(require_admin)])
 async def enable_provider(name: str, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
@@ -434,7 +481,8 @@ async def enable_provider(name: str, request: Request) -> JSONResponse:
     return JSONResponse(content={"success": True, "provider": name, "enabled": True})
 
 
-@router.post("/{name}/disable", summary="Disable a provider")
+@router.post("/{name}/disable", summary="Disable a provider",
+             dependencies=[Depends(require_admin)])
 async def disable_provider(name: str, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
@@ -445,7 +493,8 @@ async def disable_provider(name: str, request: Request) -> JSONResponse:
     return JSONResponse(content={"success": True, "provider": name, "enabled": False})
 
 
-@router.post("/{name}/test", summary="Test provider connectivity")
+@router.post("/{name}/test", summary="Test provider connectivity",
+             dependencies=[Depends(require_admin)])
 async def test_provider(name: str, request: Request) -> JSONResponse:
     """Send a minimal probe request and report latency / errors."""
     if name not in _PROVIDER_META:
@@ -491,7 +540,8 @@ async def test_provider(name: str, request: Request) -> JSONResponse:
         })
 
 
-@router.post("/reload", summary="Reload all providers from .env")
+@router.post("/reload", summary="Reload all providers from .env",
+             dependencies=[Depends(require_admin)])
 async def reload_all(request: Request) -> JSONResponse:
     reloaded, failed = [], []
     for name in _PROVIDER_META:

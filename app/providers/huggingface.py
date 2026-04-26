@@ -1,11 +1,11 @@
 """
 HuggingFace Inference API provider adapter (OpenAI-compatible router endpoint).
 
-Free models that reliably support chat completions (March 2026):
-  Qwen/Qwen2.5-7B-Instruct          — most reliable free model  ← default
-  HuggingFaceH4/zephyr-7b-beta      — general purpose
-  mistralai/Mistral-7B-Instruct-v0.3 — Mistral base
-  google/gemma-2-2b-it               — Google Gemma 2B
+Free models that reliably support chat completions (April 2026):
+  Qwen/Qwen2.5-7B-Instruct           — most reliable free model  ← default
+  meta-llama/Llama-3.1-8B-Instruct   — Meta Llama 3.1 8B
+  meta-llama/Llama-3.2-1B-Instruct   — smallest, fastest
+  openai/gpt-oss-20b                 — OpenAI GPT-OSS 20B
 
 Endpoint:  https://router.huggingface.co/v1/chat/completions
 Auth:      Authorization: Bearer {HF_TOKEN}
@@ -38,25 +38,28 @@ class HuggingFaceProvider(BaseProvider):
     name = "huggingface"
 
     models: List[str] = [
-        "Qwen/Qwen2.5-7B-Instruct",              # most reliable free model
-        "HuggingFaceH4/zephyr-7b-beta",           # general purpose
-        "mistralai/Mistral-7B-Instruct-v0.3",     # Mistral base
-        "google/gemma-2-2b-it",                   # Google Gemma 2B (smallest)
+        "Qwen/Qwen2.5-7B-Instruct",            # most reliable free model
+        "meta-llama/Llama-3.1-8B-Instruct",    # Meta Llama 3.1 8B
+        "meta-llama/Llama-3.2-1B-Instruct",    # smallest, fastest
+        "openai/gpt-oss-20b",                  # OpenAI GPT-OSS 20B
     ]
 
-    max_context_tokens = 32768
+    max_context_tokens = 131_072
     default_model      = "Qwen/Qwen2.5-7B-Instruct"
 
     # ------------------------------------------------------------------
     async def complete(
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:
-        """
-        Call the HuggingFace Inference Router OpenAI-compatible endpoint.
-        Falls back to default_model when the requested model is not in the list.
+        """Call the HuggingFace Inference Router OpenAI-compatible endpoint.
+
+        When the caller names a specific model, pass it through as-is so the
+        user gets exactly what they asked for (or a clear 4xx from HF if the
+        id is wrong).  Only empty/"auto" model names fall back to default.
         Raises ProviderError on 503 (model loading / unavailable).
         """
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = requested if requested and requested.lower() != "auto" else self.default_model
 
         messages = [
             {"role": m.role, "content": m.content}

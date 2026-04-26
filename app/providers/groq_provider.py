@@ -64,7 +64,8 @@ class GroqProvider(BaseProvider):
         transformation.  Falls back to default_model when the requested model
         isn't in our active list.
         """
-        model = request.model if request.model in self.models else self.default_model
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
 
         messages = [
             {"role": m.role, "content": m.content}

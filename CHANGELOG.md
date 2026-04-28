@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [1.12.1] – 2026-04-26 (Latest) — Security Hardening
 
+### 🔧 Bearer Auth on Admin APIs (post-release patch)
+
+- **`require_admin` now accepts gateway tokens**: Previously, the admin
+  dependency only honoured Google SSO sessions, which prevented automation
+  and CI tooling from managing tokens, providers, or routing settings via
+  Bearer auth. The dependency now falls back to a registered active gateway
+  token (matched against `app.state.gateway_tokens`) when no SSO session is
+  present. Anonymous requests still receive **401**, and SSO non-admin
+  sessions still receive **403**.
+- **OpenAI tool-calling / response_format passthrough on Groq provider**:
+  `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, `seed`,
+  `logprobs`, `n`, presence/frequency penalties, etc. are now forwarded to
+  Groq verbatim. Assistant `tool_calls`, `function_call`, `refusal`, `audio`
+  fields are preserved on the response. Inbound messages preserve
+  `tool_calls` / `tool_call_id` / `name` for multi-turn tool-using chats.
+- **New end-to-end test**: `scripts/test_gateway_token_flow.py` verifies the
+  full token CRUD lifecycle (create → list → page-refresh → PATCH → revoke
+  → delete) and exercises every advertised AI capability through a
+  freshly-created Bearer token: model listing, auto-routing, multi-turn
+  context, function calling (validates `tool_calls` payload), JSON mode
+  (parses content as JSON), and vision (multimodal routing). 20/20 pass.
+
+---
+
+## [1.12.1] – 2026-04-26 — Security Hardening
+
 ### � Dependency Vulnerability Patches
 
 Fixed all 13 fixable CVEs reported by `pip-audit` (Dependabot moderate alerts).

@@ -35,6 +35,10 @@ def require_admin(request: Request) -> dict:
     """
     FastAPI dependency — raises 401 if unauthenticated, 403 if not admin.
 
+    Accepts either:
+      * A logged-in admin SSO session (browser/UI), OR
+      * A valid Bearer gateway API token (automation/tooling).
+
     Can be used directly on endpoints even outside this module::
 
         from app.auth.users import require_admin
@@ -50,12 +54,25 @@ def require_admin(request: Request) -> dict:
         # We can't identify a specific user, so allow through.
         return {"email": "(sso-disabled)", "is_admin": True}
 
+    # 1. Try SSO session
     user = get_session_user(request)
-    if user is None:
-        raise HTTPException(401, "Not authenticated")
-    if not user.get("is_admin"):
-        raise HTTPException(403, "Admin access required")
-    return user
+    if user is not None:
+        if not user.get("is_admin"):
+            raise HTTPException(403, "Admin access required")
+        return user
+
+    # 2. Fall back to Bearer gateway token — automation/tooling path.
+    #    The middleware already validated the token; we just need to
+    #    confirm a valid bearer was presented.
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(None, 1)[1].strip()
+        if token:
+            allowed = getattr(request.app.state, "gateway_tokens", set()) or set()
+            if token in allowed:
+                return {"email": "(bearer-token)", "is_admin": True, "via": "bearer"}
+
+    raise HTTPException(401, "Not authenticated")
 
 
 # ---------------------------------------------------------------------------

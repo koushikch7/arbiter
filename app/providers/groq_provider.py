@@ -71,6 +71,16 @@ class GroqProvider(BaseProvider):
             {"role": m.role, "content": m.content}
             for m in request.messages
         ]
+        # Preserve OpenAI extras on incoming messages (tool_calls, tool_call_id,
+        # name, refusal, …) — necessary for tool-using multi-turn chats.
+        for src, dst in zip(request.messages, messages):
+            try:
+                src_extra = src.model_dump(exclude_unset=True)
+            except Exception:
+                src_extra = {}
+            for k in ("tool_calls", "tool_call_id", "name", "function_call", "refusal"):
+                if k in src_extra and src_extra[k] is not None:
+                    dst[k] = src_extra[k]
 
         payload: dict = {
             "model":       model,
@@ -82,6 +92,22 @@ class GroqProvider(BaseProvider):
             payload["max_tokens"] = request.max_tokens
         if request.stop:
             payload["stop"] = request.stop
+
+        # Forward OpenAI-compatible extras (tools, tool_choice, response_format,
+        # parallel_tool_calls, seed, logprobs, user, …) verbatim. The schema
+        # uses `extra="allow"` so unknown fields are stored on the model dump.
+        _passthrough_keys = (
+            "tools", "tool_choice", "parallel_tool_calls", "response_format",
+            "seed", "logprobs", "top_logprobs", "user", "n", "presence_penalty",
+            "frequency_penalty", "logit_bias",
+        )
+        try:
+            extras = request.model_dump(exclude_unset=True)
+        except Exception:
+            extras = {}
+        for k in _passthrough_keys:
+            if k in extras and extras[k] is not None:
+                payload[k] = extras[k]
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -115,6 +141,15 @@ class GroqProvider(BaseProvider):
         prompt_tokens     = usage_raw.get("prompt_tokens",     0)
         completion_tokens = usage_raw.get("completion_tokens", 0)
 
+        # Build assistant message preserving extras (tool_calls, refusal, etc.)
+        msg_kwargs: dict = {
+            "role":    msg.get("role", "assistant"),
+            "content": msg.get("content") or "",
+        }
+        for extra_key in ("tool_calls", "function_call", "refusal", "audio", "name"):
+            if extra_key in msg and msg[extra_key] is not None:
+                msg_kwargs[extra_key] = msg[extra_key]
+
         return ChatCompletionResponse(
             id      = data.get("id", f"chatcmpl-{uuid.uuid4().hex[:8]}"),
             object  = "chat.completion",
@@ -123,7 +158,7 @@ class GroqProvider(BaseProvider):
             choices = [
                 Choice(
                     index         = 0,
-                    message       = Message(role="assistant", content=msg.get("content", "")),
+                    message       = Message(**msg_kwargs),
                     finish_reason = finish,
                 )
             ],

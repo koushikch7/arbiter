@@ -496,6 +496,50 @@ async def root():
 
 
 # ---------------------------------------------------------------------------
+# PWA — service worker, manifest, favicon must live at root scope
+# ---------------------------------------------------------------------------
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    """Serve the service worker from root scope so it can control all of /.
+
+    Browsers also require the SW response itself to NOT be cached at the edge,
+    otherwise rolled-out updates would never reach users — see the
+    SecurityHeadersMiddleware which sets `no-store` for /sw.js explicitly.
+    """
+    from fastapi.responses import FileResponse
+    sw = _STATIC_DIR / "sw.js"
+    if not sw.exists():
+        return JSONResponse({"error": "sw.js missing"}, status_code=404)
+    return FileResponse(
+        str(sw),
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+@app.get("/manifest.json", include_in_schema=False)
+async def webmanifest():
+    """Serve the PWA manifest from root scope."""
+    from fastapi.responses import FileResponse
+    mf = _STATIC_DIR / "manifest.webmanifest"
+    if not mf.exists():
+        return JSONResponse({"error": "manifest missing"}, status_code=404)
+    return FileResponse(str(mf), media_type="application/manifest+json")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Serve favicon from root for legacy browsers."""
+    from fastapi.responses import FileResponse
+    fav = _STATIC_DIR / "favicon.ico"
+    if not fav.exists():
+        return JSONResponse({"error": "favicon missing"}, status_code=404)
+    return FileResponse(str(fav), media_type="image/x-icon")
+
+
+# ---------------------------------------------------------------------------
 # Minimal in-memory Redis fallback (for local dev without Redis)
 # ---------------------------------------------------------------------------
 

@@ -6,7 +6,110 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.13.3] – 2026-05-01 (Latest) — Per-key tier routing & Gemini 3.x
+## [1.14.0] – 2026-05-01 — PWA + Enterprise UI + Tiered cache strategy
+
+### 📱 Progressive Web App (mobile install)
+
+Arbiter is now installable on Android (Chrome / Edge / Samsung Internet),
+iOS Safari (Add to Home Screen), and desktop. Open `/dashboard`, then use
+your browser's install prompt or the new **Install app** button at the
+bottom of the sidebar. Once installed it launches in standalone mode with
+its own icon, splash, and offline page.
+
+- New `static/manifest.webmanifest` (id, scope, theme/background colours,
+  shortcuts to Dashboard, Playground, Logs, Settings, 5 icon sizes
+  including a maskable icon for Android adaptive icons).
+- New `static/sw.js` service worker with three-tier strategy:
+  1. **API & auth** → network-only (never cached).
+  2. **Static assets** (CSS / JS / fonts / icons) → stale-while-revalidate.
+  3. **HTML pages** → network-first with offline fallback to
+     `static/offline.html`.
+- New PWA icon set: `static/icons/arbiter-{icon,maskable}.svg` source +
+  `arbiter-{192,512,512-maskable,apple-180}.png` and `favicon.ico`.
+- `arbiter.js` auto-injects `<link rel="manifest">`, theme-color,
+  apple-touch-icon, mobile-web-app-capable meta tags so every page is
+  PWA-ready without copy/paste.
+- `beforeinstallprompt` is captured and exposed via the **Install app**
+  button in the sidebar (visible only when the browser supports install).
+- Service-worker-aware auto-update: when a new SW activates, the app
+  silently reloads to pick up the new build.
+- Root-scope routes added in `app/main.py`: `/sw.js`,
+  `/manifest.webmanifest`, `/manifest.json`, `/favicon.ico`.
+- `Service-Worker-Allowed: /` header so the worker can control the whole
+  origin while the script lives at root.
+
+### 🛡️ Tiered Cloudflare cache strategy
+
+The middleware now classifies every response into one of three buckets
+and emits the right cache directives for each — fixing the long-standing
+"Cloudflare leaks logged-in email to anonymous visitors" bug without
+sacrificing static-asset performance.
+
+| Class | Routes | Browser | Cloudflare |
+|-------|--------|---------|------------|
+| **Sensitive** | `/api/*`, `/auth/*`, `/v1/*`, `/logs/*`, `/settings/*`, `/modal/*`, `/cloudflare/*`, `/dashboard/stats`, every HTML page | `no-store, no-cache, must-revalidate, private` + `Vary: Cookie` | `no-store` (incl. `Cloudflare-CDN-Cache-Control`) |
+| **Static assets** | `/static/*`, `*.css/.js/.png/.jpg/.svg/.woff2/...`, `manifest.webmanifest`, `favicon.ico` | `public, max-age=3600, must-revalidate` | `public, max-age=86400` |
+| **Service worker** | `/sw.js`, `/service-worker.js` | `no-cache, no-store, must-revalidate` (browser handles update detection) | `no-store` |
+
+CSP updated to allow `worker-src 'self' blob:` and `manifest-src 'self'`.
+
+### 🎨 Settings UI overhaul (enterprise-grade + responsive)
+
+- **Models tab** — provider rows now show a coloured dot, description,
+  ranked priority pill (`#1`, `#2`, ...), context-window chip, and a
+  ghost "Refresh from provider" button. Add-row placeholder is dynamic
+  (suggests an existing model id from that provider). Empty state shows
+  a friendly "provider defaults will be used" card instead of a blank
+  panel.
+- **Image Gen tab** — model dropdown and size dropdown are now populated
+  live from `/v1/images/models` (no more drift between the API catalog
+  and the UI). New "Hide watermark" toggle, character-count hint,
+  per-feature info rows replace the emoji list, link to the live model
+  catalog endpoint.
+- **Cache tab** — KPI strip (hit rate, cached entries, hits, misses) +
+  effectiveness donut chart, configuration card showing TTL / threshold
+  / key prefix / backend, ordered "how it works" explainer, confirmation
+  dialog before destructive clear. Backed by the new richer
+  `GET /settings/cache` endpoint that returns config + counters in one
+  payload.
+- Full responsive layout: provider cards reflow to single column under
+  768px, KPI grid drops to 2-col then 1-col, image grid adapts,
+  add-key/add-model rows stack, topbar collapses verbose labels, model
+  context chips hide under 480px.
+
+### ✨ Enterprise polish (`arbiter.css`)
+
+- Consistent `:focus-visible` rings (2px accent, 3px halo).
+- Touch-friendly: 42px min-height form controls, 40px buttons on mobile.
+- Smooth tab-bar mask-fade edges (hint at horizontal scroll).
+- iOS safe-area support: `env(safe-area-inset-*)` for notched devices.
+- Standalone-mode tweaks: disable text selection on chrome, keep it on
+  inputs, top safe-area padding on the topbar.
+- Sidebar overlay backdrop when open on mobile (with blur).
+- Print stylesheet — hides chrome, white background, for sharing
+  analytics/log views as PDFs.
+- Toast container repositions to bottom-edge full-width on phones.
+
+### Files changed
+
+```
+app/middleware/auth.py        +60  (3-tier cache classification, PWA allow-list, CSP worker-src)
+app/main.py                   +35  (/sw.js, /manifest, /favicon root routes)
+app/api/settings_api.py       +50  (GET /settings/cache with config + stats)
+static/manifest.webmanifest   new  (PWA manifest, 5 icons, 4 shortcuts)
+static/sw.js                  new  (service worker, 3-tier strategy)
+static/offline.html           new  (offline fallback page)
+static/icons/*.{svg,png}      new  (icon set: 192, 512, 512-maskable, 180-apple, 16, 32 + sources)
+static/favicon.ico            new
+static/arbiter.js             +130 (PWA head injection, SW registration, install prompt capture)
+static/arbiter.css            +120 (responsive overrides, focus rings, safe areas, install button, print)
+static/components/sidebar.js   +6  (Install-app button injected above theme toggle)
+static/settings.html          +200/-90  (Models / Images / Cache tab redesigns + responsive CSS)
+```
+
+---
+
+
 
 ### 🆕 Per-key tier tagging (`#paid` suffix)
 

@@ -4,7 +4,9 @@ A self-hosted, production-ready gateway that aggregates **12+ LLM providers** (p
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.
 
-> **v1.12.0 highlights:** 🚀 **Smart auto-routing** — send `model="auto"` and Arbiter picks the best free-tier model (1ms heuristic classifier across 7 intents: code · reasoning · long-context · vision · creative · fast · balanced).  Fully overridable per request via headers (`X-Arbiter-Priority`, `X-Arbiter-Prefer-Provider`, `X-Arbiter-Fallback`) and per deployment via the new **Auto Routing** tab in Settings.  Optional `fallback` modes (`none` · `same_provider` · `chain`) for explicit model pins — strict-pin remains the default.  Single-source-of-truth catalog at [app/providers/_free_tier_catalog.py](app/providers/_free_tier_catalog.py) replaces 200+ lines of hardcoded model hierarchy.  Response now includes `X-Arbiter-Model-Used: <provider>/<model>`.  See `scripts/test_auto_routing.py` (7/7 pass).
+> **v1.14.0 highlights:** 📱 **Installable PWA** — Arbiter now installs to your phone's home-screen / desktop dock with its own icon, splash, and offline page (Android Chrome / iOS Safari / Edge / Samsung Internet).  Service worker with 3-tier strategy (network-only for APIs, stale-while-revalidate for static, network-first for HTML).  • 🛡️ **Tiered Cloudflare cache strategy**: sensitive routes (incl. all HTML pages) emit `no-store + Cloudflare-CDN-Cache-Control: no-store + Vary: Cookie`; static assets get `public, max-age=86400` at the edge — fixes the "logged-in email leaks to incognito visitors" bug while restoring CDN performance for CSS/JS/icons.  • 🎨 **Settings UI overhaul** — Models tab gets ranked priority pills + provider colour dots, Image Gen pulls model/size catalog live from `/v1/images/models`, Cache tab redesigned with KPI strip + effectiveness donut + config card.  • 📐 Full responsive layout for mobile + safe-area support for iOS notched devices.
+>
+> **v1.13.3 highlights:** 🆕 **Per-key tier tagging** (`#paid` / `#free` suffix in env vars) — Gemini paid keys reserved for frontier models (3.1-pro-preview), free keys for everyday traffic. Catalog reordered to prioritize gemini-3.1-flash-lite-preview as the top free model.
 >
 > **v1.11.2 highlights:** ✨ **Ollama Cloud added** as an 11th provider (6 free :cloud-tagged MoE models — gpt-oss, deepseek-v3.1, glm-4.6, qwen3-coder, minimax-m2) · explicit model selection now pins exactly (was silently falling back to default) · HuggingFace no-longer-silent model rewrite · Pollinations User-Agent fix (Cloudflare was returning 502 to bare `httpx`) · Routeway 503 no longer cooldown-cascades the whole key · model-hierarchy cleanup: removed ~12 consistently-broken models across Gemini/Groq/OpenRouter/Cloudflare/Cerebras/HuggingFace/Pollinations/Routeway (see CHANGELOG for the pruning table).
 >
@@ -286,6 +288,16 @@ Gateway starts successfully **even without Redis**:
 ---
 
 ## ⚡ Quick Start
+
+### 📱 Install on mobile / desktop (PWA)
+
+Arbiter is a Progressive Web App. To install on your **Poco F7 / any Android**:
+
+1. Open `https://your-arbiter-host/dashboard` in Chrome / Edge / Samsung Internet.
+2. Tap the address-bar menu → **Install app** (or use the **Install app** button at the bottom of the sidebar).
+3. Arbiter launches in standalone mode with its own icon, splash, theme-coloured status bar, and an offline page if the network drops.
+
+On **iOS Safari**: Share menu → *Add to Home Screen*. On **Desktop Chrome / Edge**: address-bar install icon. The service worker keeps `/static/*` warm via stale-while-revalidate while keeping API and HTML responses uncached for security.
 
 ### 1️⃣ Clone & Install
 

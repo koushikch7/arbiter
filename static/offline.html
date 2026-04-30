@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline — Arbiter</title>
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <style>
+    .offline-wrap {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; background: var(--bg);
+    }
+    .offline-card {
+      max-width: 420px; width: 100%; text-align: center;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r-lg); padding: 36px 28px;
+      box-shadow: var(--shadow-md);
+    }
+    .offline-icon {
+      width: 64px; height: 64px; margin: 0 auto 18px;
+      border-radius: 50%; background: var(--accent-dim);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent-br);
+    }
+    .offline-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .offline-msg { font-size: 13px; color: var(--text-2); margin-bottom: 24px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="offline-wrap">
+    <div class="offline-card">
+      <div class="offline-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="1" y1="1" x2="23" y2="23"/>
+          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+          <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+          <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+          <line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <h1 class="offline-title">You're offline</h1>
+      <p class="offline-msg">Arbiter needs an internet connection to talk to LLM providers. The app will resume automatically when you're back online.</p>
+      <button class="btn btn-primary" onclick="location.reload()">Retry</button>
+    </div>
+  </div>
+</body>
+</html>

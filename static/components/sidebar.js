@@ -132,6 +132,14 @@
     html +=
       "</nav>" +
       '<div class="sidebar-footer">' +
+      '<button class="sidebar-install-btn" id="pwa-install-btn" type="button" ' +
+      'title="Install Arbiter as a mobile/desktop app" ' +
+      'onclick="if(window.installArbiterPWA)window.installArbiterPWA()">' +
+      '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
+      '<path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/>' +
+      "</svg>" +
+      "<span>Install app</span>" +
+      "</button>" +
       '<button class="theme-btn" id="theme-btn" type="button" ' +
       'title="Toggle light / dark theme">' +
       '<span class="theme-icon">🌙</span>' +

@@ -62,6 +62,12 @@ _ALWAYS_OPEN: frozenset = frozenset([
     "/docs", "/redoc", "/openapi.json",
     "/login",
     "/favicon.ico",
+    # PWA assets — must be reachable without auth so installable browsers
+    # can fetch the manifest + service worker on the public origin.
+    "/manifest.webmanifest",
+    "/manifest.json",
+    "/sw.js",
+    "/service-worker.js",
 ])
 
 _ALWAYS_OPEN_PREFIXES: tuple = (
@@ -138,20 +144,62 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Permissions-Policy",
             "geolocation=(), microphone=(), camera=(), payment=()",
         )
-        # Prevent CDN/proxy caching of API and auth responses.  /auth/me in
-        # particular returns the signed-in user's email; if a CDN caches it,
-        # the next *anonymous* visitor (e.g. an incognito tab) would see
-        # somebody else's identity on the login page.
-        # HTML pages already set their own no-store via dashboard.py.
+        # ─── Cache policy (defence-in-depth against CDN leaks) ──────────────
+        # Three tiers:
+        #   1. SENSITIVE  → no-store + private + Vary:Cookie. Used for any
+        #      route that returns user-specific or auth-bearing data.
+        #   2. HTML PAGES → no-store + private. The shell HTML embeds the
+        #      signed-in user's email (rendered by JS), so a shared CDN
+        #      cache would leak it to the next anonymous visitor.
+        #   3. STATIC ASSETS → public, max-age=3600, must-revalidate. CSS,
+        #      JS, fonts, images, manifest, service-worker, favicon.
         path = request.url.path
-        if (path.startswith("/api/")
-                or path.startswith("/auth/")
-                or path == "/login"):
+        ctype = (response.headers.get("content-type") or "").lower()
+        is_html = "text/html" in ctype
+
+        sensitive_prefixes = (
+            "/api/", "/auth/", "/v1/", "/logs/", "/settings/",
+            "/modal/", "/cloudflare/", "/dashboard/stats",
+        )
+        sensitive_paths = {"/login", "/users", "/dashboard", "/settings",
+                           "/playground", "/analytics", "/logs", "/images",
+                           "/api-docs"}
+
+        cacheable_static_prefixes = ("/static/",)
+        cacheable_static_suffixes = (
+            ".css", ".js", ".woff", ".woff2", ".ttf", ".otf",
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+            ".ico", ".map", ".webmanifest",
+        )
+        is_static_cacheable = (
+            path.startswith(cacheable_static_prefixes)
+            or path.endswith(cacheable_static_suffixes)
+            or path in {"/manifest.webmanifest", "/manifest.json", "/favicon.ico"}
+        )
+        # Service worker MUST NOT be cached at the edge — browsers re-check
+        # it themselves but a stale CDN copy would prevent updates.
+        is_service_worker = path in {"/sw.js", "/service-worker.js"}
+
+        if is_service_worker:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["CDN-Cache-Control"] = "no-store"
+            response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+            response.headers["Service-Worker-Allowed"] = "/"
+        elif (path.startswith(sensitive_prefixes)
+                or path in sensitive_paths
+                or (is_html and path != "/")):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             response.headers["CDN-Cache-Control"] = "no-store"
             response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
             response.headers.setdefault("Pragma", "no-cache")
             response.headers.setdefault("Vary", "Cookie")
+        elif is_static_cacheable:
+            # Public static assets — let browsers AND Cloudflare cache them.
+            # Use must-revalidate so a content change is picked up after TTL.
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=3600, must-revalidate"
+            )
+            response.headers.setdefault("CDN-Cache-Control", "public, max-age=86400")
         # Content Security Policy — allow our CDNs + inline (the UI uses a
         # lot of onclick handlers and inline styles).
         response.headers.setdefault(
@@ -170,6 +218,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-src 'self' https://accounts.google.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
+            "worker-src 'self' blob:; "
+            "manifest-src 'self'; "
             "form-action 'self' https://accounts.google.com",
         )
         return response

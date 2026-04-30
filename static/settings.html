@@ -95,17 +95,98 @@
       justify-content: center; font-size: 11px; color: var(--text-3);
     }
     /* ── Misc ─────────────────────────────────────────────────── */
-    .model-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
-    .model-row:last-child { border-bottom: none; }
-    .model-row-name { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-2); }
-    .model-row-ctx  { font-size: 10px; color: var(--text-3); min-width: 48px; text-align: right; }
-    .model-move-btn { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm); line-height: 1; }
-    .model-move-btn:hover { background: var(--surface-3); color: var(--text); }
-    .model-del-btn  { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px 6px; border-radius: var(--r-sm); font-size: 13px; opacity: .6; }
+    .model-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border: 1px solid var(--border);
+      border-radius: var(--r-md); margin-bottom: 6px;
+      background: var(--surface); transition: border-color var(--t), box-shadow var(--t);
+    }
+    .model-row:hover { border-color: var(--border-2); box-shadow: var(--shadow); }
+    .model-row-rank {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700;
+      background: var(--accent-dim); color: var(--accent-br); flex-shrink: 0;
+    }
+    .model-row-name { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-row-ctx  { font-size: 10px; color: var(--text-3); min-width: 48px; text-align: right; padding: 2px 6px; background: var(--surface-2); border-radius: 4px; }
+    .model-move-btn { background: none; border: 1px solid transparent; color: var(--text-3); cursor: pointer; padding: 3px 5px; border-radius: var(--r-sm); line-height: 1; transition: all var(--t); }
+    .model-move-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border); }
+    .model-del-btn  { background: none; border: none; color: var(--red); cursor: pointer; padding: 3px 6px; border-radius: var(--r-sm); font-size: 13px; opacity: .55; transition: all var(--t); }
     .model-del-btn:hover { opacity: 1; background: var(--red-dim); }
     .add-model-row  { display: flex; gap: 8px; margin-top: 12px; }
+
+    /* ── Improved provider accordion ─────────────────────────── */
+    .accordion-item.provider-accordion {
+      border: 1px solid var(--border); border-radius: var(--r-lg);
+      background: var(--surface); margin-bottom: 10px; overflow: hidden;
+      transition: border-color var(--t), box-shadow var(--t);
+    }
+    .accordion-item.provider-accordion:hover { border-color: var(--border-2); }
+    .accordion-btn {
+      width: 100%; display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; background: var(--surface);
+      border: none; cursor: pointer; transition: background var(--t);
+      text-align: left; color: var(--text); font-size: 13px;
+    }
+    .accordion-btn:hover { background: var(--surface-2); }
+    .accordion-btn.open  { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+    .accordion-btn .prov-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+    .accordion-btn .prov-name { font-weight: 600; }
+    .accordion-btn .prov-count {
+      font-size: 11px; color: var(--text-3); margin-left: auto; margin-right: 8px;
+      padding: 2px 8px; background: var(--surface-3); border-radius: 99px;
+    }
+    .accordion-btn .accordion-arrow { transition: transform var(--t); flex-shrink: 0; opacity: .6; }
+    .accordion-btn.open .accordion-arrow { transform: rotate(180deg); opacity: 1; }
+    .accordion-body { padding: 14px 16px; background: var(--surface); }
+
+    /* ── Image Gen card polish ───────────────────────────────── */
+    .img-model-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px; font-size: 11px; border-radius: 99px;
+      background: var(--surface-3); color: var(--text-2);
+      border: 1px solid var(--border);
+    }
+    .info-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row-icon {
+      width: 32px; height: 32px; flex-shrink: 0;
+      border-radius: var(--r-md); background: var(--accent-dim);
+      color: var(--accent-br);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
     .worker-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .worker-row:last-child { border-bottom: none; }
+
+    /* ── Settings page responsive overrides ──────────────────── */
+    @media (max-width: 768px) {
+      .add-key-row { flex-direction: column; align-items: stretch; }
+      .add-model-row { flex-direction: column; align-items: stretch; }
+      .img-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+      .accordion-btn { padding: 10px 12px; font-size: 12px; }
+      .accordion-body { padding: 12px; }
+      .provider-card-hd { flex-wrap: wrap; }
+      .provider-actions { width: 100%; justify-content: flex-end; margin-top: 6px; }
+      .topbar-right { gap: 6px; }
+      .topbar-right .btn span,
+      .topbar-right > span:not(.status-pill *) { display: none; }
+      #providers-last-updated { display: none; }
+    }
+    @media (max-width: 480px) {
+      .kpi-grid { grid-template-columns: 1fr !important; }
+      .img-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+      .model-row-ctx { display: none; }
+      .key-hash { min-width: 56px; }
+    }
   </style>
 </head>
 <body>
@@ -254,44 +335,40 @@
 
       <!-- ═══════════════ Image Generation Tab ═══════════════ -->
       <div id="tab-images" class="tab-panel">
-        <div class="grid-2" style="align-items:start">
+        <div class="grid-2" style="align-items:start;grid-template-columns:1.15fr .85fr">
 
           <!-- Generator -->
           <div class="card">
             <div class="card-hd">
               <span class="card-title">Image Generator</span>
-              <span class="badge badge-green">Free · Pollinations</span>
+              <span class="badge badge-green"><span class="badge-dot"></span> Free · Pollinations</span>
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label class="form-label">Prompt</label>
+                <label class="form-label">Prompt <span style="color:var(--red)">*</span></label>
                 <textarea id="img-prompt" class="form-control" rows="3" placeholder="A serene mountain lake at sunset, photorealistic, golden hour lighting…"></textarea>
+                <div style="font-size:11px;color:var(--text-3);margin-top:4px">Tip: be specific about subject, style, lighting, and composition.</div>
               </div>
               <div class="form-group">
                 <label class="form-label">Negative Prompt <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-                <input id="img-negative" type="text" class="form-control" placeholder="blurry, low quality, watermark…" />
+                <input id="img-negative" type="text" class="form-control" placeholder="blurry, low quality, watermark, text…" />
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                 <div class="form-group">
                   <label class="form-label">Model</label>
                   <select id="img-model" class="form-control">
                     <option value="flux">flux — versatile (default)</option>
-                    <option value="flux-realism">flux-realism — photorealistic</option>
-                    <option value="flux-anime">flux-anime — anime style</option>
-                    <option value="flux-3d">flux-3d — 3D rendered</option>
-                    <option value="flux-cablyai">flux-cablyai — fine-tune</option>
-                    <option value="turbo">turbo — fast</option>
                   </select>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Size</label>
                   <select id="img-size" class="form-control">
-                    <option value="1024x1024">1024×1024 (square)</option>
-                    <option value="1280x720">1280×720 (landscape)</option>
-                    <option value="720x1280">720×1280 (portrait)</option>
-                    <option value="1920x1080">1920×1080 (HD)</option>
+                    <option value="1024x1024">1024×1024 — square</option>
+                    <option value="1280x720">1280×720 — landscape (16:9)</option>
+                    <option value="720x1280">720×1280 — portrait (9:16)</option>
+                    <option value="1920x1080">1920×1080 — HD landscape</option>
                     <option value="768x768">768×768</option>
-                    <option value="512x512">512×512 (fast)</option>
+                    <option value="512x512">512×512 — fast</option>
                   </select>
                 </div>
               </div>
@@ -309,75 +386,69 @@
                   <input id="img-seed" type="number" class="form-control" value="-1" min="-1" />
                 </div>
               </div>
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--text-2)">
                   <input type="checkbox" id="img-enhance" style="accent-color:var(--accent)" />
                   Enhance prompt (AI rewrite)
                 </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--text-2)">
+                  <input type="checkbox" id="img-nologo" style="accent-color:var(--accent)" checked />
+                  Hide watermark
+                </label>
               </div>
-              <button class="btn btn-primary" style="width:100%" onclick="generateImages()">
+              <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateImages()">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                Generate Images
+                Generate
                 <span class="spinner" id="img-spinner"></span>
               </button>
               <div id="img-result" class="img-grid" style="display:none"></div>
             </div>
           </div>
 
-          <!-- Info -->
+          <!-- Info column -->
           <div>
             <div class="card" style="margin-bottom:14px">
               <div class="card-hd"><span class="card-title">API Endpoint</span></div>
               <div class="card-body">
-                <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">Use this OpenAI-compatible endpoint in your applications:</p>
-                <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">
-                  <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">POST</div>
-                  <code style="font-size:11px;color:var(--accent)">/v1/images/generations</code>
+                <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">OpenAI-compatible — use it from any client that talks to <code>/v1/images/generations</code>.</p>
+                <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;display:flex;align-items:center;gap:8px">
+                  <span class="method method-post">POST</span>
+                  <code style="font-size:12px;color:var(--accent-br);flex:1">/v1/images/generations</code>
                 </div>
-                <div style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">
-                  <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">Example</div>
-                  <pre style="margin:0;font-size:11px;color:var(--text-2);overflow-x:auto">{
+                <pre style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;font-size:11px;color:var(--text-2);overflow-x:auto">{
   "prompt": "a red fox in snow",
-  "model": "flux",
-  "size": "1024x1024",
-  "n": 1
+  "model":  "flux",
+  "size":   "1024x1024",
+  "n":      1
 }</pre>
-                </div>
+                <div style="margin-top:8px"><a href="/v1/images/models" target="_blank" style="font-size:11px;color:var(--accent-br);text-decoration:none">↗ View live model catalog</a></div>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-hd"><span class="card-title">About Pollinations</span></div>
-              <div class="card-body">
-                <div style="display:flex;flex-direction:column;gap:8px">
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <span style="font-size:18px">🆓</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:600;color:var(--text)">Completely free</div>
-                      <div style="font-size:11px;color:var(--text-3)">No API key needed, no credit card</div>
-                    </div>
+              <div class="card-hd">
+                <span class="card-title">About Pollinations</span>
+                <a href="https://pollinations.ai" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent-br);text-decoration:none">↗ pollinations.ai</a>
+              </div>
+              <div class="card-body" style="padding:14px 18px">
+                <div class="info-row">
+                  <span class="info-row-icon"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg></span>
+                  <div><div style="font-size:13px;font-weight:600">Completely free</div><div style="font-size:11px;color:var(--text-3)">No API key, no signup, no credit card.</div></div>
+                </div>
+                <div class="info-row">
+                  <span class="info-row-icon" style="background:var(--blue-dim);color:var(--blue)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+                  <div><div style="font-size:13px;font-weight:600">Powered by FLUX</div><div style="font-size:11px;color:var(--text-3)">SOTA latent-flow models from Black Forest Labs.</div></div>
+                </div>
+                <div class="info-row">
+                  <span class="info-row-icon" style="background:var(--yellow-dim);color:var(--yellow)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
+                  <div>
+                    <div style="font-size:13px;font-weight:600"><span id="img-models-count">…</span> models</div>
+                    <div id="img-models-pills" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
                   </div>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <span style="font-size:18px">⚡</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:600;color:var(--text)">Powered by FLUX</div>
-                      <div style="font-size:11px;color:var(--text-3)">State-of-the-art image generation</div>
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <span style="font-size:18px">🖼️</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:600;color:var(--text)">6 models</div>
-                      <div style="font-size:11px;color:var(--text-3)">Realistic, anime, 3D, and more</div>
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <span style="font-size:18px">📐</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:600;color:var(--text)">Any resolution</div>
-                      <div style="font-size:11px;color:var(--text-3)">Up to 2048×2048 pixels</div>
-                    </div>
-                  </div>
+                </div>
+                <div class="info-row">
+                  <span class="info-row-icon" style="background:var(--green-dim);color:var(--green)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10v10H7z"/></svg></span>
+                  <div><div style="font-size:13px;font-weight:600">Up to 1920×1080</div><div style="font-size:11px;color:var(--text-3)">Square, landscape, portrait, HD presets.</div></div>
                 </div>
               </div>
             </div>
@@ -719,10 +790,40 @@ class Model:
 
       <!-- ═══════════════ Cache Tab ═══════════════ -->
       <div id="tab-cache" class="tab-panel">
+        <!-- KPI strip -->
+        <div class="kpi-grid" id="cache-kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+          <div class="kpi-card" style="--kpi-color:var(--green)">
+            <div class="kpi-label">Hit Rate</div>
+            <div class="kpi-value" id="cache-kpi-hitrate">—</div>
+            <div class="kpi-sub">Lookups served from cache</div>
+          </div>
+          <div class="kpi-card" style="--kpi-color:var(--accent)">
+            <div class="kpi-label">Cached Entries</div>
+            <div class="kpi-value" id="cache-kpi-entries">—</div>
+            <div class="kpi-sub">Stored response objects</div>
+          </div>
+          <div class="kpi-card" style="--kpi-color:var(--blue)">
+            <div class="kpi-label">Hits</div>
+            <div class="kpi-value" id="cache-kpi-hits">—</div>
+            <div class="kpi-sub">Lifetime cache hits</div>
+          </div>
+          <div class="kpi-card" style="--kpi-color:var(--yellow)">
+            <div class="kpi-label">Misses</div>
+            <div class="kpi-value" id="cache-kpi-misses">—</div>
+            <div class="kpi-sub">Lifetime cache misses</div>
+          </div>
+        </div>
+
         <div class="grid-2" style="align-items:start">
           <div class="card">
-            <div class="card-hd"><span class="card-title">Cache Statistics</span></div>
-            <div class="card-body" id="cache-stats-body">
+            <div class="card-hd">
+              <span class="card-title">How the cache works</span>
+              <button class="btn btn-sm btn-ghost" onclick="loadCacheStats()" title="Refresh stats">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                Refresh
+              </button>
+            </div>
+            <div class="card-body" id="cache-config-body">
               <div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>
             </div>
           </div>
@@ -730,12 +831,18 @@ class Model:
           <div class="card">
             <div class="card-hd"><span class="card-title">Cache Management</span></div>
             <div class="card-body">
-              <p style="font-size:13px;color:var(--text-2);margin-bottom:16px">The semantic cache stores responses for deterministic requests (temperature ≤ 0.3). Clearing forces re-fetching from providers.</p>
-              <div style="background:var(--red-dim);border:1px solid rgba(239,68,68,0.2);border-radius:var(--r-md);padding:14px;margin-bottom:16px">
-                <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">Warning</div>
-                <p style="font-size:12px;color:var(--text-2)">This deletes all cached responses permanently. Subsequent identical requests will hit LLM providers directly.</p>
+              <p style="font-size:13px;color:var(--text-2);margin-bottom:14px">The semantic cache stores responses for deterministic requests. Clearing forces re-fetching from providers.</p>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+                <div><div style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em">When stored</div><div id="cache-cfg-when" style="color:var(--text);margin-top:2px">temperature ≤ 0.3</div></div>
+                <div><div style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em">TTL</div><div id="cache-cfg-ttl" style="color:var(--text);margin-top:2px">—</div></div>
+                <div><div style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Key prefix</div><div id="cache-cfg-prefix" style="color:var(--text);margin-top:2px;font-family:'JetBrains Mono',monospace;font-size:11px">arbiter:cache:</div></div>
+                <div><div style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Backend</div><div id="cache-cfg-backend" style="color:var(--text);margin-top:2px">Redis</div></div>
               </div>
-              <button class="btn btn-danger" onclick="clearCache()">
+              <div style="background:var(--red-dim);border:1px solid rgba(239,68,68,0.2);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">⚠ Irreversible</div>
+                <p style="font-size:12px;color:var(--text-2);margin:0">This deletes all cached responses permanently. Subsequent identical requests will hit LLM providers directly until the cache rewarms.</p>
+              </div>
+              <button class="btn btn-danger" onclick="clearCache()" style="width:100%">
                 <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 Clear All Cache
                 <span class="spinner" id="cache-spinner"></span>
@@ -1019,6 +1126,7 @@ function switchTab(name, btn) {
   if (name === 'cloudflare') { loadWorkers(); loadCfModels(); }
   if (name === 'modal')      { loadModalEndpoints(); loadModalDeployTab(); }
   if (name === 'cache')      { loadCacheStats(); }
+  if (name === 'images')     { loadImageModels(); }
   if (name === 'routing' && !routingData) { loadRouting(); }
   if (name === 'models' && !routingData)  { loadRouting(); }
   if (name === 'gateway') { setTimeout(loadGatewayTokens, 0); }
@@ -1511,31 +1619,37 @@ function renderModelsAccordion(data) {
 
 function buildModelAccordion(provider, models) {
   var id = 'macc-' + provider;
+  var color = PROVIDER_COLORS[provider] || 'var(--accent)';
+  var desc  = PROVIDER_DESCS[provider] || '';
   var rows = models.map(function(m, i) {
     var name = typeof m === 'string' ? m : (m[0] || '');
     var ctx  = Array.isArray(m) && m[1] ? (m[1] >= 1000 ? Math.round(m[1]/1000) + 'K' : m[1]) : '';
     return '<div class="model-row" data-model="' + name + '">' +
-      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',-1)">▲</button>' +
-      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',1)">▼</button>' +
-      '<span class="model-row-name">' + name + '</span>' +
+      '<span class="model-row-rank" title="Priority #' + (i+1) + '">' + (i+1) + '</span>' +
+      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',-1)" title="Move up" aria-label="Move up">▲</button>' +
+      '<button class="model-move-btn" onclick="moveModel(\'' + provider + '\',' + i + ',1)" title="Move down" aria-label="Move down">▼</button>' +
+      '<span class="model-row-name" title="' + name + '">' + name + '</span>' +
       (ctx ? '<span class="model-row-ctx">' + ctx + ' ctx</span>' : '') +
-      '<button class="model-del-btn" onclick="removeModel(\'' + provider + '\',' + i + ')">✕</button>' +
+      '<button class="model-del-btn" onclick="removeModel(\'' + provider + '\',' + i + ')" title="Remove" aria-label="Remove">✕</button>' +
       '</div>';
   }).join('');
 
-  return '<div class="accordion-item" data-provider="' + provider + '">' +
+  return '<div class="accordion-item provider-accordion" data-provider="' + provider + '">' +
     '<button class="accordion-btn" onclick="this.classList.toggle(\'open\');var b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'block\':\'none\'">' +
-    '<span>' + provider + '</span>' +
-    '<span style="font-size:11px;color:var(--text-3);margin-left:auto;margin-right:8px">' + models.length + ' models</span>' +
-    '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
+    '<span class="prov-dot" style="background:' + color + ';box-shadow:0 0 0 3px ' + color + '22"></span>' +
+    '<span class="prov-name">' + provider + '</span>' +
+    (desc ? '<span style="font-size:11px;color:var(--text-3);font-weight:400;margin-left:6px">' + desc + '</span>' : '') +
+    '<span class="prov-count">' + models.length + ' model' + (models.length === 1 ? '' : 's') + '</span>' +
+    '<svg class="accordion-arrow" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
     '</button>' +
     '<div class="accordion-body" style="display:none">' +
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">' +
-    '<button class="btn btn-xs btn-ghost" onclick="refreshProviderModels(\'' + provider + '\')" title="Discover models from the provider API">↻ Refresh from provider</button>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+      '<span style="font-size:11px;color:var(--text-3)">Drag-free ordering: use ▲▼ on each row. Lower number = higher priority.</span>' +
+      '<button class="btn btn-xs btn-ghost" onclick="refreshProviderModels(\'' + provider + '\')" title="Discover models from the provider API">↻ Refresh from provider</button>' +
     '</div>' +
-    '<div id="' + id + '">' + (rows || '<div style="font-size:12px;color:var(--text-3);padding:8px 0">No models (using provider defaults)</div>') + '</div>' +
+    '<div id="' + id + '">' + (rows || '<div style="font-size:12px;color:var(--text-3);padding:10px 0;text-align:center;background:var(--surface-2);border-radius:var(--r-md)">No models configured — provider defaults will be used.</div>') + '</div>' +
     '<div class="add-model-row">' +
-    '<input type="text" id="model-input-' + provider + '" class="form-control" placeholder="model-id" style="font-family:\'JetBrains Mono\',monospace;font-size:11px" />' +
+    '<input type="text" id="model-input-' + provider + '" class="form-control" placeholder="Add model id, e.g. ' + (models[0] ? (typeof models[0] === 'string' ? models[0] : models[0][0]) : 'gpt-oss-120b') + '" style="font-family:\'JetBrains Mono\',monospace;font-size:11px" />' +
     '<button class="btn btn-ghost" onclick="addModel(\'' + provider + '\')">Add</button>' +
     '</div>' +
     '</div>' +
@@ -1598,6 +1712,50 @@ async function resetModelOverrides() {
 }
 
 // ── Image Generation Tab ─────────────────────────────────────────────────────
+async function loadImageModels() {
+  var sel = document.getElementById('img-model');
+  var pillsEl = document.getElementById('img-models-pills');
+  var countEl = document.getElementById('img-models-count');
+  if (!sel) return;
+  try {
+    var r = await fetch('/v1/images/models');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    var models = d.models || [];
+    if (countEl) countEl.textContent = models.length;
+    var prev = sel.value || d.default || 'flux';
+    sel.innerHTML = models.map(function(m) {
+      var label = m.id + (m.description ? ' — ' + m.description.replace(/^.*?— /, '') : '');
+      return '<option value="' + m.id + '">' + label + '</option>';
+    }).join('');
+    if (Array.prototype.find.call(sel.options, function(o){ return o.value === prev; })) sel.value = prev;
+    else if (d.default) sel.value = d.default;
+    if (pillsEl) {
+      pillsEl.innerHTML = models.map(function(m) {
+        return '<span class="img-model-pill" title="' + (m.description || '') + '">' + m.id + '</span>';
+      }).join('');
+    }
+    // Also refresh size options from supported_sizes if provided.
+    if (Array.isArray(d.supported_sizes)) {
+      var sizeSel = document.getElementById('img-size');
+      if (sizeSel) {
+        var prevSize = sizeSel.value || '1024x1024';
+        var sizes = d.supported_sizes.slice().sort(function(a,b) {
+          var pa = a.split('x').reduce(function(x,y){return parseInt(x,10)*parseInt(y,10)},1);
+          var pb = b.split('x').reduce(function(x,y){return parseInt(x,10)*parseInt(y,10)},1);
+          return pb - pa;
+        });
+        sizeSel.innerHTML = sizes.map(function(s) {
+          var parts = s.split('x'); var w = +parts[0], h = +parts[1];
+          var hint = w === h ? 'square' : (w > h ? 'landscape' : 'portrait');
+          return '<option value="' + s + '">' + w + '×' + h + ' — ' + hint + '</option>';
+        }).join('');
+        if (Array.prototype.find.call(sizeSel.options, function(o){ return o.value === prevSize; })) sizeSel.value = prevSize;
+      }
+    }
+  } catch(e) { /* keep static fallback options */ }
+}
+
 async function generateImages() {
   var prompt = document.getElementById('img-prompt').value.trim();
   if (!prompt) { toast('Enter a prompt', 'error'); return; }
@@ -1609,6 +1767,7 @@ async function generateImages() {
 
   try {
     var neg  = document.getElementById('img-negative').value.trim();
+    var nologoEl = document.getElementById('img-nologo');
     var body = {
       prompt:          prompt,
       model:           document.getElementById('img-model').value,
@@ -1616,6 +1775,7 @@ async function generateImages() {
       n:               parseInt(document.getElementById('img-count').value, 10),
       seed:            parseInt(document.getElementById('img-seed').value, 10),
       enhance:         document.getElementById('img-enhance').checked,
+      nologo:          nologoEl ? nologoEl.checked : true,
       negative_prompt: neg || null,
     };
 
@@ -2223,30 +2383,70 @@ async function stopDeployment(deployId, name) {
 
 // ── Cache Tab ────────────────────────────────────────────────────────────────
 async function loadCacheStats() {
-  var body = document.getElementById('cache-stats-body');
-  if (!body) return;
+  // KPIs
+  var kHit = document.getElementById('cache-kpi-hitrate');
+  var kEnt = document.getElementById('cache-kpi-entries');
+  var kHits = document.getElementById('cache-kpi-hits');
+  var kMiss = document.getElementById('cache-kpi-misses');
+  var cfgBody = document.getElementById('cache-config-body');
+  var cfgTtl  = document.getElementById('cache-cfg-ttl');
+  var cfgPref = document.getElementById('cache-cfg-prefix');
+  var cfgBack = document.getElementById('cache-cfg-backend');
+  if (!kHit) return;
   try {
-    var r    = await fetch('/dashboard/stats');
-    var data = await r.json();
-    var c    = data.cache || {};
-    var fmtPct = function(v) { return v + '%'; };
-    body.innerHTML =
-      '<div class="stat-row"><span class="stat-lbl">Hit Rate</span><div style="flex:1"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px">' + fmtPct(c.hit_rate||0) + '</span></div><div class="progress" style="height:6px"><div class="progress-bar" style="width:' + (c.hit_rate||0) + '%"></div></div></div></div>' +
-      '<div class="stat-row"><span class="stat-lbl">Cache Hits</span><span class="stat-val">' + (c.hits||0).toLocaleString() + '</span></div>' +
-      '<div class="stat-row"><span class="stat-lbl">Cache Misses</span><span class="stat-val">' + (c.misses||0).toLocaleString() + '</span></div>' +
-      '<div class="stat-row"><span class="stat-lbl">Cached Entries</span><span class="stat-val">' + (c.cached_responses||0).toLocaleString() + '</span></div>';
+    var r = await fetch('/settings/cache');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    var s = d.stats || {};
+    var c = d.config || {};
+    if (kHit)  kHit.textContent  = (s.hit_rate_pct || 0).toFixed(1) + '%';
+    if (kEnt)  kEnt.textContent  = (s.cached_entries || 0).toLocaleString();
+    if (kHits) kHits.textContent = (s.hits || 0).toLocaleString();
+    if (kMiss) kMiss.textContent = (s.misses || 0).toLocaleString();
+    if (cfgTtl)  cfgTtl.textContent  = (c.default_ttl_seconds || 0) + ' s (' + Math.round((c.default_ttl_seconds || 0) / 60) + ' min)';
+    if (cfgPref) cfgPref.textContent = c.key_prefix || 'arbiter:cache:';
+    if (cfgBack) cfgBack.textContent = c.redis_backend ? 'Redis' : 'In-memory fallback';
+    if (cfgBody) {
+      var pct = s.hit_rate_pct || 0;
+      var pctColor = pct >= 60 ? 'var(--green)' : pct >= 30 ? 'var(--yellow)' : 'var(--red)';
+      cfgBody.innerHTML =
+        '<div style="display:flex;align-items:center;gap:14px;padding:10px 0 16px;border-bottom:1px solid var(--border)">' +
+          '<div style="position:relative;width:64px;height:64px;flex-shrink:0">' +
+            '<svg width="64" height="64" viewBox="0 0 36 36" style="transform:rotate(-90deg)">' +
+              '<circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" stroke-width="3"></circle>' +
+              '<circle cx="18" cy="18" r="15.9" fill="none" stroke="' + pctColor + '" stroke-width="3" stroke-linecap="round" stroke-dasharray="' + (pct).toFixed(1) + ',100"></circle>' +
+            '</svg>' +
+            '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:' + pctColor + '">' + pct.toFixed(0) + '%</div>' +
+          '</div>' +
+          '<div style="flex:1">' +
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">Cache effectiveness</div>' +
+            '<div style="font-size:12px;color:var(--text-2);margin-top:3px">' +
+              (s.total_lookups || 0).toLocaleString() + ' lookups · ' +
+              (s.hits || 0).toLocaleString() + ' served from cache' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<ol style="margin:14px 0 0 0;padding-left:20px;font-size:12px;color:var(--text-2);line-height:1.7">' +
+          '<li><strong>Stored when</strong> a request has temperature ≤ ' + (c.deterministic_threshold || 0.3) + ' (deterministic enough to be safely reused).</li>' +
+          '<li><strong>Keyed by</strong> ' + (c.key_algorithm || 'sha256(model + messages)') + ' — prompt edits invalidate the entry automatically.</li>' +
+          '<li><strong>Expires after</strong> ' + (c.default_ttl_seconds || 3600) + ' s (' + Math.round((c.default_ttl_seconds || 3600) / 60) + ' min) by default; tune via <code>CACHE_TTL</code>.</li>' +
+          '<li><strong>Skipped for</strong> streaming responses, tool calls, and any request with temperature &gt; ' + (c.deterministic_threshold || 0.3) + '.</li>' +
+        '</ol>';
+    }
   } catch(e) {
-    body.innerHTML = '<div style="color:var(--red)">Failed to load stats</div>';
+    if (cfgBody) cfgBody.innerHTML = '<div style="color:var(--red);padding:14px">Failed to load cache info: ' + e.message + '</div>';
   }
 }
 
 async function clearCache() {
+  if (!confirm('Delete every cached response? This cannot be undone.')) return;
   var sp = document.getElementById('cache-spinner');
   if (sp) sp.style.display = 'inline-block';
   try {
     var r = await fetch('/settings/cache', {method:'DELETE'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    toast('Cache cleared', 'success');
+    var d = await r.json();
+    toast('Cleared ' + (d.entries_deleted || 0) + ' cache entries', 'success');
     await loadCacheStats();
   } catch(e) {
     toast('Clear failed: ' + e.message, 'error');

@@ -1,0 +1,71 @@
+{
+  "name": "Arbiter — LLM Gateway",
+  "short_name": "Arbiter",
+  "description": "Multi-vendor LLM gateway with smart routing, caching, and analytics.",
+  "id": "/dashboard",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#07111f",
+  "theme_color": "#1e1b4b",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["productivity", "developer", "utilities"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/static/icons/arbiter-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/arbiter-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/icons/arbiter-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/arbiter-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/arbiter-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "url": "/dashboard",
+      "description": "Live gateway metrics"
+    },
+    {
+      "name": "Playground",
+      "url": "/playground",
+      "description": "Try chat completions"
+    },
+    {
+      "name": "Logs",
+      "url": "/logs",
+      "description": "Recent requests"
+    },
+    {
+      "name": "Settings",
+      "url": "/settings",
+      "description": "Provider keys & routing"
+    }
+  ]
+}

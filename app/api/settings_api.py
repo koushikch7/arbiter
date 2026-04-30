@@ -72,3 +72,54 @@ async def clear_cache(request: Request) -> JSONResponse:
         except Exception:
             pass
     return JSONResponse({"status": "cleared", "entries_deleted": count})
+
+
+@router.get("/cache")
+async def cache_info(request: Request) -> JSONResponse:
+    """Return cache configuration + live counters for the Cache tab UI."""
+    from app.config import settings
+    from app.cache.cache import CACHE_KEY_PREFIX
+
+    redis = request.app.state.redis
+
+    async def _get_int(name: str) -> int:
+        try:
+            v = await redis.get(f"arbiter:stats:{name}")
+            return int(v) if v else 0
+        except Exception:
+            return 0
+
+    cache = request.app.state.cache
+    stats = await cache.get_stats() if cache else {"cached_responses": 0}
+    hits = await _get_int("cache_hits")
+    misses = await _get_int("cache_misses")
+    total = hits + misses
+    hit_rate = round((hits / total) * 100, 1) if total else 0.0
+
+    # Sample a few entries to show the user how big the cache is.
+    sample = []
+    try:
+        async for k in redis.scan_iter(f"{CACHE_KEY_PREFIX}*", count=8):
+            sample.append(k if isinstance(k, str) else k.decode())
+            if len(sample) >= 8:
+                break
+    except Exception:
+        pass
+
+    return JSONResponse({
+        "config": {
+            "default_ttl_seconds": settings.CACHE_TTL,
+            "deterministic_threshold": 0.3,
+            "key_prefix": CACHE_KEY_PREFIX,
+            "key_algorithm": "sha256(model + messages)",
+            "redis_backend": True,
+        },
+        "stats": {
+            "hits": hits,
+            "misses": misses,
+            "total_lookups": total,
+            "hit_rate_pct": hit_rate,
+            "cached_entries": stats.get("cached_responses", 0),
+        },
+        "sample_keys": [s[-16:] for s in sample],
+    })

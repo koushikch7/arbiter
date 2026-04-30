@@ -564,3 +564,137 @@ th.th-sortable[data-sort-dir="desc"] .th-sort-arrow { opacity: 1; color: var(--a
   background: #2a2d34;
   color: #f5f6f8;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Enterprise-grade polish & responsive (PWA-ready)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Smoother focus rings on every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+button, a, input, select, textarea { outline: none; }
+
+/* Card hover lift — subtle but premium. */
+.card { transition: box-shadow var(--t), border-color var(--t), transform var(--t); }
+.card:hover { border-color: var(--border-2); }
+
+/* Topbar: when sidebar is hidden on mobile, give the toggle a subtle accent. */
+@media (max-width: 768px) {
+  .sidebar-toggle:hover { background: var(--accent-dim); color: var(--accent-br); border-color: var(--accent); }
+}
+
+/* Buttons: ensure consistent active state. */
+.btn:active { transform: translateY(1px); }
+.btn-primary:focus-visible,
+.btn-ghost:focus-visible,
+.btn-danger:focus-visible { box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* Form controls: bigger touch targets on mobile (44px iOS minimum). */
+@media (max-width: 768px) {
+  .form-control { padding: 11px 12px; font-size: 14px; min-height: 42px; }
+  .btn { padding: 10px 16px; font-size: 13px; min-height: 40px; }
+  .btn-sm { padding: 7px 12px; font-size: 12px; min-height: 34px; }
+  .btn-xs { padding: 6px 10px; font-size: 11px; min-height: 30px; }
+}
+
+/* Tables: horizontal scroll + sticky header on mobile. */
+@media (max-width: 768px) {
+  table { font-size: 12px; }
+  thead th { padding: 9px 10px; font-size: 9.5px; }
+  tbody td { padding: 9px 10px; font-size: 12px; }
+}
+
+/* Tab bar: fade edges to hint at scroll. */
+.tab-bar {
+  position: relative;
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+@media (min-width: 769px) {
+  .tab-bar { mask-image: none; -webkit-mask-image: none; }
+}
+
+/* Sidebar: smooth backdrop on mobile when open. */
+@media (max-width: 768px) {
+  .sidebar.open::after {
+    content: ''; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: -1;
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* Sidebar: install PWA button (hidden until beforeinstallprompt fires). */
+.sidebar-install-btn {
+  display: none;
+  align-items: center; gap: 8px;
+  width: 100%; padding: 8px 10px;
+  margin-top: 4px; border-radius: var(--r-md);
+  font-size: 12px; font-weight: 600; color: var(--sidebar-text-active);
+  background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.18));
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer; transition: all var(--t);
+}
+.sidebar-install-btn:hover { background: linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3)); }
+[data-pwa-installable="1"] .sidebar-install-btn { display: flex; }
+
+/* Standalone (installed PWA) tweaks: hide some browser-y chrome. */
+@media (display-mode: standalone) {
+  body { user-select: none; -webkit-user-select: none; }
+  textarea, input { user-select: text; -webkit-user-select: text; }
+  /* Top safe-area padding for iOS notched devices. */
+  .topbar { padding-top: env(safe-area-inset-top); height: calc(var(--topbar-h) + env(safe-area-inset-top)); }
+  .sidebar { padding-top: env(safe-area-inset-top); }
+}
+
+/* iOS safe area for content when running as PWA. */
+@supports (padding: max(0px)) {
+  .page-content, .content-inner {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Toasts: bigger and bottom-anchored on mobile. */
+@media (max-width: 480px) {
+  .toast-container { left: 12px; right: 12px; bottom: 12px; }
+  .toast { max-width: none; width: 100%; }
+}
+
+/* Provider card grid responsive (used in settings keys tab). */
+@media (max-width: 480px) {
+  .provider-card-hd { padding: 12px; gap: 8px; }
+  .provider-icon { width: 28px; height: 28px; font-size: 11px; }
+  .provider-name { font-size: 12px; }
+  .provider-meta { font-size: 10px; }
+  .key-row { flex-wrap: wrap; }
+  .key-hash { min-width: 0; width: 100%; }
+  .key-masked { font-size: 10px; }
+}
+
+/* Code blocks: better mobile word-break. */
+@media (max-width: 768px) {
+  .code-block, pre { font-size: 11px; padding: 12px; }
+  code { word-break: break-word; }
+}
+
+/* Tap highlight + smooth scroll. */
+html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+
+/* High-density images for retina/high-DPI. */
+img { image-rendering: -webkit-optimize-contrast; }
+
+/* Dark-theme topbar lift. */
+[data-theme="dark"] .topbar { background: linear-gradient(180deg, var(--surface), var(--surface-2)); }
+
+/* Print styles — keep things readable when printing analytics/logs. */
+@media print {
+  .sidebar, .topbar, .page-footer, .toast-container { display: none !important; }
+  .main-wrapper, .main-content { margin-left: 0 !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .card { box-shadow: none; border-color: #ccc; }
+}

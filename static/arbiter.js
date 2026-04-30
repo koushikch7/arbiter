@@ -184,4 +184,128 @@ document.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   applyTheme(getSavedTheme());
   initAuthUI();
+  injectPWAHead();
+  registerServiceWorker();
+  initInstallPrompt();
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PWA support
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Inject manifest + theme-color + apple-touch-icon into <head> on every
+ *  page so we don't have to copy/paste those tags into 9 HTML files. */
+function injectPWAHead() {
+  const head = document.head;
+  if (!head) return;
+  const ensure = (selector, build) => {
+    if (!head.querySelector(selector)) head.appendChild(build());
+  };
+  ensure('link[rel="manifest"]', () => {
+    const l = document.createElement('link');
+    l.rel = 'manifest'; l.href = '/static/manifest.webmanifest';
+    return l;
+  });
+  ensure('meta[name="theme-color"]', () => {
+    const m = document.createElement('meta');
+    m.name = 'theme-color';
+    m.content = (document.documentElement.getAttribute('data-theme') === 'dark')
+      ? '#07111f' : '#1e1b4b';
+    return m;
+  });
+  ensure('link[rel="apple-touch-icon"]', () => {
+    const l = document.createElement('link');
+    l.rel = 'apple-touch-icon'; l.href = '/static/icons/arbiter-apple-180.png';
+    return l;
+  });
+  ensure('link[rel="icon"][type="image/svg+xml"]', () => {
+    const l = document.createElement('link');
+    l.rel = 'icon'; l.type = 'image/svg+xml';
+    l.href = '/static/icons/arbiter-icon.svg';
+    return l;
+  });
+  ensure('meta[name="mobile-web-app-capable"]', () => {
+    const m = document.createElement('meta');
+    m.name = 'mobile-web-app-capable'; m.content = 'yes';
+    return m;
+  });
+  ensure('meta[name="apple-mobile-web-app-capable"]', () => {
+    const m = document.createElement('meta');
+    m.name = 'apple-mobile-web-app-capable'; m.content = 'yes';
+    return m;
+  });
+  ensure('meta[name="apple-mobile-web-app-status-bar-style"]', () => {
+    const m = document.createElement('meta');
+    m.name = 'apple-mobile-web-app-status-bar-style'; m.content = 'black-translucent';
+    return m;
+  });
+
+  // Keep the address-bar/theme color in sync with the chosen theme.
+  const obs = new MutationObserver(() => {
+    const m = head.querySelector('meta[name="theme-color"]');
+    if (m) m.content = (document.documentElement.getAttribute('data-theme') === 'dark')
+      ? '#07111f' : '#1e1b4b';
+  });
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+
+/** Register the service worker (idempotent — skips on http:// dev). */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  // Only register on secure contexts (https or localhost).
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost'
+      && location.hostname !== '127.0.0.1') return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        // Auto-update: if a new SW is waiting, activate it.
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version installed — silently swap on next nav.
+              sw.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      })
+      .catch(() => { /* ignore — SW is best-effort */ });
+  });
+  // Reload once when a new SW takes control (so the user sees the new build).
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return; reloaded = true; window.location.reload();
+  });
+}
+
+/** Capture the install prompt and expose a helper for any UI button. */
+let _deferredInstallPrompt = null;
+function initInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredInstallPrompt = e;
+    document.documentElement.setAttribute('data-pwa-installable', '1');
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = '';
+  });
+  window.addEventListener('appinstalled', () => {
+    _deferredInstallPrompt = null;
+    document.documentElement.removeAttribute('data-pwa-installable');
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = 'none';
+    if (typeof toast === 'function') toast('Arbiter installed', 'success');
+  });
+}
+
+/** Trigger the Add-to-Home-Screen prompt; returns true if accepted. */
+window.installArbiterPWA = async function installArbiterPWA() {
+  if (!_deferredInstallPrompt) {
+    if (typeof toast === 'function') toast('Install: use your browser menu → "Add to Home screen".', 'info', 4500);
+    return false;
+  }
+  _deferredInstallPrompt.prompt();
+  const choice = await _deferredInstallPrompt.userChoice;
+  _deferredInstallPrompt = null;
+  return choice && choice.outcome === 'accepted';
+};

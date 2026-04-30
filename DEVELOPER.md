@@ -241,6 +241,7 @@ Keys are stored in `.env` and read fresh on every operation — no Redis layer.
 | `GET`    | `/settings/routing` | Current routing config (provider order + model overrides) |
 | `POST`   | `/settings/routing` | Update `{"provider_order": [...], "model_overrides": {...}}` |
 | `DELETE` | `/settings/routing` | Reset to built-in defaults |
+| `GET`    | `/settings/cache` | Cache config (TTL, key prefix, threshold) + live stats (hits/misses/hit-rate/entries). Powers the Cache tab. |
 | `DELETE` | `/settings/cache` | Clear all cached responses from Redis |
 
 ### Cloudflare Workers AI Management

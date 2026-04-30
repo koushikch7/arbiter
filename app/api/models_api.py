@@ -243,8 +243,9 @@ async def refresh_provider_models(provider: str, request: Request,
     except NotImplementedError:
         raise HTTPException(
             501,
-            f"Provider {provider!r} does not support dynamic model discovery. "
-            f"Model list is hardcoded; edit app/routing/router.py to change it.",
+            f"Provider {provider!r} does not expose a /v1/models discovery "
+            f"endpoint. Its model list is curated in code; you can still "
+            f"enable, disable, or reorder individual models from this UI.",
         )
     except RateLimitError as exc:
         raise HTTPException(429, f"Rate limited while fetching models: {exc}")

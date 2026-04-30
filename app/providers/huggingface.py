@@ -36,6 +36,7 @@ HF_API_BASE = "https://router.huggingface.co/v1/chat/completions"
 
 class HuggingFaceProvider(BaseProvider):
     name = "huggingface"
+    models_discovery_url = "https://router.huggingface.co/v1/models"
 
     # HuggingFace Inference Providers (Apr 2026) — `:fastest` suffix routes
     # to whichever backend (Cerebras/Together/Sambanova/Groq/Novita/etc.) has

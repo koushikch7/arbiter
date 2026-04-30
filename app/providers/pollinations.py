@@ -46,6 +46,7 @@ POLLINATIONS_API_BASE = "https://gen.pollinations.ai/v1/chat/completions"
 
 class PollinationsProvider(BaseProvider):
     name = "pollinations"
+    models_discovery_url = "https://gen.pollinations.ai/v1/models"
 
     # Catalogue from https://gen.pollinations.ai/docs (Apr 2026).  Pollinations
     # routes each alias to a different upstream provider (OpenAI/Anthropic/

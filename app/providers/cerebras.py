@@ -38,6 +38,7 @@ CEREBRAS_API_BASE = "https://api.cerebras.ai/v1/chat/completions"
 
 class CerebrasProvider(BaseProvider):
     name = "cerebras"
+    models_discovery_url = "https://api.cerebras.ai/v1/models"
 
     # From cloud.cerebras.ai (Apr 2026).  Free tier: 30 RPM · 60-64K TPM ·
     # 1M tokens/day per model.  Cerebras is unmatched for tokens/sec speed.

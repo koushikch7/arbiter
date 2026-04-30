@@ -36,6 +36,7 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1/chat/completions"
 
 class OpenRouterProvider(BaseProvider):
     name = "openrouter"
+    models_discovery_url = "https://openrouter.ai/api/v1/models"
 
     # OpenRouter free :free models.  Free tier: 20 RPM, 50 RPD (no credits) /
     # 1000 RPD ($10+ credits).  Each :free routes to a different upstream

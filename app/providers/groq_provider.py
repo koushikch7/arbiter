@@ -40,6 +40,7 @@ GROQ_API_BASE = "https://api.groq.com/openai/v1/chat/completions"
 
 class GroqProvider(BaseProvider):
     name = "groq"
+    models_discovery_url = "https://api.groq.com/openai/v1/models"
 
     models: List[str] = [
         "llama-3.1-8b-instant",                        # 30 RPM · 6K TPM · 14,400 RPD — fastest

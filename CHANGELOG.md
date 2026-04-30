@@ -76,6 +76,33 @@ Auto-router scoring for `gemini-3.1-flash-lite-preview` bumped to
   free keys (KEY2/KEY3) skipped without burning quota.
 - Free key (KEY2) confirmed working on `gemini-3.1-flash-lite-preview`.
 
+### 🔄 Dynamic model discovery for OpenAI-compatible providers
+
+The Settings → Models tab "Refresh" button now actually works for most
+providers instead of failing with the unfriendly *"edit app/routing/router.py"*
+message.  Implemented a shared `BaseProvider.fetch_models()` that honours a
+new `models_discovery_url` class attribute and parses the standard
+`{"data": [{"id": ...}, ...]}` shape.
+
+Providers wired up (live-tested):
+
+| Provider     | Discovery endpoint                          | Models found |
+|--------------|---------------------------------------------|--------------|
+| Cerebras     | `https://api.cerebras.ai/v1/models`         | 4            |
+| Groq         | `https://api.groq.com/openai/v1/models`     | 16           |
+| OpenRouter   | `https://openrouter.ai/api/v1/models`       | 370          |
+| HuggingFace  | `https://router.huggingface.co/v1/models`   | 128          |
+| Pollinations | `https://gen.pollinations.ai/v1/models`     | 42           |
+| Gemini       | `https://generativelanguage.googleapis.com/v1beta/models` (custom impl filters `generateContent` only) | 38 |
+| Z.ai         | `https://api.z.ai/api/paas/v4/models`       | (untested — endpoint declared) |
+| Lightning    | `https://lightning.ai/api/v1/models`        | (untested — endpoint declared) |
+| Routeway     | (existing custom impl)                      | 192          |
+| Custom       | (generic OpenAI provider)                   | varies       |
+
+Cohere and Cloudflare still need bespoke parsers (non-OpenAI shapes); the
+UI now shows a friendly explanation: *"Its model list is curated in code; you
+can still enable, disable, or reorder individual models from this UI."*
+
 ---
 
 ## [1.13.2] – 2026-04-30 — All-models routing & smart key health

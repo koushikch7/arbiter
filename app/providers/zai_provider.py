@@ -45,6 +45,7 @@ ZAI_CHAT_URL = "https://api.z.ai/api/paas/v4/chat/completions"
 
 class ZaiProvider(BaseProvider):
     name = "zai"
+    models_discovery_url = "https://api.z.ai/api/paas/v4/models"
 
     models: List[str] = [
         "glm-4.7-flash",   # free · 128K · fast general purpose

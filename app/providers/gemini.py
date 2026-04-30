@@ -127,6 +127,57 @@ class GeminiProvider(BaseProvider):
         return system_parts, contents
 
     # --------------------------------------------------------------------------
+    async def fetch_models(self, api_key: str) -> list[dict]:
+        """Discover Gemini models via the native ``/v1beta/models`` endpoint.
+
+        Only returns models that support ``generateContent`` (i.e. usable for
+        chat completions).  Strips the ``models/`` URI prefix from every id.
+        """
+        import httpx
+
+        from app.providers.base import RateLimitError, ProviderError
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models"
+            f"?key={api_key}&pageSize=200"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(url)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"[gemini] models fetch network error: {exc}") from exc
+
+        if resp.status_code == 429:
+            raise RateLimitError("[gemini] models fetch 429")
+        if resp.status_code != 200:
+            raise ProviderError(
+                f"[gemini] models fetch {resp.status_code}: {resp.text[:300]}"
+            )
+
+        data = resp.json()
+        out: list[dict] = []
+        for item in data.get("models", []):
+            if not isinstance(item, dict):
+                continue
+            methods = item.get("supportedGenerationMethods") or []
+            if "generateContent" not in methods:
+                continue
+            mid = item.get("name", "")
+            if mid.startswith("models/"):
+                mid = mid[len("models/"):]
+            if not mid:
+                continue
+            ctx = item.get("inputTokenLimit") or None
+            try:
+                ctx = int(ctx) if ctx is not None else None
+            except (TypeError, ValueError):
+                ctx = None
+            # Paid-tier inference: anything in our `paid_models` set.
+            is_free = mid not in self.paid_models
+            out.append({"id": mid, "context": ctx, "free": is_free})
+        return out
+
+    # --------------------------------------------------------------------------
     async def complete(
         self, request: ChatCompletionRequest, api_key: str
     ) -> ChatCompletionResponse:

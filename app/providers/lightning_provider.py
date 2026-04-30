@@ -44,6 +44,7 @@ LIGHTNING_API_BASE = "https://lightning.ai/api/v1/chat/completions"
 
 class LightningProvider(BaseProvider):
     name = "lightning"
+    models_discovery_url = "https://lightning.ai/api/v1/models"
 
     # Ordered best → smallest; context windows from Lightning.ai docs
     models: List[str] = [

@@ -42,11 +42,15 @@ COHERE_CHAT_URL = "https://api.cohere.ai/v2/chat"
 class CohereProvider(BaseProvider):
     name = "cohere"
 
+    # From docs.cohere.com/docs/models (Apr 2026).  All Live; deprecated
+    # `command-r`, `command-r-plus`, `command-r-03-2024`, `command-r-plus-04-2024`
+    # were removed Sept 2025.
     models: List[str] = [
-        "command-r7b-12-2024",     # fastest 7B, lowest quota cost
-        "command-r-08-2024",       # balanced
-        "command-r-plus-08-2024",  # highest quality
-        "command-a-03-2025",       # newest flagship (256K ctx)
+        "command-r7b-12-2024",         # default — fastest 7B (128K ctx)
+        "command-r-08-2024",           # balanced (128K ctx)
+        "command-r-plus-08-2024",      # high-quality (128K ctx)
+        "command-a-03-2025",           # flagship (256K ctx, may need prod key)
+        "command-a-reasoning-08-2025", # reasoning model
     ]
 
     max_context_tokens = 128_000

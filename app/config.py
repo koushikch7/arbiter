@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # https://ollama.com/settings/keys
     OLLAMA_API_KEYS: str = ""
 
+    # Pollinations — single key or comma-separated; required since 2026.
+    POLLINATIONS_API_KEYS: str = ""
+
     # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
     MODAL_API_KEYS: str = ""
     # Modal account token (used by the one-click deploy feature)
@@ -108,6 +111,7 @@ class Settings(BaseSettings):
             "lightning":    self.LIGHTNING_API_KEYS,
             "routeway":     self.ROUTEWAY_API_KEYS,
             "ollama":       self.OLLAMA_API_KEYS,
+            "pollinations": self.POLLINATIONS_API_KEYS,
             "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")

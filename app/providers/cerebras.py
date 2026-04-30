@@ -39,9 +39,13 @@ CEREBRAS_API_BASE = "https://api.cerebras.ai/v1/chat/completions"
 class CerebrasProvider(BaseProvider):
     name = "cerebras"
 
+    # From cloud.cerebras.ai (Apr 2026).  Free tier: 30 RPM · 60-64K TPM ·
+    # 1M tokens/day per model.  Cerebras is unmatched for tokens/sec speed.
     models: List[str] = [
-        "llama3.1-8b",                       # production · 30 RPM · 60K TPM · 1M/day · fastest
-        "gpt-oss-120b",                      # production · 30 RPM · 64K TPM · 1M/day · large
+        "llama3.1-8b",                       # default · fastest 8B
+        "llama-3.3-70b",                     # 70B
+        "gpt-oss-120b",                      # large GPT-OSS
+        "qwen-3-32b",                        # Qwen 3 32B
         "qwen-3-235b-a22b-instruct-2507",    # preview · Qwen 3 235B · best reasoning
         "zai-glm-4.7",                       # preview · Z.ai GLM 4.7
     ]

@@ -125,9 +125,13 @@ PROVIDER_LIMITS = {
 }
 
 # Score weights
-_W_RPM   = 0.30
-_W_TPM   = 0.20
-_W_DAILY = 0.50
+_W_RPM   = 0.25
+_W_TPM   = 0.15
+_W_DAILY = 0.40
+_W_HEALTH = 0.20   # success-rate / error-history bonus
+
+# Health factor decay
+_HEALTH_TTL = 1800     # 30 min sliding window for success/error counters
 
 
 def _hash_key(api_key: str) -> str:
@@ -206,6 +210,8 @@ class KeyPool:
         daily counter tracks API *calls* (not tokens) because all per-provider
         daily limits in PROVIDER_LIMITS are expressed as requests-per-day (RPD).
         TPM already captures token throughput on a 60s window.
+
+        Also increments a 30-min success counter feeding into the health factor.
         """
         h      = _hash_key(key)
         prefix = f"{self.provider}:{h}"
@@ -220,11 +226,28 @@ class KeyPool:
         # Daily – 24 h window (request count — matches RPD limits in PROVIDER_LIMITS)
         pipe.incr(f"{prefix}:daily")
         pipe.expire(f"{prefix}:daily", 86_400)
+        # Health – 30 min sliding-window success counter
+        pipe.incr(f"{prefix}:ok")
+        pipe.expire(f"{prefix}:ok", _HEALTH_TTL)
         await pipe.execute()
 
         logger.debug(
-            f"[{self.provider}] key={h} recorded +1 RPM/daily, +{tokens_used} TPM"
+            f"[{self.provider}] key={h} recorded +1 RPM/daily/ok, +{tokens_used} TPM"
         )
+
+    async def record_error(self, key: str) -> None:
+        """Bump the 30-min error counter (does NOT cooldown the key).
+
+        Used for non-rate-limit upstream errors (5xx, schema mismatches, etc.).
+        Drives the health factor in the score so a flaky key is automatically
+        deprioritised even if its RPM/TPM/daily quotas look fine.
+        """
+        h      = _hash_key(key)
+        prefix = f"{self.provider}:{h}"
+        pipe = self.redis.pipeline()
+        pipe.incr(f"{prefix}:err")
+        pipe.expire(f"{prefix}:err", _HEALTH_TTL)
+        await pipe.execute()
 
     async def mark_failed(self, key: str, cooldown_seconds: int = 300) -> None:
         """
@@ -288,6 +311,11 @@ class KeyPool:
 
         Returns -1.0 if the key is on cooldown or has exhausted its daily quota
         (making it ineligible).  Otherwise returns a value in (0, 1].
+
+        Score = RPM_avail * 0.25 + TPM_avail * 0.15 + daily_avail * 0.40
+              + health_factor * 0.20
+        where health_factor = (successes + 1) / (successes + errors + 2) over a
+        30-min sliding window (Laplace-smoothed; defaults to 0.5 with no data).
         """
         h      = _hash_key(key)
         prefix = f"{self.provider}:{h}"
@@ -299,6 +327,8 @@ class KeyPool:
         rpm_used   = int(await self.redis.get(f"{prefix}:rpm")   or 0)
         tpm_used   = int(await self.redis.get(f"{prefix}:tpm")   or 0)
         daily_used = int(await self.redis.get(f"{prefix}:daily") or 0)
+        ok_count   = int(await self.redis.get(f"{prefix}:ok")    or 0)
+        err_count  = int(await self.redis.get(f"{prefix}:err")   or 0)
 
         # Daily exhaustion is a hard exclusion (no reset until midnight)
         if daily_used >= self.daily_limit:
@@ -309,7 +339,15 @@ class KeyPool:
         tpm_avail   = max(0.0, 1.0 - tpm_used   / self.tpm_limit)
         daily_avail = max(0.0, 1.0 - daily_used / self.daily_limit)
 
-        score = rpm_avail * _W_RPM + tpm_avail * _W_TPM + daily_avail * _W_DAILY
+        # Health factor: Laplace-smoothed success rate (defaults to 0.5 when no data).
+        health = (ok_count + 1) / (ok_count + err_count + 2)
+
+        score = (
+            rpm_avail   * _W_RPM
+            + tpm_avail * _W_TPM
+            + daily_avail * _W_DAILY
+            + health      * _W_HEALTH
+        )
 
         # If RPM is fully saturated the key can still work after the minute resets,
         # but we deprioritise it heavily.  A score > 0 means the key is usable.

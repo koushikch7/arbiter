@@ -37,15 +37,23 @@ HF_API_BASE = "https://router.huggingface.co/v1/chat/completions"
 class HuggingFaceProvider(BaseProvider):
     name = "huggingface"
 
+    # HuggingFace Inference Providers (Apr 2026) — `:fastest` suffix routes
+    # to whichever backend (Cerebras/Together/Sambanova/Groq/Novita/etc.) has
+    # lowest latency.  No markup over partner pricing.
     models: List[str] = [
-        "Qwen/Qwen2.5-7B-Instruct",            # most reliable free model
-        "meta-llama/Llama-3.1-8B-Instruct",    # Meta Llama 3.1 8B
-        "meta-llama/Llama-3.2-1B-Instruct",    # smallest, fastest
-        "openai/gpt-oss-20b",                  # OpenAI GPT-OSS 20B
+        "openai/gpt-oss-20b:fastest",                # default — fast small
+        "openai/gpt-oss-120b:fastest",               # large GPT-OSS reasoning
+        "deepseek-ai/DeepSeek-V3.1:fastest",         # DeepSeek V3.1
+        "deepseek-ai/DeepSeek-R1:fastest",           # DeepSeek R1 reasoning
+        "meta-llama/Llama-3.3-70B-Instruct:fastest", # Llama 3.3 70B
+        "Qwen/Qwen3-32B:fastest",                    # Qwen 3 32B
+        "Qwen/Qwen2.5-7B-Instruct",                  # legacy fallback
+        "meta-llama/Llama-3.1-8B-Instruct",          # Meta Llama 3.1 8B
+        "mistralai/Mistral-7B-Instruct-v0.3",        # Mistral 7B
     ]
 
     max_context_tokens = 131_072
-    default_model      = "Qwen/Qwen2.5-7B-Instruct"
+    default_model      = "openai/gpt-oss-20b:fastest"
 
     # ------------------------------------------------------------------
     async def complete(

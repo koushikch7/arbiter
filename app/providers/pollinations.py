@@ -47,14 +47,41 @@ POLLINATIONS_API_BASE = "https://gen.pollinations.ai/v1/chat/completions"
 class PollinationsProvider(BaseProvider):
     name = "pollinations"
 
+    # Catalogue from https://gen.pollinations.ai/docs (Apr 2026).  Pollinations
+    # routes each alias to a different upstream provider (OpenAI/Anthropic/
+    # Google/etc.), so we get effectively-free access to several premium models.
+    # Order roughly by speed (fast variants first, premium last).
     models: List[str] = [
-        # Verified live April 2026 — legacy aliases (`mistral`, `mistral-large`,
-        # `openai`, `claude`) were deprecated for authenticated users; only
-        # `openai-fast` (GPT-OSS 20B on OVH) is reliably available.
-        "openai-fast",
+        "openai-fast",          # GPT-OSS via OVH — fastest, default
+        "mistral",              # Mistral Small
+        "qwen-coder",           # Qwen Coder — coding
+        "deepseek",             # DeepSeek V3 — reasoning/coding
+        "gemini-flash-lite-3.1",# Gemini 3.1 Flash-Lite
+        "openai",               # GPT default
+        "claude-fast",          # Claude Haiku-class
+        "kimi",                 # Kimi K2
+        "glm",                  # GLM-4.x
+        "nova-fast",            # Amazon Nova
+        # Premium / large variants — used only when intent demands quality
+        "openai-large",
+        "claude",
+        "claude-large",
+        "claude-opus-4.7",
+        "gemini-large",
+        "deepseek-pro",
+        "qwen-large",
+        "qwen-coder-large",
+        "mistral-large",
+        "kimi-k2.6",
+        "grok",
+        "grok-large",
+        "perplexity-reasoning",
+        "perplexity-fast",
+        "nova",
+        "minimax",
     ]
 
-    max_context_tokens = 32768
+    max_context_tokens = 128_000
     default_model      = "openai-fast"
 
     # ------------------------------------------------------------------
@@ -63,9 +90,8 @@ class PollinationsProvider(BaseProvider):
     ) -> ChatCompletionResponse:
         """Call the Pollinations.ai OpenAI-compatible text endpoint.
 
-        No Authorization header is sent (free, anonymous service).  Unknown
-        models are passed through so users get a clear upstream 4xx rather
-        than silently being rerouted to a different model.
+        Pollinations now requires Authorization: Bearer <key> on every
+        /v1/chat/completions call (changed in 2026 — was previously open).
         """
         requested = (request.model or "").strip()
         model = requested if requested and requested.lower() != "auto" else self.default_model
@@ -87,12 +113,13 @@ class PollinationsProvider(BaseProvider):
         if request.stop:
             payload["stop"] = request.stop
 
-        # Note: intentionally NO Authorization header — Pollinations is free / anonymous.
-        # User-Agent required: Cloudflare in front of Pollinations returns 502 to
+        # Authorization Bearer is required as of 2026.  User-Agent is also
+        # required — Cloudflare in front of Pollinations returns 502 to
         # unrecognised UAs (e.g. bare httpx/0.x).
         headers = {
-            "Content-Type": "application/json",
-            "User-Agent":   "Arbiter/1.11.2 (+https://github.com/)",
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent":    "Arbiter/1.13 (+https://github.com/koushikch7/arbiter)",
         }
 
         logger.debug(f"PollinationsProvider POST model={model}")

@@ -6,7 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.13.1] – 2026-04-30 (Latest) — UI consistency + routing fix
+## [1.13.2] – 2026-04-30 (Latest) — All-models routing & smart key health
+
+### 🚀 Massive model coverage expansion
+
+- `/v1/models` now exposes **106 models** (up from 60) sourced from current
+  official documentation across all 10 active providers.
+- **Pollinations** (`gen.pollinations.ai`) — auth header upgrade and 28-model
+  catalog covering OpenAI / Claude / Gemini / DeepSeek / Qwen / Kimi /
+  Mistral / GLM / Grok / Perplexity / Nova / Minimax aliases.
+- **Cloudflare** — 17 models incl. Llama 4 Scout, GPT-OSS 120B/20B,
+  Kimi K2.6 (262K ctx), GLM-4.7 Flash, Gemma 4-26B, Nemotron-3-120B.
+- **Cerebras** — added Llama 3.3-70B, GPT-OSS-120B, Qwen-3-32B.
+- **HuggingFace** — switched to `:fastest` routing across Inference Providers.
+- **Gemini** — exposed all 5 free-tier models (2.5-flash-lite default,
+  2.0-flash-lite, 2.0-flash, 2.5-flash, 2.5-pro).
+- **Cohere** — added `command-a-reasoning-08-2025`.
+- **OpenRouter** — default flipped from chronically-throttled
+  `hermes-3-llama-3.1-405b:free` to `google/gemma-3-27b-it:free`.
+
+### 🐛 Fixed
+
+- **Pollinations 401** — Authorization Bearer header now sent on every
+  call (Pollinations made auth mandatory in 2026). Verified end-to-end:
+  upstream now reaches 402-budget rather than 401-auth.
+- **Pollinations key never loaded** — `Settings` was missing the
+  `POLLINATIONS_API_KEYS` field, so `get_keys("pollinations")` returned
+  empty and the pool fell back to the literal string `"free"`. Added
+  the field plus mapping entry in `app/config.py`.
+- **Stale Redis disabled flags** for `cloudflare`, `cohere`, `cerebras`
+  removed — all three now eligible for routing again.
+
+### 🧠 Smart key-health scoring
+
+- `KeyPool._score_key()` now factors in a 30-min sliding-window
+  **success / error ratio** (Laplace-smoothed) alongside RPM / TPM /
+  daily availability. Weights rebalanced to
+  `RPM 0.25 · TPM 0.15 · Daily 0.40 · Health 0.20`.
+- New `KeyPool.record_error(key)` helper bumps the error counter on
+  upstream `ProviderError` / unexpected exceptions; flaky keys are
+  automatically deprioritised without being hard-cooled.
+
+---
+
+## [1.13.1] – 2026-04-30 — UI consistency + routing fix
 
 ### 🐛 Fixed
 

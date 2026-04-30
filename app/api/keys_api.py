@@ -68,8 +68,12 @@ _PROVIDER_META = {
         "signup_url": "https://aistudio.google.com/app/apikey",
         "free":       True,
         "models": [
-            "gemini-2.5-flash", "gemini-2.5-flash-lite",
-            "gemini-2.5-pro", "gemini-2.0-flash",
+            # Current free-tier models (verified Apr 2026 from official docs).
+            "gemini-2.5-flash-lite",   # default — 15 RPM, 1000 RPD (highest quota)
+            "gemini-2.0-flash-lite",   # backup — high quota
+            "gemini-2.5-flash",        # quality bump — 10 RPM, 250 RPD
+            "gemini-2.0-flash",
+            "gemini-2.5-pro",          # premium — low RPM
         ],
     },
     "groq": {
@@ -79,8 +83,17 @@ _PROVIDER_META = {
         "signup_url": "https://console.groq.com/keys",
         "free":       True,
         "models": [
-            "llama-3.1-8b-instant", "llama-3.3-70b-versatile",
-            "llama-4-scout-17b", "qwen3-32b",
+            # From console.groq.com/docs/rate-limits (Apr 2026 free tier).
+            "llama-3.1-8b-instant",                    # 30 RPM · 14400 RPD — fastest, default
+            "llama-3.3-70b-versatile",                 # 30 RPM · 1K RPD
+            "meta-llama/llama-4-scout-17b-16e-instruct",  # 30 RPM · 1K RPD
+            "qwen/qwen3-32b",                          # 60 RPM!
+            "moonshotai/kimi-k2-instruct",             # 60 RPM!
+            "openai/gpt-oss-120b",                     # 30 RPM · 1K RPD
+            "openai/gpt-oss-20b",                      # 30 RPM · 1K RPD
+            "groq/compound",                           # agentic, tools required
+            "groq/compound-mini",
+            "allam-2-7b",                              # arabic
         ],
     },
     "openrouter": {
@@ -90,8 +103,13 @@ _PROVIDER_META = {
         "signup_url": "https://openrouter.ai/keys",
         "free":       True,
         "models": [
-            "nousresearch/hermes-3-llama-3.1-405b:free",
+            # NOTE: OpenRouter free :free models are 20 RPM / 50 RPD per account.
+            # Used as last-resort by router.
             "google/gemma-3-27b-it:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen3-30b-a3b:free",
+            "deepseek/deepseek-r1:free",
+            "nousresearch/hermes-3-llama-3.1-405b:free",
         ],
     },
     "cohere": {
@@ -100,7 +118,14 @@ _PROVIDER_META = {
         "key_hint":   "...",
         "signup_url": "https://dashboard.cohere.com/api-keys",
         "free":       True,
-        "models": ["command-r7b-12-2024", "command-r-plus-08-2024"],
+        "models": [
+            # From docs.cohere.com/docs/models (Apr 2026).  Trial keys: 20 RPM, 1000/month.
+            "command-r7b-12-2024",         # default — fastest 7B (128k ctx)
+            "command-r-08-2024",           # 128k ctx
+            "command-r-plus-08-2024",      # 128k ctx — quality
+            "command-a-03-2025",           # 256k ctx — flagship (may need prod key)
+            "command-a-reasoning-08-2025", # reasoning intent
+        ],
     },
     "cloudflare": {
         "label":      "Cloudflare Workers AI",
@@ -117,9 +142,24 @@ _PROVIDER_META = {
             "Format key as: <Account_ID>|<API_Token>",
         ],
         "models": [
-            "@cf/meta/llama-4-scout-17b-16e-instruct",
-            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            # From developers.cloudflare.com/workers-ai/models (Apr 2026).
+            # 300 RPM Workers AI free tier across all models combined.
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",  # default — fast 70B
+            "@cf/openai/gpt-oss-120b",
+            "@cf/openai/gpt-oss-20b",
+            "@cf/qwen/qwen3-30b-a3b-fp8",
+            "@cf/qwen/qwq-32b",                          # reasoning
+            "@cf/qwen/qwen2.5-coder-32b-instruct",       # coding
+            "@cf/google/gemma-3-12b-it",
+            "@cf/meta/llama-4-scout-17b-16e-instruct",   # multimodal
+            "@cf/mistralai/mistral-small-3.1-24b-instruct",
             "@cf/moonshot/kimi-k2.5",
+            "@cf/moonshot/kimi-k2.6",
+            "@cf/zhipu/glm-4.7-flash",
+            "@cf/nvidia/nemotron-3-120b-a12b",
+            "@cf/google/gemma-4-26b-a4b-it",
+            "@cf/ibm/granite-4.0-h-micro",
+            "@cf/deepseek/deepseek-r1-distill-qwen-32b",
         ],
     },
     "cerebras": {
@@ -128,7 +168,14 @@ _PROVIDER_META = {
         "key_hint":   "csk-...",
         "signup_url": "https://cloud.cerebras.ai/",
         "free":       True,
-        "models": ["llama3.1-8b", "gpt-oss-120b", "qwen-3-235b"],
+        "models": [
+            # 30 RPM · 60-64K TPM · 1M tokens/day per model.
+            "llama3.1-8b",         # default — fastest
+            "llama-3.3-70b",
+            "gpt-oss-120b",
+            "qwen-3-235b-instruct",
+            "qwen-3-32b",
+        ],
     },
     "huggingface": {
         "label":      "HuggingFace Inference",
@@ -137,7 +184,15 @@ _PROVIDER_META = {
         "signup_url": "https://huggingface.co/settings/tokens",
         "free":       True,
         "models": [
+            # HF Inference Providers — routes to fastest backend (Cerebras, Together,
+            # Sambanova, Groq, etc.) automatically.  Use ':fastest' suffix.
+            "openai/gpt-oss-120b:fastest",
+            "openai/gpt-oss-20b:fastest",
+            "deepseek-ai/DeepSeek-V3.1:fastest",
+            "deepseek-ai/DeepSeek-R1:fastest",
+            "meta-llama/Llama-3.3-70B-Instruct:fastest",
             "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen3-32B:fastest",
             "mistralai/Mistral-7B-Instruct-v0.3",
         ],
     },
@@ -147,8 +202,28 @@ _PROVIDER_META = {
         "key_hint":   "sk_... or pk_...",
         "signup_url": "https://enter.pollinations.ai/",
         "free":       True,
-        "models": ["openai", "openai-fast", "openai-large", "claude", "claude-fast",
-                   "claude-large", "gemini", "gemini-fast", "mistral", "deepseek", "qwen-coder"],
+        "setup_steps": [
+            "Sign up at https://enter.pollinations.ai/ (free)",
+            "Copy your API key (starts with pk_ or sk_)",
+            "Paste it here — routes to OpenAI/Anthropic/Google/etc. for free",
+            "Add a secondary key to double your concurrent capacity",
+        ],
+        "models": [
+            # From gen.pollinations.ai/docs (Apr 2026).  Each alias routes to a
+            # different upstream backend (OpenAI/Claude/Gemini/Kimi/etc.).
+            "openai-fast", "openai", "openai-large",
+            "claude-fast", "claude", "claude-large", "claude-opus-4.7",
+            "gemini-flash-lite-3.1", "gemini-fast", "gemini", "gemini-large",
+            "deepseek", "deepseek-pro",
+            "qwen-coder", "qwen-coder-large", "qwen-large",
+            "mistral", "mistral-large",
+            "kimi", "kimi-k2.6",
+            "glm",
+            "grok", "grok-large",
+            "perplexity-fast", "perplexity-reasoning",
+            "nova-fast", "nova",
+            "minimax",
+        ],
     },
     "modal": {
         "label":      "Modal.com (Serverless GPU)",

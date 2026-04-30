@@ -48,13 +48,18 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 class GeminiProvider(BaseProvider):
     name = "gemini"
 
-    # Free-tier models ordered: newest preview first → stable fallback
-    # gemini-3.1-pro-preview and gemini-2.5-pro are PAID-only — excluded
-    # Only gemini-2.5-flash-lite is reliably available on a free-tier key —
-    # the preview / newer-flagship models (3.1-flash-lite-preview, 3-flash-
-    # preview, 2.5-flash) returned 4xx/502 during live probes.
+    # Free-tier models ordered by RPD quota (highest first).
+    # gemini-2.5-flash-lite      15 RPM,  250K TPM, 1000 RPD
+    # gemini-2.0-flash-lite      30 RPM,  1M  TPM, 1500 RPD (highest quota)
+    # gemini-2.5-flash           10 RPM,  250K TPM,  250 RPD
+    # gemini-2.0-flash           15 RPM,  1M  TPM, 1500 RPD
+    # gemini-2.5-pro              5 RPM,  250K TPM,  100 RPD (premium)
     models: List[str] = [
-        "gemini-2.5-flash-lite",          # stable, 15 RPM, 1 000 RPD (highest quota)
+        "gemini-2.5-flash-lite",   # default — highest quota among 2.5 line
+        "gemini-2.0-flash-lite",   # backup — high quota, lower quality
+        "gemini-2.0-flash",        # high quota, fast
+        "gemini-2.5-flash",        # quality bump
+        "gemini-2.5-pro",          # reasoning / premium
     ]
 
     max_context_tokens = 1_048_576   # 1 M tokens

@@ -56,22 +56,31 @@ def _split_key(api_key: str) -> Tuple[str, str]:
 class CloudflareProvider(BaseProvider):
     name = "cloudflare"
 
+    # From developers.cloudflare.com/workers-ai/models (Apr 2026).
+    # Workers AI free tier: 300 RPM combined across all models.
+    # Default = fp8-fast 70B for best speed/quality tradeoff.
     models: List[str] = [
-        "@cf/meta/llama-4-scout-17b-16e-instruct",        # Llama 4 Scout — newest
-        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",       # Llama 3.3 70B fast
-        "@cf/moonshot/kimi-k2.5",                          # 256K context
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",       # default — fast, high quality
+        "@cf/openai/gpt-oss-120b",                         # large GPT-OSS reasoning
+        "@cf/openai/gpt-oss-20b",                          # small GPT-OSS
+        "@cf/meta/llama-4-scout-17b-16e-instruct",        # multimodal Llama 4
+        "@cf/moonshot/kimi-k2.6",                          # newest Kimi (262K ctx)
+        "@cf/moonshot/kimi-k2.5",                          # Kimi (256K ctx)
+        "@cf/zhipu/glm-4.7-flash",                         # GLM-4.7 Flash
+        "@cf/nvidia/nemotron-3-120b-a12b",                 # Nemotron 3
         "@cf/qwen/qwen3-30b-a3b-fp8",                     # Qwen 3 30B
-        "@cf/mistralai/mistral-small-3.1-24b-instruct",   # Mistral Small 24B
-        "@cf/deepseek/deepseek-r1-distill-qwen-32b",      # DeepSeek R1 reasoning
         "@cf/qwen/qwq-32b",                                # QwQ reasoning
         "@cf/qwen/qwen2.5-coder-32b-instruct",            # coding specialist
+        "@cf/mistralai/mistral-small-3.1-24b-instruct",   # Mistral Small 24B
+        "@cf/google/gemma-4-26b-a4b-it",                  # Gemma 4
         "@cf/google/gemma-3-12b-it",                       # Gemma 3 12B (128K)
-        "@cf/meta/llama-3.1-8b-instruct",                 # fastest 8B fallback
-        "@cf/meta/llama-3.2-3b-instruct",                 # smallest 3B fallback
+        "@cf/deepseek/deepseek-r1-distill-qwen-32b",      # DeepSeek R1 distilled
+        "@cf/ibm/granite-4.0-h-micro",                     # IBM Granite (efficient)
+        "@cf/meta/llama-3.1-8b-instruct-fast",            # fastest 8B fallback
     ]
 
-    max_context_tokens = 131_072   # Kimi K2.5 and most large models
-    default_model      = "@cf/meta/llama-4-scout-17b-16e-instruct"
+    max_context_tokens = 262_144   # Kimi K2.6
+    default_model      = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
     # ------------------------------------------------------------------
     async def complete(

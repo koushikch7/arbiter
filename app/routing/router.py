@@ -324,6 +324,7 @@ class IntelligentRouter:
                     logger.error(
                         f"✗ ProviderError {provider_name}/{model_name}: {exc}"
                     )
+                    await key_pool.record_error(key)
                     await obs_stats.record_failure(
                         self.redis, provider=provider_name, model=model_name,
                         rate_limited=False, token_id=token_id,
@@ -335,6 +336,7 @@ class IntelligentRouter:
                     logger.exception(
                         f"✗ Unexpected {provider_name}/{model_name}: {exc}"
                     )
+                    await key_pool.record_error(key)
                     last_error = exc
                     break
 

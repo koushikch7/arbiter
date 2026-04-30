@@ -37,21 +37,24 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1/chat/completions"
 class OpenRouterProvider(BaseProvider):
     name = "openrouter"
 
-    # Only :free models, ordered best → smallest
-    # Context windows confirmed from openrouter.ai model cards
+    # OpenRouter free :free models.  Free tier: 20 RPM, 50 RPD (no credits) /
+    # 1000 RPD ($10+ credits).  Each :free routes to a different upstream
+    # provider; some are chronically rate-limited.  Router treats OpenRouter
+    # as last-resort by giving it a low priority weight.
     models: List[str] = [
-        # meta-llama/llama-3.3-70b-instruct:free removed — Venice upstream
-        # chronically rate-limited; use the Routeway variant instead.
-        "nousresearch/hermes-3-llama-3.1-405b:free",        # 131K ctx – largest free
-        "google/gemma-3-27b-it:free",                       # 131K ctx – Google's Gemma 3
-        "mistralai/mistral-small-3.1-24b-instruct:free",    # 128K ctx – Mistral
-        "google/gemma-3-12b-it:free",                       # 131K ctx – lighter Gemma
-        "qwen/qwen3-4b:free",                               # 128K ctx – fast, small
-        "meta-llama/llama-3.2-3b-instruct:free",            # 131K ctx – smallest/fastest
+        "google/gemma-3-27b-it:free",                       # 131K ctx — Google's Gemma 3 (less rate-limited)
+        "qwen/qwen3-30b-a3b:free",                          # 128K ctx — Qwen 3 MoE
+        "deepseek/deepseek-r1:free",                        # reasoning
+        "mistralai/mistral-small-3.1-24b-instruct:free",    # 128K ctx — Mistral
+        "meta-llama/llama-3.3-70b-instruct:free",           # 70B
+        "google/gemma-3-12b-it:free",                       # 131K ctx — lighter Gemma
+        "qwen/qwen3-4b:free",                               # 128K ctx — fast, small
+        "meta-llama/llama-3.2-3b-instruct:free",            # 131K ctx — smallest/fastest
+        "nousresearch/hermes-3-llama-3.1-405b:free",        # 131K ctx — largest (often 429)
     ]
 
     max_context_tokens = 131_072
-    default_model      = "nousresearch/hermes-3-llama-3.1-405b:free"
+    default_model      = "google/gemma-3-27b-it:free"
 
     # --------------------------------------------------------------------------
     async def complete(

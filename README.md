@@ -35,6 +35,12 @@ Designed for **multi-agent frameworks** like OpenClaw that generate concurrent b
 - **Routeway** (192-model unified gateway — 15 `:free` models seeded by default) — Llama 3.3 70B `:free`, GPT-OSS-120B `:free`, Kimi K2 `:free` (256K ctx), MiniMax M2 `:free`, Devstral `:free`, Gemma 4 31B `:free`, Nemotron Nano `:free` etc. Paid fallback (GPT-4o, Claude 3.5, DeepSeek) only on explicit opt-in.
 - **Multi-account support** — Unlimited accounts per provider with intelligent scoring
 - **Additive capacity** — Overlapping models (e.g., GLM on both Cerebras+Z.ai) sum their rate limits
+- **Per-key tier tagging** *(v1.13.3+)* — Suffix any key with `#paid` to mark it
+  as a billing-enabled account. The router gates frontier paid-only models
+  (`gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-2.5-pro`) to
+  `#paid` keys and skips free keys for those requests, so you never burn free
+  quota on paid models. Free keys continue to rotate normally for everything
+  else. Example: `GEMINI_API_KEYS=KEY1#paid,KEY2,KEY3`.
 
 ### ✅ Weighted Scoring Algorithm
 Each API key is scored in **real-time** by remaining quota:
@@ -294,7 +300,10 @@ cp .env.example .env
 Edit `.env` (minimum: one provider):
 ```bash
 # Google Gemini  (https://aistudio.google.com/app/apikey)
-GEMINI_API_KEYS=your-gemini-key-1,your-gemini-key-2
+# Tag a key with `#paid` to enable paid-only models (gemini-3.1-pro-preview,
+# gemini-3-pro-preview, gemini-2.5-pro). Untagged keys default to free tier.
+# Example: 1 paid + 2 free accounts
+GEMINI_API_KEYS=your-paid-key#paid,your-free-key-1,your-free-key-2
 
 # Groq  (https://console.groq.com/keys)
 GROQ_API_KEYS=your-groq-key
@@ -320,6 +329,12 @@ HUGGINGFACE_API_KEYS=hf_your-token-here
 # Pollinations.ai  (free key at enter.pollinations.ai — sk_... or pk_...)
 POLLINATIONS_API_KEYS=sk_your-pollinations-key
 ```
+
+**Per-key tier tagging** (`#paid` suffix, v1.13.3+) — currently honored by the
+Gemini provider. The router checks `provider.paid_models` and only selects
+keys tagged `#paid` for those models. Free keys are skipped (no 429 burn on
+free quota). Untagged keys default to `#free` and remain fully usable for the
+free fallback chain.
 
 ### 3️⃣ Run Locally (Dev)
 

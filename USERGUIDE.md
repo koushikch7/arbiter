@@ -491,19 +491,31 @@ cp .env.example .env
 4. You can create **multiple keys** for different projects/accounts
 
 ```bash
-# In .env
+# In .env — free keys only
 GEMINI_API_KEYS=key1,key2,key3
+
+# Mixed paid + free (v1.13.3+) — tag the billing-enabled key with `#paid`
+GEMINI_API_KEYS=paid-key#paid,free-key-1,free-key-2
 ```
 
-**Free-tier models** (verified March 2026):
-- `gemini-3.1-flash-lite-preview` — ⭐ **Newest & Fastest** ✅ **Recommended**
-- `gemini-3-flash-preview` — Frontier-class performance
-- `gemini-2.5-flash-lite` — 15 RPM, 1,000 requests/day (stable)
-- `gemini-2.5-flash` — 10 RPM, 250 requests/day (stable)
+**Per-key tier tagging** *(v1.13.3+)*:
+- Untagged keys default to **`#free`** — used for the free-tier fallback chain.
+- Keys tagged **`#paid`** unlock paid-only frontier models (Gemini 2.5/3 Pro).
+- A `#paid` key can serve **both** free and paid models; a `#free` key is
+  automatically skipped for paid models so it never burns free-tier quota
+  on a 429.
 
-**⚠️ Paid-only models** (NOT included):
-- `gemini-2.5-pro` — Requires billing
-- `gemini-3.1-pro-preview` — Requires billing
+**Free-tier models** (verified May 2026, priority order):
+- `gemini-3.1-flash-lite-preview` — ⭐ **Newest, fastest, default** ✅ **Recommended**
+- `gemini-2.5-flash` — Quality bump, 10 RPM, 250 requests/day
+- `gemini-2.5-flash-lite` — Highest free RPD: 15 RPM, 1,000 requests/day
+- `gemini-3-flash-preview` — Frontier-class flash backup
+- `gemini-2.0-flash`, `gemini-2.0-flash-lite` — Legacy high-quota fallbacks
+
+**Paid-only models** (require a key tagged `#paid` in `.env`):
+- `gemini-3.1-pro-preview` — Frontier reasoning, 1 M context
+- `gemini-3-pro-preview` — Premium frontier
+- `gemini-2.5-pro` — Premium 2.5 quality
 
 #### Groq
 

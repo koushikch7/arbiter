@@ -6,7 +6,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.13.2] – 2026-04-30 (Latest) — All-models routing & smart key health
+## [1.13.3] – 2026-05-01 (Latest) — Per-key tier routing & Gemini 3.x
+
+### 🆕 Per-key tier tagging (`#paid` suffix)
+
+Keys may now declare a billing tier directly in the env-var, enabling the
+router to gate paid-only models to billing-enabled accounts while still
+rotating free keys for everyday traffic.
+
+```env
+# 1 paid + 2 free
+GEMINI_API_KEYS=AIza...RLg#paid,AIza...16D0,AIza...7KDk
+```
+
+- Untagged keys default to `#free`.
+- A key tagged `#paid` can serve **both** free and paid models.
+- A `#free` key is **skipped** when a paid-only model is requested
+  (no 429 burn on the free quota).
+- Tier mapping is read from `.env` AND `/etc/environment` style env-vars so
+  docker-compose `env_file` users keep working unchanged.
+
+### 🆕 Paid Gemini frontier models
+
+Added to the Gemini provider catalog (gated behind `#paid` keys):
+
+| Model | Quality | Speed | Notes |
+|---|---|---|---|
+| `gemini-3.1-pro-preview` | 5 | 3 | Frontier reasoning · 1 M ctx |
+| `gemini-3-pro-preview`   | 5 | 3 | Premium · 1 M ctx |
+| `gemini-2.5-pro`         | 5 | 2 | Existing · now flagged paid |
+
+### 🔁 Free-tier priority order rebalanced
+
+The Gemini provider's free fallback chain now leads with the newest preview:
+
+1. `gemini-3.1-flash-lite-preview` ⭐ **new default** — newest, fast, free
+2. `gemini-2.5-flash` — quality bump
+3. `gemini-2.5-flash-lite` — highest free RPD (1000)
+4. `gemini-3-flash-preview` — frontier flash backup
+5. `gemini-2.0-flash`, `gemini-2.0-flash-lite` — legacy backups
+6. *(paid)* `gemini-2.5-pro`, `gemini-3.1-pro-preview`, `gemini-3-pro-preview`
+
+Auto-router scoring for `gemini-3.1-flash-lite-preview` bumped to
+`quality=5, speed=5` so it is preferred for free creative/balanced intents.
+
+### 🛠 Implementation
+
+- **`app/config.py`** — `Settings.get_keys()` strips `#tier` suffix; new
+  `get_key_tiers(provider) -> dict[key, tier]`.
+- **`app/key_management/key_pool.py`** — `KeyPool.__init__(key_tiers=...)`;
+  `get_best_key(required_tier=...)` filters keys whose tier (default `free`)
+  cannot satisfy the requested tier.
+- **`app/routing/router.py`** — checks `provider.paid_models`; if the model is
+  in that set, calls `get_best_key(required_tier="paid")`.
+- **`app/providers/gemini.py`** — declares `paid_models` set, expanded `models`
+  list (9 entries), reordered for new free priority, default model changed to
+  `gemini-3.1-flash-lite-preview`.
+- **`app/api/keys_api.py`** — hot-reload (`_reload_provider`) propagates tiers;
+  `_read_env_keys()` strips `#tier` so the UI displays clean keys.
+- **`app/providers/_free_tier_catalog.py`** — added 4 new Gemini models
+  (3.1-pro-preview, 3-pro-preview, 3.1-flash-lite-preview, 3-flash-preview).
+- **`.env.example`** — documents `#paid` suffix syntax.
+
+### ✅ Validation
+
+- Provider self-test (`POST /api/providers/gemini/test`) → uses new default
+  `gemini-3.1-flash-lite-preview`, returns `OK`.
+- `gemini-3.1-pro-preview` request — routed to paid key (KEY1) only;
+  free keys (KEY2/KEY3) skipped without burning quota.
+- Free key (KEY2) confirmed working on `gemini-3.1-flash-lite-preview`.
+
+---
+
+## [1.13.2] – 2026-04-30 — All-models routing & smart key health
 
 ### 🚀 Massive model coverage expansion
 

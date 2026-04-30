@@ -453,7 +453,19 @@ Manages multiple API keys with intelligent selection:
 
 ```python
 class KeyPool:
-    async def get_best_key(self, exclude: Set[str] = None) -> Optional[str]:
+    def __init__(self, provider, keys, redis_client, rpm_limit, tpm_limit,
+                 daily_limit, key_tiers: Optional[Dict[str, str]] = None):
+        """
+        key_tiers maps {api_key: "free" | "paid"}.  Tags come from `.env`
+        via the `KEY#tier` syntax (see config.get_key_tiers).  Default tier
+        for any unmapped key is "free".
+        """
+
+    async def get_best_key(
+        self,
+        exclude: Set[str] = None,
+        required_tier: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Select the key with the highest availability score.
 
@@ -461,7 +473,12 @@ class KeyPool:
               + (tpm_available × 0.20)
               + (daily_available × 0.50)
 
-        Returns: Raw API key string or None if all exhausted
+        Tier filtering (v1.13.3+):
+          required_tier=None    → any key is eligible
+          required_tier="paid"  → only keys whose tier == "paid" are eligible
+                                  (free keys silently skipped → no 429 burn)
+
+        Returns: Raw API key string or None if all exhausted.
         """
 
     async def record_usage(self, key: str, tokens_used: int):
@@ -478,6 +495,22 @@ class KeyPool:
         Key excluded from selection for cooldown period.
         """
 ```
+
+**Per-key tiers (v1.13.3+):**
+The router consults `provider.paid_models` (a `set[str]` declared on the
+provider class) to decide whether to pass `required_tier="paid"` to
+`get_best_key()`. Today the Gemini provider declares:
+
+```python
+paid_models = {
+    "gemini-3.1-pro-preview",
+    "gemini-3-pro-preview",
+    "gemini-2.5-pro",
+    "gemini-pro-latest",
+}
+```
+
+Other providers can opt in by adding the same class attribute.
 
 **Redis Keys:**
 ```

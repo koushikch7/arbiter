@@ -138,6 +138,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Permissions-Policy",
             "geolocation=(), microphone=(), camera=(), payment=()",
         )
+        # Prevent CDN/proxy caching of API responses.
+        # HTML pages already set their own no-store via dashboard.py.
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["CDN-Cache-Control"] = "no-store"
+            response.headers.setdefault("Pragma", "no-cache")
         # Content Security Policy — allow our CDNs + inline (the UI uses a
         # lot of onclick handlers and inline styles).
         response.headers.setdefault(

@@ -186,12 +186,17 @@ async def chat_completions(
             priority_override = None
 
     try:
+        # Identify the calling gateway token (set by GatewayAuthMiddleware)
+        token_id = getattr(request.state, "gateway_token_id", None)
+        token_name = getattr(request.state, "gateway_token_name", None)
         response = await router_instance.route(
             body,
             vendor=vendor,
             force_model=force_model,
             priority_override=priority_override,
             prefer_provider_override=prefer_provider_override,
+            token_id=token_id,
+            token_name=token_name,
         )
         # Surface the actual provider/model used so SDK callers can verify.
         chosen_provider = getattr(response, "_arbiter_provider", "") or ""

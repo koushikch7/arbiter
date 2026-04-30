@@ -302,6 +302,49 @@ Navigate to `/analytics` (or click **Analytics** in the sidebar).
 
 The analytics page provides a comprehensive view of all gateway traffic, key health, and model usage.
 
+### Strict Authentication Banner
+
+If a red banner appears at the top of the page reading **"Authentication is
+NOT enforced"**, your gateway is running in legacy permissive mode. Either:
+
+- Create at least one Gateway Token under **Settings → Gateway Keys** and
+  ensure `REQUIRE_AUTH=true` (default), **or**
+- Set `REQUIRE_AUTH=false` explicitly in `.env` if you intend to expose
+  unauthenticated `/v1/*` traffic.
+
+In strict mode (the default), `/v1/*` returns 401 unless a valid Bearer
+token is presented.
+
+### Filter Bar
+
+Above the KPI cards, a filter bar lets you slice analytics:
+
+- **From / To** — date range; daily-rollup data is available for the last
+  90 days.
+- **Token** — restrict counters to a single Gateway Token (or the special
+  `env-var keys` aggregate for traffic from `GATEWAY_API_KEYS`).
+- **Provider / Model** — drill down to one provider or model.
+- **Quick presets** — `7d` and `30d` buttons.
+- **Apply / Clear** — apply applies a query, clear resets to lifetime view.
+
+When a range is active, a **Range Summary** card appears below with a
+sparkline of daily requests, success-rate KPI, error count, tokens used,
+and three top-5 tables (top providers, top models, top tokens).
+
+### Per-Gateway-Token Usage
+
+A new table breaks down lifetime traffic per Gateway Token:
+
+| Column | Description |
+|--------|-------------|
+| **Token** | Friendly name (or `env-var keys` for env aggregate) |
+| **Token ID** | Internal short id used in `?token_id=…` filter |
+| **Requests / Success / Errors** | Lifetime counters |
+| **Tokens Used** | Sum of prompt + completion tokens billed |
+| **Last Used** | Local timestamp of the last successful request |
+
+Click any row to filter the rest of the page to that token.
+
 ### KPI Summary Cards
 
 Six live cards updated on every refresh:

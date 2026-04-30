@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     GATEWAY_API_KEY: str = ""
     # New multi-key field for GatewayAuthMiddleware (comma-separated)
     GATEWAY_API_KEYS: str = ""
+    # Strict / fail-closed auth: when True, the gateway refuses ALL outbound
+    # LLM calls if no GATEWAY_API_KEYS and no dynamic gateway tokens are
+    # configured. When False (legacy default), open mode is permitted with a
+    # startup warning. Recommended: keep True in production.
+    REQUIRE_AUTH: bool = True
 
     # ── Provider API Keys ────────────────────────────────────────────────────
     GEMINI_API_KEYS: str = ""

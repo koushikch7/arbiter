@@ -417,6 +417,10 @@ async def list_providers(request: Request) -> JSONResponse:
             "keys":        key_list,
             "models":      meta.get("models", []),
             "pool":        pool_stats,
+            # Source indicator for the UI badge:
+            #   "env"      — keys are present in .env (managed via UI but persists)
+            #   "none"     — no keys configured at all
+            "source":      "env" if env_keys else "none",
         })
 
     return JSONResponse(content=result)
@@ -476,6 +480,25 @@ async def enable_provider(name: str, request: Request) -> JSONResponse:
     if name not in _PROVIDER_META:
         raise HTTPException(404, f"Unknown provider: {name}")
     redis = request.app.state.redis
+
+    # Validate that we actually have something to enable. Without keys, the
+    # provider would be silently dropped from the active pool, which looks
+    # like the toggle "didn't work" in the UI. Return a structured error so
+    # the UI can prompt the user for a key inline.
+    existing = _read_env_keys(name)
+    meta = _PROVIDER_META.get(name, {})
+    if not existing and name != "pollinations":  # pollinations works without a key
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error":      "no_key",
+                "message":    f"Cannot enable {name!r}: no API key configured.",
+                "key_format": meta.get("key_format", "API key"),
+                "key_hint":   meta.get("key_hint", ""),
+                "signup_url": meta.get("signup_url", ""),
+            },
+        )
+
     await redis.delete(f"{_REDIS_DISABLED_PFX}{name}")
     await _reload_provider(name, request)
     return JSONResponse(content={"success": True, "provider": name, "enabled": True})

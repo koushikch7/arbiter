@@ -6,7 +6,123 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [1.12.1] – 2026-04-26 (Latest) — Security Hardening
+## [1.13.1] – 2026-04-30 (Latest) — UI consistency + routing fix
+
+### 🐛 Fixed
+
+- **`/analytics` returned 404** — the `analytics_router` was never registered
+  in `app/main.py`. The Analytics nav link from v1.13.0 now actually works.
+- **Disabled providers were still being routed to** — `IntelligentRouter`
+  ignored the `arbiter:runtime:disabled:{name}` flag set by the Settings UI.
+  The router now filters disabled providers out of the candidate chain
+  (cached for 5s) and surfaces a clear error if the caller pinned a
+  disabled vendor explicitly.
+
+### 🎨 Shared sidebar component
+
+- New `static/components/sidebar.js` — single source of truth for
+  navigation. Every page now declares only `<aside id="sidebar"></aside>`
+  and the script renders the same brand, nav items, and footer everywhere,
+  marking the current page active automatically.
+- All eight UI pages refactored: `dashboard`, `analytics`, `api-docs`
+  (Analytics link was missing here), `settings`, `playground`, `logs`,
+  `images`, `users`. Adding a new page or nav item now requires editing
+  one file instead of nine.
+- Each nav item carries a tooltip describing what the page does.
+
+### 🔢 Sortable tables + tooltips
+
+- New `static/components/ui.js` — drop-in helper that auto-wires
+  `<table data-sortable>` with click-to-sort headers (asc/desc, type-aware
+  numeric / date / string) and renders polished `data-tip="…"` tooltips.
+- Sortable now: Dashboard provider table; Analytics provider, model, and
+  per-gateway-token tables; Settings → Gateway Tokens table.
+- Tabular cells expose raw `data-sort` values so date-formatted columns
+  (Last Used, Created, Expires) sort chronologically rather than
+  alphabetically.
+
+---
+
+## [1.13.0] – 2026-04-30 — Per-Token Observability + Strict Auth
+
+### 🔒 Strict / fail-closed gateway auth
+
+- **New env var `REQUIRE_AUTH=true` (default: true)** — when no
+  `GATEWAY_API_KEYS` and no dynamic gateway tokens are configured, `/v1/*`
+  returns **401** instead of silently passing traffic through. The gateway
+  now refuses to make outbound LLM calls without a valid Bearer token.
+  Set `REQUIRE_AUTH=false` to opt back into legacy permissive mode.
+- **Auth-status banner** on Analytics — bright warning when the gateway is
+  running in open mode (`auth_enforced: false` in `/analytics/data`).
+
+### 📊 Per-gateway-token tracking (the bug you saw on the Gateway Keys tab)
+
+Previously the **Requests** column on the Gateway Keys tab and the
+`request_count` field always showed `0` because no code path incremented it.
+Fixed end-to-end:
+
+- **New module `app/observability/stats.py`** — single source of truth for
+  every counter, with consistent key namespacing.
+- **`GatewayAuthMiddleware`** now identifies which named token was used and
+  attaches `request.state.gateway_token_id` / `…_token_name` so downstream
+  handlers can attribute the request.
+- **`IntelligentRouter.route()`** accepts `token_id`/`token_name` and writes:
+  - `arbiter:stats:token:{id}:requests / success / errors / tokens`
+  - `arbiter:stats:token:{id}:provider:{name}:requests`
+  - `arbiter:stats:token:{id}:model:{model}:requests`
+  - `arbiter:stats:token:{id}:last_used`
+- **`GET /api/gateway/tokens`** now merges live counters into each row
+  (`request_count`, `success_count`, `error_count`, `tokens_used`,
+  `last_used_at`).
+- **NEW `GET /api/gateway/tokens/{id}/stats`** — detailed per-token
+  analytics with 30-day history, by-provider, and by-model breakdowns.
+- **Settings UI** — Gateway Keys table now shows Requests / Tokens / Last
+  Used columns with live values.
+
+### 📈 Enterprise-grade analytics filters
+
+- **`GET /analytics/data` now supports**:
+  - `from=YYYY-MM-DD&to=YYYY-MM-DD` — daily-rollup time series for any range
+    up to 90 days.
+  - `token_id=…` — filter to a specific gateway token (or `env` for env-var
+    traffic).
+  - `provider=…` and `model=…` — drill down to a specific provider or model.
+- **New daily rollup keys** (`arbiter:stats:day:{YYYY-MM-DD}:*`) with 90-day
+  TTL — efficient `GET` instead of scanning all `history:*` keys.
+- **Top-N providers / models / tokens** computed over the filtered range.
+- **Latency tracking is now real** — previously `arbiter:stats:latency:*`
+  was read by the analytics page but never written. Fixed in the router.
+- **Per-token usage table** added to `/analytics`.
+- **Filter bar** with date range, gateway-token, provider, and model
+  selectors plus 7d / 30d quick presets and a per-range summary card with
+  daily sparkline + top-5 providers / models / tokens.
+- **Analytics nav item restored** in the sidebar across all pages.
+
+### 🔌 Provider enable/disable UX
+
+- **`POST /api/providers/{name}/enable`** now returns a structured
+  `400 {"error":"no_key", …}` body with `key_format`, `key_hint`, and
+  `signup_url` when the provider has no key configured. Previously the
+  endpoint silently no-op'd, leaving the toggle visually reverted with no
+  explanation.
+- **Settings UI** — when toggling a key-less provider on, the page now
+  prompts for an API key inline, saves it via
+  `POST /api/providers/{name}/keys`, and auto-retries enable.
+- **Source badge** on each provider card (`env` / `disabled`) so it's clear
+  whether keys are coming from `.env` or the UI-disabled state, and you can
+  freely disable a provider whose env var is still set — the disable flag
+  in Redis takes precedence and persists across restarts.
+
+### 🧪 Tests
+
+- `scripts/test_gateway_token_flow.py` extended to assert that
+  `request_count >= 1` and `last_used_at` populate after the AI capability
+  tests, and that `/api/gateway/tokens/{id}/stats` returns a non-empty
+  summary.
+
+---
+
+## [1.12.1] – 2026-04-26 — Security Hardening
 
 ### 🔧 Bearer Auth on Admin APIs (post-release patch)
 

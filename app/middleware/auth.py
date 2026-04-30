@@ -177,10 +177,15 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
                           else Bearer token (legacy single-auth mode).
     """
 
-    def __init__(self, app, allowed_keys: List[str], sso_enabled: bool = False):
+    def __init__(self, app, allowed_keys: List[str], sso_enabled: bool = False,
+                 require_auth: bool = False):
         super().__init__(app)
         self._allowed = frozenset(k.strip() for k in allowed_keys if k.strip())
         self._sso_enabled = sso_enabled
+        # When True, /v1/* refuses requests if no gateway keys/tokens are
+        # configured. This is fail-closed mode — the gateway never makes an
+        # outbound LLM call without a valid Bearer token.
+        self._require_auth = require_auth
 
     # --- internals ---
     def _effective_keys(self, request: Request) -> frozenset:
@@ -194,13 +199,31 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         return self._allowed | dynamic
 
     def _check_bearer(self, request: Request, keys: frozenset) -> bool:
+        """
+        Validate the Bearer token. Side effect: when the token matches a
+        named gateway token (registered via /api/gateway/tokens), attach
+        ``request.state.gateway_token_id`` and ``…_token_name`` so downstream
+        observability can attribute the request.
+        """
         if not keys:
-            return True  # auth disabled entirely
+            return True  # auth disabled entirely (legacy mode)
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return False
         token = auth[len("Bearer "):].strip()
-        return token in keys
+        if token not in keys:
+            return False
+        # Identify which named token (if any) was used
+        meta = getattr(request.app.state, "gateway_token_meta", {}) or {}
+        info = meta.get(token)
+        if info:
+            request.state.gateway_token_id = info.get("id")
+            request.state.gateway_token_name = info.get("name")
+        else:
+            # env-var key — bucket under a synthetic id
+            request.state.gateway_token_id = "env"
+            request.state.gateway_token_name = "env-var"
+        return True
 
     def _check_session(self, request: Request) -> tuple[bool, str]:
         """Return (ok, reason). ok=True means user is approved."""
@@ -227,7 +250,15 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         # -----------------------------------------------------------------
         if path.startswith(_BEARER_ONLY_PREFIXES):
             if not effective_keys:
-                # No gateway keys set → auth disabled entirely (legacy mode)
+                if self._require_auth:
+                    # Strict / fail-closed: reject all calls until the admin
+                    # configures at least one gateway token.
+                    return _error_401(
+                        "Gateway is not configured: no GATEWAY_API_KEYS and "
+                        "no dynamic tokens. Refusing to make outbound LLM "
+                        "calls. Create a token at /settings → Gateway Keys."
+                    )
+                # Legacy permissive mode (REQUIRE_AUTH=false)
                 return await call_next(request)
             if self._check_bearer(request, effective_keys):
                 return await call_next(request)

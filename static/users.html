@@ -8,37 +8,7 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <div class="sidebar-logo">A</div>
-        <div>
-          <div class="sidebar-brand-name">Arbiter</div>
-          <div class="sidebar-brand-ver">v1.11</div>
-        </div>
-      </div>
-      <nav class="sidebar-nav">
-        <a href="/dashboard" class="nav-item">Dashboard</a>
-        <a href="/api-docs" class="nav-item">API Docs</a>
-        <a href="/settings" class="nav-item">Settings</a>
-        <a href="/images" class="nav-item">Images</a>
-        <a href="/playground" class="nav-item">Playground</a>
-        <a href="/logs" class="nav-item">Logs</a>
-
-        <div class="sidebar-divider"></div>
-        <span class="sidebar-section">Admin</span>
-        <a href="/users" class="nav-item active">Users</a>
-        <div class="sidebar-divider"></div>
-        <span class="sidebar-section">Developer</span>
-        <a href="/docs" class="nav-item" target="_blank">Swagger UI</a>
-        <a href="/redoc" class="nav-item" target="_blank">ReDoc</a>
-      </nav>
-      <div class="sidebar-footer">
-        <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
-          <span class="theme-icon">🌙</span>
-          <span class="theme-label">Dark mode</span>
-        </button>
-      </div>
-    </aside>
+    <aside class="sidebar" id="sidebar"></aside>
 
     <div class="main-wrapper">
       <header class="topbar">
@@ -210,5 +180,7 @@
 
     document.addEventListener('DOMContentLoaded', loadUsers);
   </script>
+<script src="/static/components/sidebar.js" defer></script>
+<script src="/static/components/ui.js" defer></script>
 </body>
 </html>

@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.api.users_api import require_admin
+from app.observability import stats as obs_stats
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +90,20 @@ async def _sync_app_tokens(request: Request, tokens: List[dict]) -> None:
     """Update app.state.gateway_tokens with active, non-expired tokens."""
     now = time.time()
     active_keys: set[str] = set()
+    meta: dict[str, dict] = {}
     for t in tokens:
         if t.get("active", True):
             if t.get("expires_at") is None or t["expires_at"] > now:
-                active_keys.add(t["key"])
+                key = t["key"]
+                active_keys.add(key)
+                meta[key] = {"id": t["id"], "name": t.get("name", "")}
     # Merge with env-var keys
     env_keys = settings.get_gateway_api_keys()
-    active_keys.update(env_keys)
+    for k in env_keys:
+        active_keys.add(k)
+        meta.setdefault(k, {"id": "env", "name": "env-var"})
     request.app.state.gateway_tokens = active_keys
+    request.app.state.gateway_token_meta = meta
 
 
 # ── Startup helper ────────────────────────────────────────────────────────────
@@ -111,13 +118,19 @@ async def load_gateway_tokens_to_state(app) -> None:
     tokens = await _load_tokens(redis)
     now = time.time()
     active_keys: set[str] = set()
+    meta: dict[str, dict] = {}
     for t in tokens:
         if t.get("active", True):
             if t.get("expires_at") is None or t["expires_at"] > now:
-                active_keys.add(t["key"])
+                key = t["key"]
+                active_keys.add(key)
+                meta[key] = {"id": t["id"], "name": t.get("name", "")}
     env_keys = settings.get_gateway_api_keys()
-    active_keys.update(env_keys)
+    for k in env_keys:
+        active_keys.add(k)
+        meta.setdefault(k, {"id": "env", "name": "env-var"})
     app.state.gateway_tokens = active_keys
+    app.state.gateway_token_meta = meta
     logger.info(
         "Gateway tokens loaded: %d from Redis, %d from env vars (%d total active).",
         sum(1 for t in tokens if t.get("active", True)),
@@ -132,10 +145,13 @@ async def load_gateway_tokens_to_state(app) -> None:
 @router.get("/tokens")
 async def list_tokens(request: Request):
     """
-    List all gateway tokens.
+    List all gateway tokens with live request counters merged in.
 
-    Keys are returned masked. Also includes `env_keys_count` showing how many
-    keys are configured via environment variables.
+    Each token row includes ``request_count``, ``success_count``, ``error_count``,
+    ``tokens_used`` and ``last_used_at`` sourced from Redis. Also includes
+    ``env_keys_count`` showing how many keys are configured via environment
+    variables (those cannot be managed here but their traffic shows up under
+    the synthetic ``env`` token id).
     """
     redis = request.app.state.redis
     tokens = await _load_tokens(redis)
@@ -144,13 +160,91 @@ async def list_tokens(request: Request):
     for t in tokens:
         entry = dict(t)
         entry["key"] = _mask_key(t["key"])
+        live = await obs_stats.get_token_summary(redis, t["id"])
+        entry["request_count"] = live["requests"]
+        entry["success_count"] = live["success"]
+        entry["error_count"]   = live["errors"]
+        entry["tokens_used"]   = live["tokens"]
+        if live["last_used_at"]:
+            entry["last_used_at"] = live["last_used_at"]
         masked_tokens.append(entry)
 
     env_keys = settings.get_gateway_api_keys()
+    env_summary = await obs_stats.get_token_summary(redis, "env") if env_keys else None
 
     return {
         "tokens": masked_tokens,
         "env_keys_count": len(env_keys),
+        "env_traffic": env_summary,
+    }
+
+
+@router.get("/tokens/{token_id}/stats")
+async def token_stats(token_id: str, request: Request):
+    """
+    Detailed analytics for a single gateway token.
+
+    Returns lifetime counters plus per-day, per-provider, and per-model
+    breakdowns so the UI can render a usage chart.
+    """
+    redis = request.app.state.redis
+    tokens = await _load_tokens(redis)
+    token = next((t for t in tokens if t["id"] == token_id), None)
+    if token is None and token_id != "env":
+        raise HTTPException(404, f"Token '{token_id}' not found.")
+
+    summary = await obs_stats.get_token_summary(redis, token_id)
+
+    # Per-provider
+    by_provider: dict[str, int] = {}
+    try:
+        keys = await redis.keys(
+            f"arbiter:stats:token:{obs_stats._safe(token_id, 40)}:provider:*:requests"
+        )
+        for k in keys:
+            parts = k.split(":")
+            if len(parts) >= 7:
+                pname = parts[5]
+                by_provider[pname] = await obs_stats.get_int(redis, k)
+    except Exception:
+        pass
+
+    # Per-model
+    by_model: dict[str, int] = {}
+    try:
+        keys = await redis.keys(
+            f"arbiter:stats:token:{obs_stats._safe(token_id, 40)}:model:*:requests"
+        )
+        for k in keys:
+            parts = k.split(":")
+            if len(parts) >= 7:
+                mname = parts[5]
+                by_model[mname] = await obs_stats.get_int(redis, k)
+    except Exception:
+        pass
+
+    # Last 30 days
+    history: list[dict] = []
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    today = _dt.now(_tz.utc).date()
+    for i in range(30):
+        d = (today - _td(days=29 - i)).strftime("%Y-%m-%d")
+        req = await obs_stats.get_int(
+            redis, f"arbiter:stats:day:{d}:token:{obs_stats._safe(token_id, 40)}:requests")
+        tok = await obs_stats.get_int(
+            redis, f"arbiter:stats:day:{d}:token:{obs_stats._safe(token_id, 40)}:tokens")
+        history.append({"date": d, "requests": req, "tokens": tok})
+
+    masked = dict(token) if token else {"id": "env", "name": "env-var"}
+    if "key" in masked:
+        masked["key"] = _mask_key(masked["key"])
+
+    return {
+        "token": masked,
+        "summary": summary,
+        "by_provider": by_provider,
+        "by_model": by_model,
+        "history_30d": history,
     }
 
 

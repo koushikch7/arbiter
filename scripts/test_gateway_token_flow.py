@@ -290,6 +290,25 @@ def main() -> int:
     }, timeout=15)
     log("revoked token blocked on /v1/*", sc == 401, f"sc={sc} (want 401)")
 
+    # ── 6b. Per-token counters incremented ────────────────────────────────────
+    section("6b. Per-token usage tracking")
+    sc, _, body = http("GET", "/api/gateway/tokens", token=ADMIN)
+    tokens_list = json.loads(body).get("tokens", []) if sc == 200 else []
+    a_after = next((t for t in tokens_list if t["id"] == id_a), None)
+    log("token A request_count incremented from chat calls",
+        bool(a_after and (a_after.get("request_count", 0) >= 1)),
+        f"request_count={a_after.get('request_count') if a_after else None}")
+    log("token A last_used_at populated",
+        bool(a_after and a_after.get("last_used_at")),
+        f"last_used_at={a_after.get('last_used_at') if a_after else None}")
+
+    # Detailed stats endpoint
+    sc, _, body = http("GET", f"/api/gateway/tokens/{id_a}/stats", token=ADMIN)
+    stats = json.loads(body) if sc == 200 else {}
+    log("/tokens/{id}/stats returns summary",
+        sc == 200 and stats.get("summary", {}).get("requests", 0) >= 1,
+        f"sc={sc} summary={stats.get('summary')}")
+
     # ── 7. DELETE both test tokens ───────────────────────────────────────────
     section("7. Cleanup (DELETE)")
     for tid in (id_a, id_b):

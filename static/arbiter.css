@@ -526,3 +526,41 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: 
 }
 .custom-provider-card .cp-name { font-weight: 600; font-size: 13px; color: var(--text-0); }
 .custom-provider-card .cp-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+
+/* ═══════════════ UI helpers (sortable tables + tooltips) ═══════════════ */
+th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th.th-sortable:hover { color: var(--text-0); }
+th.th-sortable .th-sort-arrow {
+  font-size: 10px;
+  opacity: 0.55;
+  margin-left: 4px;
+  font-weight: 400;
+}
+th.th-sortable[data-sort-dir="asc"] .th-sort-arrow,
+th.th-sortable[data-sort-dir="desc"] .th-sort-arrow { opacity: 1; color: var(--accent, #3a86ff); }
+
+.ui-tooltip {
+  position: absolute;
+  display: none;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: var(--bg-tooltip, #1a1d24);
+  color: var(--text-tooltip, #f5f6f8);
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--border-2, #2c303a);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+[data-theme="light"] .ui-tooltip {
+  background: #2a2d34;
+  color: #f5f6f8;
+}

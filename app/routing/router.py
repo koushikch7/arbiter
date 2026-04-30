@@ -53,6 +53,7 @@ from app.routing.auto_router import auto_candidate_chain
 from app.routing.intent_classifier import classify
 from app.cache.cache import CacheLayer
 from app.key_management.key_pool import KeyPool
+from app.observability import stats as obs_stats
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,31 @@ class IntelligentRouter:
         self.redis     = redis_client
         self._cfg_cache: dict = {}
         self._cfg_cache_ts: float = 0.0
+        self._disabled_cache: Set[str] = set()
+        self._disabled_cache_ts: float = 0.0
+
+    async def _get_disabled_providers(self) -> Set[str]:
+        """Return the set of provider names disabled via the Settings UI.
+
+        The disable flag is written to ``arbiter:runtime:disabled:{name}`` by
+        ``app/api/keys_api.py``.  Cached for 5s to avoid Redis chatter on
+        every routing decision.
+        """
+        now = time.monotonic()
+        if now - self._disabled_cache_ts < 5:
+            return self._disabled_cache
+        disabled: Set[str] = set()
+        if self.redis:
+            try:
+                for name in self.providers.keys():
+                    flag = await self.redis.get(f"arbiter:runtime:disabled:{name}")
+                    if flag:
+                        disabled.add(name)
+            except Exception as e:
+                logger.debug(f"disabled-providers read error: {e}")
+        self._disabled_cache = disabled
+        self._disabled_cache_ts = now
+        return disabled
 
     async def _get_custom_config(self) -> dict:
         """Load custom routing config from Redis, cached for 30s."""
@@ -153,6 +179,8 @@ class IntelligentRouter:
         force_model: Optional[str] = None,
         priority_override: Optional[str] = None,
         prefer_provider_override: Optional[str] = None,
+        token_id: Optional[str] = None,
+        token_name: Optional[str] = None,
     ) -> ChatCompletionResponse:
         """
         Route *request* to the best available provider/model/key.
@@ -176,12 +204,10 @@ class IntelligentRouter:
         if request.temperature <= 0.3:
             cached = await self.cache.get(cache_key)
             if cached is not None:
-                await self._inc("cache_hits")
-                await self._inc("requests_total")
-                await self._inc("requests_success")
+                await obs_stats.record_cache_hit(self.redis, token_id=token_id)
                 logger.info(f"Cache HIT  model={request.model}")
                 return cached
-        await self._inc("cache_misses")
+        await obs_stats.record_cache_miss(self.redis)
 
         # ── 2. Build the unified (provider, model) candidate chain ───
         token_est = self._estimate_tokens(request)
@@ -193,6 +219,26 @@ class IntelligentRouter:
             priority_override=priority_override,
             prefer_provider_override=prefer_provider_override,
         )
+        # Honour the Settings → Providers "Disable" toggle. Filter the
+        # candidate chain so disabled providers are skipped without
+        # affecting key-pool state. If the user pinned a vendor that's
+        # disabled, surface a clear error rather than silently failing
+        # over to a different vendor.
+        disabled_providers = await self._get_disabled_providers()
+        if vendor and vendor in disabled_providers:
+            await obs_stats.record_request_failed(self.redis, token_id=token_id)
+            raise ProviderError(
+                f"Provider {vendor!r} is currently disabled in Settings. "
+                f"Re-enable it at /settings or pick another vendor."
+            )
+        if disabled_providers:
+            before = len(candidates)
+            candidates = [(p, m) for (p, m) in candidates if p not in disabled_providers]
+            if before != len(candidates):
+                logger.info(
+                    f"Filtered {before - len(candidates)} candidate(s) from "
+                    f"disabled providers: {sorted(disabled_providers)}"
+                )
         logger.info(
             f"Routing  model={request.model!r}  tokens≈{token_est}  "
             f"candidates={candidates[:8]}{'…' if len(candidates) > 8 else ''}"
@@ -225,6 +271,7 @@ class IntelligentRouter:
                 tried_keys.add(key)
                 routed = request.model_copy(update={"model": model_name})
 
+                attempt_t0 = time.perf_counter()
                 try:
                     logger.info(
                         f"→ {provider_name}/{model_name}  "
@@ -233,6 +280,7 @@ class IntelligentRouter:
                     response = await provider.complete(routed, key)
 
                     # ── SUCCESS ──────────────────────────────────
+                    latency_ms = round((time.perf_counter() - attempt_t0) * 1000)
                     tokens_used = (
                         response.usage.total_tokens if response.usage else 0
                     )
@@ -241,22 +289,18 @@ class IntelligentRouter:
                     if request.temperature <= 0.3:
                         await self.cache.set(cache_key, response)
 
-                    await self._inc("requests_total")
-                    await self._inc("requests_success")
-                    await self._inc(f"provider:{provider_name}:success")
-
-                    # Per-model analytics
-                    safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
-                    await self._inc(f"model:{safe_model}:requests")
-                    if tokens_used > 0:
-                        await self._incrby(f"model:{safe_model}:tokens", tokens_used)
-
-                    bucket = (int(time.time()) // 300) * 300
-                    await self._inc(f"history:{bucket}:requests")
-                    await self._inc(f"history:{bucket}:success")
+                    await obs_stats.record_success(
+                        self.redis,
+                        provider=provider_name,
+                        model=model_name,
+                        tokens_used=tokens_used,
+                        latency_ms=latency_ms,
+                        token_id=token_id,
+                    )
 
                     logger.info(
-                        f"✓ {provider_name}/{model_name}  tokens={tokens_used}"
+                        f"✓ {provider_name}/{model_name}  tokens={tokens_used}  "
+                        f"latency={latency_ms}ms"
                     )
                     # Surface chosen pair so chat.py can emit response headers
                     setattr(response, "_arbiter_provider", provider_name)
@@ -269,7 +313,10 @@ class IntelligentRouter:
                         f"key=...{key[-4:]}: {exc}"
                     )
                     await key_pool.mark_failed(key)
-                    await self._inc(f"provider:{provider_name}:rate_limited")
+                    await obs_stats.record_failure(
+                        self.redis, provider=provider_name, model=model_name,
+                        rate_limited=True, token_id=token_id,
+                    )
                     last_error = exc
                     # try next account for the SAME (provider, model)
 
@@ -277,11 +324,10 @@ class IntelligentRouter:
                     logger.error(
                         f"✗ ProviderError {provider_name}/{model_name}: {exc}"
                     )
-                    await self._inc(f"provider:{provider_name}:errors")
-                    safe_model = model_name.replace(":", "_").replace("/", "_")[:80]
-                    await self._inc(f"model:{safe_model}:errors")
-                    bucket = (int(time.time()) // 300) * 300
-                    await self._inc(f"history:{bucket}:errors")
+                    await obs_stats.record_failure(
+                        self.redis, provider=provider_name, model=model_name,
+                        rate_limited=False, token_id=token_id,
+                    )
                     last_error = exc
                     break  # → next candidate
 
@@ -293,8 +339,7 @@ class IntelligentRouter:
                     break
 
         # ── 4. All options exhausted ──────────────────────────────────
-        await self._inc("requests_total")
-        await self._inc("requests_failed")
+        await obs_stats.record_request_failed(self.redis, token_id=token_id)
         if last_error is None:
             detail = (
                 f"All keys for provider(s) {attempted_providers} are currently on "

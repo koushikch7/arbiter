@@ -112,58 +112,7 @@
 <div class="app-shell">
 
   <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <div class="sidebar-logo">A</div>
-      <span class="sidebar-brand-name">Arbiter</span>
-      <span class="sidebar-brand-ver">v1.1</span>
-    </div>
-    <nav class="sidebar-nav">
-      <span class="sidebar-section">Main</span>
-      <a href="/dashboard" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard
-      </a>
-      <a href="/api-docs" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
-        API Documentation
-      </a>
-      <a href="/settings" class="nav-item active">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
-        Settings
-      </a>
-      <a href="/images" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-        Image Generation
-      </a>
-      <a href="/playground" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        Playground
-      </a>
-      <a href="/logs" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
-        Logs
-      </a>
-      <div class="sidebar-divider"></div>
-      <span class="sidebar-section">Developer</span>
-      <a href="/docs" class="nav-item" target="_blank">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-        Swagger UI
-        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-      </a>
-      <a href="/redoc" class="nav-item" target="_blank">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-        ReDoc
-        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-      </a>
-    </nav>
-    <div class="sidebar-footer">
-      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
-        <span class="theme-icon">🌙</span>
-        <span class="theme-label">Dark mode</span>
-      </button>
-    </div>
-  </aside>
+  <aside class="sidebar" id="sidebar"></aside>
 
   <div class="main-wrapper">
     <header class="topbar">
@@ -1065,7 +1014,7 @@ function switchTab(name, btn) {
   if (name === 'cache')      { loadCacheStats(); }
   if (name === 'routing' && !routingData) { loadRouting(); }
   if (name === 'models' && !routingData)  { loadRouting(); }
-  if (name === 'gateway') { loadGatewayTokens(); }
+  if (name === 'gateway') { setTimeout(loadGatewayTokens, 0); }
   if (name === 'autoroute') { loadAutoRoute(); }
 }
 
@@ -1169,6 +1118,11 @@ function buildProviderCard(p) {
     '  <div class="provider-actions">' +
     '    <span class="badge ' + (p.configured ? 'badge-green' : 'badge-gray') + '">' +
            (p.configured ? '● Active' : '○ Inactive') + '</span>' +
+         (p.source === 'env'
+            ? '<span class="badge badge-gray" title="Keys present in .env (managed via UI)">env</span>'
+            : (p.disabled
+                 ? '<span class="badge badge-gray" title="Disabled by admin from this UI">disabled</span>'
+                 : '')) +
     '    <label title="Enable / Disable provider" style="display:flex;align-items:center;gap:5px;cursor:pointer">' +
     '      <input type="checkbox" class="toggle-btn" id="toggle-' + p.name + '"' +
            (p.configured && !p.disabled ? ' checked' : '') +
@@ -1293,7 +1247,39 @@ async function toggleProvider(name, enable) {
     if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-3)">Enabling…</span>';
     var re = await fetch('/api/providers/' + name + '/enable', {method:'POST'});
     var de = await re.json();
-    if (!re.ok) throw new Error(de.detail || 'Error');
+    if (!re.ok) {
+      // Structured "no_key" response: prompt the user inline for a key
+      var detail = de && de.detail;
+      if (detail && typeof detail === 'object' && detail.error === 'no_key') {
+        await loadProviders(); // revert toggle visual
+        var keyHint   = detail.key_hint   || '';
+        var keyFormat = detail.key_format || 'API key';
+        var signupUrl = detail.signup_url || '';
+        var msg = 'Cannot enable ' + name + ' — no API key configured.\n\n'
+                + 'Format: ' + keyFormat
+                + (keyHint ? ' (e.g. ' + keyHint + ')' : '')
+                + (signupUrl ? '\nSign up: ' + signupUrl : '')
+                + '\n\nPaste a key now to enable, or Cancel to skip.';
+        var newKey = window.prompt(msg, '');
+        if (newKey && newKey.trim()) {
+          // Save key, then retry enable
+          var ka = await fetch('/api/providers/' + name + '/keys', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ key: newKey.trim() }),
+          });
+          if (!ka.ok) {
+            var ke = await ka.json().catch(function(){return{};});
+            toast('Failed to save key: ' + (ke.detail || 'unknown error'), 'error');
+            return;
+          }
+          // Retry enable now that the key is in .env
+          await toggleProvider(name, true);
+        }
+        return;
+      }
+      throw new Error((detail && (detail.message || detail)) || 'Error');
+    }
 
     // Run connectivity test
     if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-3)">Testing connection…</span>';
@@ -2251,15 +2237,17 @@ async function loadGatewayTokens() {
       return;
     }
 
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    var html = '<table data-sortable style="width:100%;border-collapse:collapse;font-size:12px">' +
       '<thead><tr style="border-bottom:1px solid var(--border)">' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Name</th>' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Key (prefix)</th>' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Created</th>' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Expires</th>' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Requests</th>' +
-      '<th style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Status</th>' +
-      '<th style="padding:6px 4px"></th>' +
+      '<th data-sort-type="str" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Name</th>' +
+      '<th data-sortable="false" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Key (prefix)</th>' +
+      '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Created</th>' +
+      '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Expires</th>' +
+      '<th data-sort-type="num" style="text-align:right;padding:6px 4px;color:var(--text-3);font-weight:500">Requests</th>' +
+      '<th data-sort-type="num" style="text-align:right;padding:6px 4px;color:var(--text-3);font-weight:500">Tokens</th>' +
+      '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Last used</th>' +
+      '<th data-sort-type="str" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Status</th>' +
+      '<th data-sortable="false" style="padding:6px 4px"></th>' +
       '</tr></thead><tbody>';
 
     tokens.forEach(function(t) {
@@ -2267,6 +2255,11 @@ async function loadGatewayTokens() {
       var expires = t.expires_at ? new Date(t.expires_at * 1000).toLocaleString() : 'Never';
       var now = Date.now() / 1000;
       var expired = t.expires_at && t.expires_at < now;
+      var lastUsed = t.last_used_at
+        ? new Date(t.last_used_at * 1000).toLocaleString()
+        : '<span style="color:var(--text-3)">Never</span>';
+      var tokensUsed = (t.tokens_used || 0).toLocaleString();
+      var requestCount = (t.request_count || 0).toLocaleString();
       var statusBadge = !t.active
         ? '<span style="color:var(--red);font-size:10px">revoked</span>'
         : expired
@@ -2278,9 +2271,11 @@ async function loadGatewayTokens() {
       html += '<tr style="border-bottom:1px solid var(--border)">' +
         '<td style="padding:7px 4px;font-weight:500;color:var(--text)">' + _esc(t.name) + '</td>' +
         '<td style="padding:7px 4px;font-family:\'JetBrains Mono\',monospace;color:var(--text-3)">' + _esc(keyPrefix) + '</td>' +
-        '<td style="padding:7px 4px;color:var(--text-3)">' + created + '</td>' +
-        '<td style="padding:7px 4px;color:' + (expired ? 'var(--red)' : 'var(--text-3)') + '">' + _esc(expires) + '</td>' +
-        '<td style="padding:7px 4px;color:var(--text-2)">' + (t.request_count || 0) + '</td>' +
+        '<td data-sort="' + (t.created_at || 0) + '" style="padding:7px 4px;color:var(--text-3)">' + created + '</td>' +
+        '<td data-sort="' + (t.expires_at || 0) + '" style="padding:7px 4px;color:' + (expired ? 'var(--red)' : 'var(--text-3)') + '">' + _esc(expires) + '</td>' +
+        '<td data-sort="' + (t.request_count || 0) + '" style="padding:7px 4px;color:var(--text);text-align:right;font-weight:500">' + requestCount + '</td>' +
+        '<td data-sort="' + (t.tokens_used || 0) + '" style="padding:7px 4px;color:var(--text-2);text-align:right">' + tokensUsed + '</td>' +
+        '<td data-sort="' + (t.last_used_at || 0) + '" style="padding:7px 4px;color:var(--text-2);font-size:11px">' + lastUsed + '</td>' +
         '<td style="padding:7px 4px">' + statusBadge + '</td>' +
         '<td style="padding:7px 4px;white-space:nowrap">' +
           (t.active && !expired
@@ -2523,6 +2518,11 @@ document.addEventListener('DOMContentLoaded', function() {
   loadRouting();
   loadCustomTemplates();
   loadCustomProviders();
+  // If gateway tab is active on load, fetch tokens
+  var gatewayTab = document.getElementById('tab-gateway');
+  if (gatewayTab && gatewayTab.classList.contains('active')) {
+    setTimeout(loadGatewayTokens, 0);
+  }
 });
 
 // ── Auto-Routing Preferences ────────────────────────────────────────────────
@@ -2609,5 +2609,7 @@ async function resetAutoRoute() {
   }
 }
 </script>
+<script src="/static/components/sidebar.js" defer></script>
+<script src="/static/components/ui.js" defer></script>
 </body>
 </html>

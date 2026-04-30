@@ -302,62 +302,7 @@
 <div class="app-shell">
 
   <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <div class="sidebar-logo">A</div>
-      <span class="sidebar-brand-name">Arbiter</span>
-      <span class="sidebar-brand-ver">v1.1</span>
-    </div>
-    <nav class="sidebar-nav">
-      <span class="sidebar-section">Main</span>
-      <a href="/dashboard" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard
-      </a>
-      <a href="/api-docs" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
-        API Documentation
-      </a>
-      <a href="/settings" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
-        Settings
-      </a>
-      <a href="/images" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-        Image Generation
-      </a>
-      <a href="/playground" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        Playground
-      </a>
-      <a href="/logs" class="nav-item">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
-        Logs
-      </a>
-      <a href="/analytics" class="nav-item active">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-        Analytics
-      </a>
-      <div class="sidebar-divider"></div>
-      <span class="sidebar-section">Developer</span>
-      <a href="/docs" class="nav-item" target="_blank">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-        Swagger UI
-        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-      </a>
-      <a href="/redoc" class="nav-item" target="_blank">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-        ReDoc
-        <svg class="nav-item-ext" width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-      </a>
-    </nav>
-    <div class="sidebar-footer">
-      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">
-        <span class="theme-icon">🌙</span>
-        <span class="theme-label">Dark mode</span>
-      </button>
-    </div>
-  </aside>
+  <aside class="sidebar" id="sidebar"></aside>
 
   <div class="main-wrapper">
     <header class="topbar">
@@ -383,6 +328,56 @@
     </header>
 
     <main class="page-content">
+
+      <!-- ═══ Auth banner (shown when /v1/* is open) ═══════════════════════ -->
+      <div id="auth-banner" style="display:none;background:#7c2d12;color:#fed7aa;padding:10px 14px;
+           border-radius:8px;margin-bottom:14px;font-size:13px;border:1px solid #c2410c">
+        ⚠ <b>Authentication is OPEN.</b> The /v1/* endpoints accept anonymous traffic
+        because no <code>GATEWAY_API_KEYS</code> and no dynamic gateway tokens are
+        configured. Create a token at
+        <a href="/settings?tab=gateway" style="color:#fde68a;text-decoration:underline">Settings → Gateway Keys</a>.
+      </div>
+
+      <!-- ═══ Filter bar (date range / token / provider / model) ══════════ -->
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;
+           background:var(--bg-2);padding:14px;border-radius:8px;
+           margin-bottom:18px;border:1px solid var(--border)">
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:3px">From</label>
+          <input type="date" id="filter-from" class="form-control" style="font-size:12px;padding:5px 8px" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:3px">To</label>
+          <input type="date" id="filter-to" class="form-control" style="font-size:12px;padding:5px 8px" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:3px">Gateway Token</label>
+          <select id="filter-token" class="form-control" style="font-size:12px;padding:5px 8px;min-width:160px">
+            <option value="">All tokens</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:3px">Provider</label>
+          <select id="filter-provider" class="form-control" style="font-size:12px;padding:5px 8px;min-width:140px">
+            <option value="">All providers</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:3px">Model</label>
+          <select id="filter-model" class="form-control" style="font-size:12px;padding:5px 8px;min-width:160px">
+            <option value="">All models</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary" onclick="applyFilters()" style="font-size:12px">Apply</button>
+          <button class="btn btn-ghost"   onclick="clearFilters()" style="font-size:12px">Clear</button>
+          <button class="btn btn-ghost"   onclick="setFilterPreset('7d')"  style="font-size:11px">7d</button>
+          <button class="btn btn-ghost"   onclick="setFilterPreset('30d')" style="font-size:11px">30d</button>
+        </div>
+      </div>
+
+      <!-- ═══ Range summary (only when from/to set) ═══════════════════════ -->
+      <div id="range-summary" style="display:none;margin-bottom:18px"></div>
 
       <!-- ═══ 1. KPI cards ══════════════════════════════════════════════════ -->
       <div class="kpi-grid" id="kpi-grid">
@@ -493,18 +488,46 @@
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table>
+            <table data-sortable>
               <thead><tr>
-                <th>Provider</th>
-                <th>Requests</th>
-                <th>Success</th>
-                <th>Errors</th>
-                <th>Rate Limited</th>
-                <th>Success Rate</th>
-                <th>Avg Latency</th>
+                <th data-sort-type="str">Provider</th>
+                <th data-sort-type="num">Requests</th>
+                <th data-sort-type="num">Success</th>
+                <th data-sort-type="num">Errors</th>
+                <th data-sort-type="num">Rate Limited</th>
+                <th data-sort-type="num">Success Rate</th>
+                <th data-sort-type="num">Avg Latency</th>
               </tr></thead>
               <tbody id="provider-rows">
                 <tr><td colspan="7" class="empty-state">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Per-Gateway-Token Usage ════════════════════════════════════════ -->
+      <div class="mb20">
+        <div class="section-hd-row">
+          <span class="section-label">Gateway Token Usage</span>
+          <span style="font-size:11px;color:var(--text-3);margin-left:auto">
+            Lifetime counters per project / token
+          </span>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table data-sortable>
+              <thead><tr>
+                <th data-sort-type="str">Token</th>
+                <th data-sort-type="str">Token ID</th>
+                <th data-sort-type="num">Requests</th>
+                <th data-sort-type="num">Success</th>
+                <th data-sort-type="num">Errors</th>
+                <th data-sort-type="num">Tokens Used</th>
+                <th data-sort-type="num">Last Used</th>
+              </tr></thead>
+              <tbody id="token-rows">
+                <tr><td colspan="7" class="empty-state">No token traffic yet</td></tr>
               </tbody>
             </table>
           </div>
@@ -519,15 +542,15 @@
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table>
+            <table data-sortable>
               <thead><tr>
-                <th>Model</th>
-                <th>Provider</th>
-                <th>Requests</th>
-                <th>Tokens Used</th>
-                <th>Tokens / Req</th>
-                <th>Errors</th>
-                <th>Success Rate</th>
+                <th data-sort-type="str">Model</th>
+                <th data-sort-type="str">Provider</th>
+                <th data-sort-type="num">Requests</th>
+                <th data-sort-type="num">Tokens Used</th>
+                <th data-sort-type="num">Tokens / Req</th>
+                <th data-sort-type="num">Errors</th>
+                <th data-sort-type="num">Success Rate</th>
               </tr></thead>
               <tbody id="model-rows">
                 <tr><td colspan="7" class="empty-state">Loading…</td></tr>
@@ -869,12 +892,12 @@ function render(data) {
       const c = provColor(p.name);
       return `<tr>
         <td><span class="prov-dot" style="background:${c}"></span><strong style="color:${c};text-transform:capitalize">${p.name}</strong></td>
-        <td style="font-variant-numeric:tabular-nums;font-weight:600">${fmtNum(p.requests)}</td>
-        <td style="color:var(--green)">${fmtNum(p.success)}</td>
-        <td style="color:var(--red)">${fmtNum(p.errors)}</td>
-        <td style="color:var(--yellow)">${fmtNum(p.rate_limited)}</td>
-        <td>${rateBarHtml(p.success_rate||0)}</td>
-        <td style="font-variant-numeric:tabular-nums">${p.avg_latency_ms||0} ms</td>
+        <td data-sort="${p.requests||0}" style="font-variant-numeric:tabular-nums;font-weight:600">${fmtNum(p.requests)}</td>
+        <td data-sort="${p.success||0}" style="color:var(--green)">${fmtNum(p.success)}</td>
+        <td data-sort="${p.errors||0}" style="color:var(--red)">${fmtNum(p.errors)}</td>
+        <td data-sort="${p.rate_limited||0}" style="color:var(--yellow)">${fmtNum(p.rate_limited)}</td>
+        <td data-sort="${p.success_rate||0}">${rateBarHtml(p.success_rate||0)}</td>
+        <td data-sort="${p.avg_latency_ms||0}" style="font-variant-numeric:tabular-nums">${p.avg_latency_ms||0} ms</td>
       </tr>`;
     }).join('');
   }
@@ -891,11 +914,11 @@ function render(data) {
       return `<tr>
         <td style="font-family:'JetBrains Mono',monospace;font-size:11.5px">${m.model_id}${fb}</td>
         <td>${provBadge(m.provider)}</td>
-        <td style="font-variant-numeric:tabular-nums">${fmtNum(m.requests)}</td>
-        <td style="font-variant-numeric:tabular-nums">${fmtNum(m.tokens)}</td>
-        <td style="font-variant-numeric:tabular-nums;color:var(--text-3)">${fmtNum(tpr)}</td>
-        <td style="color:var(--red)">${fmtNum(m.errors)}</td>
-        <td>${rateBarHtml(m.success_rate||0)}</td>
+        <td data-sort="${m.requests||0}" style="font-variant-numeric:tabular-nums">${fmtNum(m.requests)}</td>
+        <td data-sort="${m.tokens||0}" style="font-variant-numeric:tabular-nums">${fmtNum(m.tokens)}</td>
+        <td data-sort="${tpr}" style="font-variant-numeric:tabular-nums;color:var(--text-3)">${fmtNum(tpr)}</td>
+        <td data-sort="${m.errors||0}" style="color:var(--red)">${fmtNum(m.errors)}</td>
+        <td data-sort="${m.success_rate||0}">${rateBarHtml(m.success_rate||0)}</td>
       </tr>`;
     }).join('');
   }
@@ -916,6 +939,157 @@ function render(data) {
       </div>`;
     }).join('');
   }
+
+  // ── Per-token table ──────────────────────────────────────────────────────
+  const tokBody = document.getElementById('token-rows');
+  const toks = data.tokens || [];
+  if (!toks.length) {
+    tokBody.innerHTML = '<tr><td colspan="7" class="empty-state">No gateway-token traffic yet</td></tr>';
+  } else {
+    tokBody.innerHTML = toks.map(t => {
+      const last = t.last_used_at
+        ? new Date(t.last_used_at*1000).toLocaleString()
+        : '<span style="color:var(--text-3)">Never</span>';
+      const nm = t.id === 'env' ? '<i style="color:var(--text-3)">env-var keys</i>' : (t.name || '—');
+      return `<tr>
+        <td style="font-weight:500">${nm}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)">${t.id}</td>
+        <td data-sort="${t.requests||0}" style="font-variant-numeric:tabular-nums;font-weight:600">${fmtNum(t.requests)}</td>
+        <td data-sort="${t.success||0}" style="color:var(--green)">${fmtNum(t.success)}</td>
+        <td data-sort="${t.errors||0}" style="color:var(--red)">${fmtNum(t.errors)}</td>
+        <td data-sort="${t.tokens||0}" style="font-variant-numeric:tabular-nums">${fmtNum(t.tokens)}</td>
+        <td data-sort="${t.last_used_at||0}" style="font-size:11px">${last}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Auth banner ──────────────────────────────────────────────────────────
+  const authBanner = document.getElementById('auth-banner');
+  if (authBanner) {
+    authBanner.style.display = (data.summary && data.summary.auth_enforced) ? 'none' : '';
+  }
+
+  // ── Populate filter dropdowns (only on first load) ───────────────────────
+  populateFilterOptions(data);
+
+  // ── Range summary card (when filters applied) ────────────────────────────
+  renderRangeSummary(data.range);
+}
+
+// ── Filter logic ─────────────────────────────────────────────────────────
+let _filtersPopulated = false;
+function populateFilterOptions(data) {
+  if (_filtersPopulated) return;
+  const tokSel = document.getElementById('filter-token');
+  const provSel = document.getElementById('filter-provider');
+  const modSel = document.getElementById('filter-model');
+  if (!tokSel || !provSel || !modSel) return;
+
+  (data.tokens || []).forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = (t.name || t.id) + ' (' + (t.requests||0) + ' req)';
+    tokSel.appendChild(opt);
+  });
+  (data.providers || []).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name;
+    provSel.appendChild(opt);
+  });
+  (data.models || []).slice(0, 80).forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.model_id;
+    opt.textContent = m.model_id;
+    modSel.appendChild(opt);
+  });
+  _filtersPopulated = (data.tokens||[]).length + (data.providers||[]).length > 0;
+}
+
+function applyFilters() {
+  fetchData();
+}
+function clearFilters() {
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  document.getElementById('filter-token').value = '';
+  document.getElementById('filter-provider').value = '';
+  document.getElementById('filter-model').value = '';
+  fetchData();
+}
+function setFilterPreset(p) {
+  const today = new Date();
+  const back = new Date(today);
+  if (p === '7d') back.setDate(today.getDate() - 6);
+  else if (p === '30d') back.setDate(today.getDate() - 29);
+  document.getElementById('filter-from').value = back.toISOString().slice(0,10);
+  document.getElementById('filter-to').value   = today.toISOString().slice(0,10);
+  fetchData();
+}
+
+function renderRangeSummary(range) {
+  const el = document.getElementById('range-summary');
+  if (!el) return;
+  if (!range) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  const t = range.totals || {};
+  const f = range.filters || {};
+  const filterChips = [
+    f.token_id ? `<span class="badge badge-accent">token: ${f.token_id}</span>` : '',
+    f.provider ? `<span class="badge badge-accent">provider: ${f.provider}</span>` : '',
+    f.model    ? `<span class="badge badge-accent">model: ${f.model}</span>` : '',
+  ].filter(Boolean).join(' ');
+
+  // Spark series HTML (simple bars)
+  const series = range.series || [];
+  const maxV = Math.max(1, ...series.map(s => s.requests||0));
+  const sparks = series.map(s => {
+    const h = Math.round((s.requests||0) / maxV * 60);
+    return `<div title="${s.date}: ${s.requests||0} req, ${s.tokens||0} tok"
+      style="display:inline-block;width:8px;margin-right:1px;
+      height:${Math.max(2, h)}px;background:var(--accent-br);vertical-align:bottom"></div>`;
+  }).join('');
+
+  // Top-N tables
+  const topProvHtml = (range.by_provider || []).slice(0,5).map(p =>
+    `<tr><td>${p.provider}</td><td style="text-align:right">${fmtNum(p.requests)}</td></tr>`
+  ).join('') || '<tr><td colspan="2" class="empty-state">—</td></tr>';
+  const topModHtml = (range.by_model || []).slice(0,5).map(m =>
+    `<tr><td style="font-family:monospace;font-size:11px">${m.model}</td><td style="text-align:right">${fmtNum(m.requests)}</td></tr>`
+  ).join('') || '<tr><td colspan="2" class="empty-state">—</td></tr>';
+  const topTokHtml = (range.by_token || []).slice(0,5).map(tk =>
+    `<tr><td style="font-family:monospace;font-size:11px">${tk.token_id}</td><td style="text-align:right">${fmtNum(tk.requests)}</td></tr>`
+  ).join('') || '<tr><td colspan="2" class="empty-state">—</td></tr>';
+
+  el.innerHTML =
+    `<div class="card" style="padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:600">Filtered: ${range.from} → ${range.to}</div>
+        <div>${filterChips}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:14px;margin-bottom:14px">
+        <div><div style="color:var(--text-3);font-size:11px">Requests</div>
+          <div style="font-size:22px;font-weight:700">${fmtNum(t.requests||0)}</div></div>
+        <div><div style="color:var(--text-3);font-size:11px">Success rate</div>
+          <div style="font-size:22px;font-weight:700;color:var(--green)">${t.success_rate||0}%</div></div>
+        <div><div style="color:var(--text-3);font-size:11px">Errors</div>
+          <div style="font-size:22px;font-weight:700;color:var(--red)">${fmtNum(t.errors||0)}</div></div>
+        <div><div style="color:var(--text-3);font-size:11px">Tokens</div>
+          <div style="font-size:22px;font-weight:700">${fmtNum(t.tokens||0)}</div></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="color:var(--text-3);font-size:11px;margin-bottom:6px">Daily request volume</div>
+        <div>${sparks}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+        <div><div style="color:var(--text-3);font-size:11px;margin-bottom:6px">Top providers</div>
+          <table style="width:100%"><tbody>${topProvHtml}</tbody></table></div>
+        <div><div style="color:var(--text-3);font-size:11px;margin-bottom:6px">Top models</div>
+          <table style="width:100%"><tbody>${topModHtml}</tbody></table></div>
+        <div><div style="color:var(--text-3);font-size:11px;margin-bottom:6px">Top tokens</div>
+          <table style="width:100%"><tbody>${topTokHtml}</tbody></table></div>
+      </div>
+    </div>`;
 }
 
 // ── Key health grid ────────────────────────────────────────────────────────
@@ -997,7 +1171,17 @@ async function fetchData() {
   const dot   = document.getElementById('live-dot');
   const label = document.getElementById('live-label');
   try {
-    const r = await fetch('/analytics/data');
+    // Build query string from filter inputs (if present on this page)
+    const qp = new URLSearchParams();
+    const f  = id => (document.getElementById(id) || {}).value || '';
+    if (f('filter-from'))     qp.set('from',     f('filter-from'));
+    if (f('filter-to'))       qp.set('to',       f('filter-to'));
+    if (f('filter-token'))    qp.set('token_id', f('filter-token'));
+    if (f('filter-provider')) qp.set('provider', f('filter-provider'));
+    if (f('filter-model'))    qp.set('model',    f('filter-model'));
+    const qs = qp.toString();
+    const url = '/analytics/data' + (qs ? ('?' + qs) : '');
+    const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP '+r.status);
     const data = await r.json();
     render(data);
@@ -1040,5 +1224,7 @@ document.addEventListener('DOMContentLoaded', function() {
   setRefreshInterval(30000);
 });
 </script>
+<script src="/static/components/sidebar.js" defer></script>
+<script src="/static/components/ui.js" defer></script>
 </body>
 </html>

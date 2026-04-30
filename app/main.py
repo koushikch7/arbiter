@@ -40,6 +40,7 @@ from app.api.gateway_tokens_api import load_gateway_tokens_to_state
 from app.api.custom_providers_api import router as custom_providers_router
 from app.api.custom_providers_api import load_custom_providers_to_app
 from app.api.users_api import router as users_router
+from app.api.analytics_api import router as analytics_router
 from app.auth.sso import router as auth_router, register_google_oauth, sso_enabled
 from app.middleware.auth import (
     GatewayAuthMiddleware,
@@ -288,7 +289,10 @@ if settings.ENABLE_CF_ACCESS and settings.CLOUDFLARE_ACCESS_TEAM_NAME:
 # populated request.scope["session"] → AssertionError on first UI request.
 gateway_keys = settings.get_gateway_api_keys()
 app.add_middleware(
-    GatewayAuthMiddleware, allowed_keys=gateway_keys, sso_enabled=_SSO_ON,
+    GatewayAuthMiddleware,
+    allowed_keys=gateway_keys,
+    sso_enabled=_SSO_ON,
+    require_auth=settings.REQUIRE_AUTH,
 )
 if _SSO_ON:
     logger.info(
@@ -299,10 +303,17 @@ elif gateway_keys:
         "GatewayAuthMiddleware: Bearer-only mode with %d key(s)", len(gateway_keys)
     )
 else:
-    logger.warning(
-        "GatewayAuthMiddleware: auth DISABLED \u2014 no GATEWAY_API_KEYS and no SSO. "
-        "Anyone with network access can use this gateway."
-    )
+    if settings.REQUIRE_AUTH:
+        logger.warning(
+            "GatewayAuthMiddleware: STRICT mode \u2014 no GATEWAY_API_KEYS / SSO / dynamic "
+            "tokens configured. /v1/* will refuse all requests with 401 until you "
+            "create a token at /settings \u2192 Gateway Keys."
+        )
+    else:
+        logger.warning(
+            "GatewayAuthMiddleware: auth DISABLED \u2014 no GATEWAY_API_KEYS and no SSO. "
+            "Anyone with network access can use this gateway. Set REQUIRE_AUTH=true."
+        )
 
 # ── Session middleware (Google SSO) — MUST be added AFTER GatewayAuth ───────
 # so Session wraps it as the outermost layer and populates scope["session"]
@@ -348,6 +359,7 @@ app.include_router(gateway_tokens_router, tags=["Gateway Tokens"])
 app.include_router(custom_providers_router, tags=["Custom Providers"])
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(analytics_router, tags=["Analytics"])
 
 
 @app.get("/health", summary="Health check")

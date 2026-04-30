@@ -1,8 +1,13 @@
 import logging
 import os
+import json
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from app.observability import stats as obs_stats
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,19 @@ async def analytics_page() -> HTMLResponse:
 
 
 @router.get("/analytics/data", summary="Analytics data JSON")
-async def analytics_data(request: Request) -> JSONResponse:
+async def analytics_data(
+    request: Request,
+    from_date: Optional[str] = Query(None, alias="from",
+        description="ISO date YYYY-MM-DD (inclusive). When set with `to`, returns daily-rollup data."),
+    to_date: Optional[str] = Query(None, alias="to",
+        description="ISO date YYYY-MM-DD (inclusive)."),
+    token_id: Optional[str] = Query(None,
+        description="Filter to a single gateway token id (or 'env' for env-var traffic)."),
+    provider_filter: Optional[str] = Query(None, alias="provider",
+        description="Filter to a single provider name."),
+    model_filter: Optional[str] = Query(None, alias="model",
+        description="Filter to a single model id."),
+) -> JSONResponse:
     redis = request.app.state.redis
 
     async def get_int(key: str) -> int:
@@ -253,6 +270,154 @@ async def analytics_data(request: Request) -> JSONResponse:
 
     key_pools_data.sort(key=lambda p: (-p["active_keys"], p["provider"]))
 
+    # ── Per-gateway-token usage (lifetime) ────────────────────────────────────
+    tokens_data: list[dict] = []
+    try:
+        # Discover all tokens that have any traffic
+        tok_keys = await redis.keys("arbiter:stats:token:*:requests")
+        seen_tokens: set[str] = set()
+        for k in tok_keys:
+            parts = k.split(":")
+            # arbiter:stats:token:{id}:requests
+            if len(parts) == 5 and parts[2] == "token":
+                seen_tokens.add(parts[3])
+        # Also enumerate registered tokens (may have zero traffic)
+        try:
+            raw = await redis.get("arbiter:gateway:tokens")
+            if raw:
+                for t in json.loads(raw):
+                    seen_tokens.add(t.get("id", ""))
+        except Exception:
+            pass
+        seen_tokens.discard("")
+
+        # Resolve names from the registry
+        token_names: dict[str, str] = {"env": "env-var"}
+        try:
+            raw = await redis.get("arbiter:gateway:tokens")
+            if raw:
+                for t in json.loads(raw):
+                    token_names[t.get("id", "")] = t.get("name", "")
+        except Exception:
+            pass
+
+        for tid in sorted(seen_tokens):
+            summary = await obs_stats.get_token_summary(redis, tid)
+            tokens_data.append({
+                "id":           tid,
+                "name":         token_names.get(tid, ""),
+                "requests":     summary["requests"],
+                "success":      summary["success"],
+                "errors":       summary["errors"],
+                "tokens":       summary["tokens"],
+                "last_used_at": summary["last_used_at"],
+            })
+        tokens_data.sort(key=lambda t: -t["requests"])
+    except Exception as e:
+        logger.warning("Token stats error: %s", e)
+
+    # ── Date-range filtered view (optional) ───────────────────────────────────
+    range_data: Optional[dict] = None
+    if from_date and to_date:
+        days = obs_stats.daterange(from_date, to_date)
+        series: list[dict] = []
+        total_req = total_ok = total_err = total_tok = 0
+        per_provider_rng: dict[str, int] = {}
+        per_model_rng: dict[str, int] = {}
+        per_token_rng: dict[str, int] = {}
+
+        for d in days:
+            if token_id:
+                tid = obs_stats._safe(token_id, 40)
+                req = await get_int(f"arbiter:stats:day:{d}:token:{tid}:requests")
+                tok = await get_int(f"arbiter:stats:day:{d}:token:{tid}:tokens")
+                ok  = req  # token-level counters track all (success path)
+                err = 0
+            elif provider_filter:
+                p = obs_stats._safe(provider_filter, 40)
+                req = await get_int(f"arbiter:stats:day:{d}:provider:{p}:requests")
+                tok = 0
+                ok  = req
+                err = 0
+            elif model_filter:
+                m = obs_stats._safe(model_filter, 80)
+                req = await get_int(f"arbiter:stats:day:{d}:model:{m}:requests")
+                tok = 0
+                ok  = req
+                err = 0
+            else:
+                req = await get_int(f"arbiter:stats:day:{d}:requests")
+                ok  = await get_int(f"arbiter:stats:day:{d}:success")
+                err = await get_int(f"arbiter:stats:day:{d}:errors")
+                tok = await get_int(f"arbiter:stats:day:{d}:tokens")
+            series.append({"date": d, "requests": req, "success": ok,
+                           "errors": err, "tokens": tok})
+            total_req += req; total_ok += ok; total_err += err; total_tok += tok
+
+        # Per-provider/model/token aggregates over the range
+        if not (provider_filter or model_filter or token_id):
+            for d in days:
+                # Providers
+                try:
+                    pkeys = await redis.keys(f"arbiter:stats:day:{d}:provider:*:requests")
+                    for pk in pkeys:
+                        pn = pk.split(":")[5]
+                        per_provider_rng[pn] = per_provider_rng.get(pn, 0) + \
+                            await get_int(pk)
+                except Exception:
+                    pass
+                # Models
+                try:
+                    mkeys = await redis.keys(f"arbiter:stats:day:{d}:model:*:requests")
+                    for mk in mkeys:
+                        mn = mk.split(":")[5]
+                        per_model_rng[mn] = per_model_rng.get(mn, 0) + \
+                            await get_int(mk)
+                except Exception:
+                    pass
+                # Tokens
+                try:
+                    tkeys = await redis.keys(f"arbiter:stats:day:{d}:token:*:requests")
+                    for tk in tkeys:
+                        tn = tk.split(":")[5]
+                        per_token_rng[tn] = per_token_rng.get(tn, 0) + \
+                            await get_int(tk)
+                except Exception:
+                    pass
+
+        range_data = {
+            "from":         days[0] if days else None,
+            "to":           days[-1] if days else None,
+            "totals": {
+                "requests": total_req, "success": total_ok,
+                "errors":   total_err, "tokens":  total_tok,
+                "success_rate": round(total_ok / total_req * 100, 1) if total_req else 0.0,
+            },
+            "series":       series,
+            "by_provider":  sorted(
+                [{"provider": k, "requests": v} for k, v in per_provider_rng.items()],
+                key=lambda x: -x["requests"]),
+            "by_model":     sorted(
+                [{"model": k, "requests": v} for k, v in per_model_rng.items()],
+                key=lambda x: -x["requests"])[:25],
+            "by_token":     sorted(
+                [{"token_id": k, "requests": v} for k, v in per_token_rng.items()],
+                key=lambda x: -x["requests"]),
+            "filters": {
+                "token_id": token_id, "provider": provider_filter,
+                "model":    model_filter,
+            },
+        }
+
+    # ── Auth-mode flag (UI shows banner when auth is open) ────────────────────
+    try:
+        from app.config import settings
+        env_keys = settings.get_gateway_api_keys()
+        dyn = bool(getattr(request.app.state, "gateway_tokens", set()))
+        auth_enforced = bool(env_keys) or dyn
+    except Exception:
+        auth_enforced = False
+
     return JSONResponse({
         "summary": {
             "total_requests":  requests_total,
@@ -266,12 +431,15 @@ async def analytics_data(request: Request) -> JSONResponse:
             "total_tokens":    total_tokens,
             "active_keys":     active_keys_total,
             "configured_keys": configured_keys_total,
+            "auth_enforced":   auth_enforced,
         },
         "providers":         provider_stats,
         "models":            model_stats,
         "history":           history,
         "key_pools":         key_pools_data,
         "token_by_provider": token_by_provider,
+        "tokens":            tokens_data,
+        "range":             range_data,
     })
 
 

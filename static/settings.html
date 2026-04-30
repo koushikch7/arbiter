@@ -1454,6 +1454,18 @@ async function resetRouting() {
 function renderModelsAccordion(data) {
   var acc = document.getElementById('models-accordion');
   if (!acc) return;
+  // Snapshot which provider accordions are currently expanded so we can
+  // restore them after re-render (so a "Refresh from provider" click does
+  // not collapse the panel the user was working in).
+  var openProviders = {};
+  Array.prototype.forEach.call(
+    acc.querySelectorAll('.accordion-item'),
+    function(item) {
+      var btn = item.querySelector('.accordion-btn');
+      var name = item.getAttribute('data-provider');
+      if (btn && name && btn.classList.contains('open')) openProviders[name] = true;
+    }
+  );
   var providers = data.provider_order || [];
   acc.innerHTML = providers.map(function(p) {
     var models = (data.model_overrides && data.model_overrides[p] && data.model_overrides[p].length)
@@ -1470,6 +1482,17 @@ function renderModelsAccordion(data) {
     modelOverrides[p] = models.slice();
     return buildModelAccordion(p, models);
   }).join('');
+  // Restore expanded state
+  Object.keys(openProviders).forEach(function(name) {
+    var item = acc.querySelector('.accordion-item[data-provider="' + name + '"]');
+    if (!item) return;
+    var btn  = item.querySelector('.accordion-btn');
+    var body = item.querySelector('.accordion-body');
+    if (btn && body) {
+      btn.classList.add('open');
+      body.style.display = 'block';
+    }
+  });
 }
 
 function buildModelAccordion(provider, models) {
@@ -1486,7 +1509,7 @@ function buildModelAccordion(provider, models) {
       '</div>';
   }).join('');
 
-  return '<div class="accordion-item">' +
+  return '<div class="accordion-item" data-provider="' + provider + '">' +
     '<button class="accordion-btn" onclick="this.classList.toggle(\'open\');var b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'block\':\'none\'">' +
     '<span>' + provider + '</span>' +
     '<span style="font-size:11px;color:var(--text-3);margin-left:auto;margin-right:8px">' + models.length + ' models</span>' +

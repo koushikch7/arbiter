@@ -138,12 +138,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Permissions-Policy",
             "geolocation=(), microphone=(), camera=(), payment=()",
         )
-        # Prevent CDN/proxy caching of API responses.
+        # Prevent CDN/proxy caching of API and auth responses.  /auth/me in
+        # particular returns the signed-in user's email; if a CDN caches it,
+        # the next *anonymous* visitor (e.g. an incognito tab) would see
+        # somebody else's identity on the login page.
         # HTML pages already set their own no-store via dashboard.py.
-        if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        path = request.url.path
+        if (path.startswith("/api/")
+                or path.startswith("/auth/")
+                or path == "/login"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             response.headers["CDN-Cache-Control"] = "no-store"
+            response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
             response.headers.setdefault("Pragma", "no-cache")
+            response.headers.setdefault("Vary", "Cookie")
         # Content Security Policy — allow our CDNs + inline (the UI uses a
         # lot of onclick handlers and inline styles).
         response.headers.setdefault(

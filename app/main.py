@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -190,14 +191,71 @@ async def lifespan(app: FastAPI):
         f"Cache TTL: {settings.CACHE_TTL}s"
     )
 
+    # Weekly background task: refresh provider key pools and stamp the
+    # last-sync timestamp in Redis so the UI can display "Synced N days ago".
+    # NOTE: this re-reads keys from .env, re-initialises pools, and re-runs the
+    # active disabled-flag filter. It does NOT scrape upstream docs for new
+    # model IDs \u2014 model catalogues live in app/providers/_free_tier_catalog.py
+    # and need a code change. The weekly job logs a reminder for that.
+    sync_task = asyncio.create_task(
+        _weekly_provider_sync(app, redis_client),
+        name="weekly-provider-sync",
+    )
+    app.state.sync_task = sync_task
+
     yield
 
     # Cleanup
     logger.info("Shutting down Arbiter...")
+    sync_task.cancel()
+    try:
+        await sync_task
+    except (asyncio.CancelledError, Exception):
+        pass
     try:
         await redis_client.aclose()
     except Exception:
         pass
+
+
+async def _weekly_provider_sync(app: FastAPI, redis_client) -> None:
+    """Reload providers from .env every 7 days; stamp Redis with last-sync time.
+
+    Runs in the background for the lifetime of the app. Cancelled on shutdown.
+    """
+    from app.api.keys_api import _PROVIDER_META, _reload_provider
+
+    SYNC_INTERVAL = 7 * 24 * 3600  # one week
+
+    class _Stub:
+        def __init__(self, app): self.app = app
+    stub_request = _Stub(app)
+
+    while True:
+        try:
+            await asyncio.sleep(SYNC_INTERVAL)
+            logger.info("Weekly provider sync starting...")
+            reloaded, failed = [], []
+            for pname in _PROVIDER_META:
+                try:
+                    await _reload_provider(pname, stub_request)
+                    reloaded.append(pname)
+                except Exception as exc:
+                    logger.warning(f"Weekly sync: failed to reload {pname}: {exc}")
+                    failed.append(pname)
+            ts = int(time.time())
+            await redis_client.set("arbiter:provider_sync:last", ts)
+            await redis_client.set("arbiter:provider_sync:reloaded", ",".join(reloaded))
+            await redis_client.set("arbiter:provider_sync:failed", ",".join(failed))
+            logger.info(
+                f"Weekly provider sync done. Reloaded: {len(reloaded)} | "
+                f"Failed: {len(failed)} | reminder: review provider catalogs against "
+                f"official docs (app/providers/_free_tier_catalog.py)"
+            )
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning(f"Weekly provider sync errored: {exc}")
 
 
 _STATIC_DIR = Path(__file__).parent.parent / "static"

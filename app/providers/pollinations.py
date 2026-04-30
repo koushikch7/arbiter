@@ -113,14 +113,16 @@ class PollinationsProvider(BaseProvider):
         if request.stop:
             payload["stop"] = request.stop
 
-        # Authorization Bearer is required as of 2026.  User-Agent is also
-        # required — Cloudflare in front of Pollinations returns 502 to
-        # unrecognised UAs (e.g. bare httpx/0.x).
+        # Pollinations text endpoint accepts Bearer auth for paid/keyed access
+        # but is also still anonymous-tolerant for some models. Send Bearer
+        # only when we have a real key; otherwise omit it so the anonymous
+        # tier continues to work (matches pre-v1.13.2 behaviour).
         headers = {
-            "Content-Type":  "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent":    "Arbiter/1.13 (+https://github.com/koushikch7/arbiter)",
+            "Content-Type": "application/json",
+            "User-Agent":   "Arbiter/1.13 (+https://github.com/koushikch7/arbiter)",
         }
+        if api_key and api_key not in ("free", "anonymous"):
+            headers["Authorization"] = f"Bearer {api_key}"
 
         logger.debug(f"PollinationsProvider POST model={model}")
 

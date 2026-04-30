@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -330,23 +331,31 @@ def _ensure_env_file() -> Path:
 
 def _read_env_keys(provider: str) -> List[str]:
     """
-    Read provider keys directly from the .env file.
+    Read provider keys for the keys-management UI.
 
-    Bypasses the cached settings singleton so changes written via the UI
-    are visible immediately without a server restart.
+    Reads `.env` directly when the file is available (so keys saved via the
+    UI are visible immediately, bypassing the cached Settings singleton).
+    Falls back to the live process environment when `.env` is not mounted
+    inside the container — otherwise the UI would think no keys are
+    configured even though the provider is fully functional via env-file
+    variables loaded by docker-compose.
     """
     env_var = _ENV_VAR_MAP.get(provider)
     if not env_var:
         return []
     env_file = _PROJECT_ROOT / ".env"
-    if not env_file.exists():
-        return []
-    content = env_file.read_text(encoding="utf-8")
-    m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
-    if not m:
-        return []
+    raw: str = ""
+    if env_file.exists():
+        content = env_file.read_text(encoding="utf-8")
+        m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
+        if m:
+            raw = m.group(1)
+    if not raw:
+        # Fallback to the live process environment (docker-compose env_file,
+        # systemd EnvironmentFile, plain `export`, etc.).
+        raw = os.environ.get(env_var, "") or ""
     return [
-        k.strip() for k in m.group(1).split(",")
+        k.strip() for k in raw.split(",")
         if k.strip() and not _is_placeholder(k.strip())
     ]
 
@@ -649,4 +658,27 @@ async def reload_all(request: Request) -> JSONResponse:
         except Exception as exc:
             logger.warning("Failed to reload %s: %s", name, exc)
             failed.append(name)
+    # Stamp last-sync timestamp so the UI can show "Synced N min ago".
+    try:
+        ts = int(time.time())
+        await request.app.state.redis.set("arbiter:provider_sync:last", ts)
+        await request.app.state.redis.set("arbiter:provider_sync:reloaded", ",".join(reloaded))
+        await request.app.state.redis.set("arbiter:provider_sync:failed", ",".join(failed))
+    except Exception:
+        pass
     return JSONResponse(content={"success": True, "reloaded": reloaded, "failed": failed})
+
+
+@router.get("/sync/status", summary="Last weekly-sync timestamp & result",
+            dependencies=[Depends(require_admin)])
+async def sync_status(request: Request) -> JSONResponse:
+    redis = request.app.state.redis
+    ts        = await redis.get("arbiter:provider_sync:last")
+    reloaded  = await redis.get("arbiter:provider_sync:reloaded") or ""
+    failed    = await redis.get("arbiter:provider_sync:failed")   or ""
+    return JSONResponse(content={
+        "last_sync_unix": int(ts) if ts else None,
+        "reloaded":       [n for n in reloaded.split(",") if n],
+        "failed":         [n for n in failed.split(",")   if n],
+        "interval_days":  7,
+    })

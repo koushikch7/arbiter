@@ -111,10 +111,10 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
         ),
         ModelSpec(
             id="gemini-3.1-flash-lite-preview", context=1_048_576,
-            tags={"long-context", "balanced", "fast", "vision"},
-            rpm=15, rpd=1_500, quality=4, speed=5,
+            tags={"long-context", "balanced", "fast", "creative", "vision"},
+            rpm=15, rpd=1_500, quality=5, speed=5,
             modality="multimodal",
-            notes="free · newest fast preview",
+            notes="free · newest fast preview · TOP free Gemini",
         ),
         ModelSpec(
             id="gemini-3-flash-preview", context=1_048_576,

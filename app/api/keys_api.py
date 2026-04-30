@@ -69,12 +69,16 @@ _PROVIDER_META = {
         "signup_url": "https://aistudio.google.com/app/apikey",
         "free":       True,
         "models": [
-            # Current free-tier models (verified Apr 2026 from official docs).
-            "gemini-2.5-flash-lite",   # default — 15 RPM, 1000 RPD (highest quota)
-            "gemini-2.0-flash-lite",   # backup — high quota
-            "gemini-2.5-flash",        # quality bump — 10 RPM, 250 RPD
+            # Free-tier priority order (newest preview first, Apr 2026).
+            "gemini-3.1-flash-lite-preview",  # default — newest free preview
+            "gemini-2.5-flash",               # 2nd  — quality bump
+            "gemini-2.5-flash-lite",          # 3rd  — highest RPD quota
+            "gemini-3-flash-preview",         # backup
             "gemini-2.0-flash",
-            "gemini-2.5-pro",          # premium — low RPM
+            "gemini-2.0-flash-lite",
+            "gemini-2.5-pro",                 # paid
+            "gemini-3.1-pro-preview",         # paid
+            "gemini-3-pro-preview",           # paid
         ],
     },
     "groq": {

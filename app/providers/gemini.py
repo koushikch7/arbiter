@@ -48,24 +48,26 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 class GeminiProvider(BaseProvider):
     name = "gemini"
 
-    # Free-tier models ordered by RPD quota (highest first).
-    # gemini-2.5-flash-lite      15 RPM,  250K TPM, 1000 RPD
-    # gemini-2.0-flash-lite      30 RPM,  1M  TPM, 1500 RPD (highest quota)
-    # gemini-2.5-flash           10 RPM,  250K TPM,  250 RPD
-    # gemini-2.0-flash           15 RPM,  1M  TPM, 1500 RPD
-    # gemini-2.5-pro              5 RPM,  250K TPM,  100 RPD (premium / paid)
-    # gemini-3.1-pro-preview     paid only — premium frontier reasoning
-    # gemini-3-pro-preview       paid only — premium
+    # Free-tier models ordered by user-defined priority (newest+best first).
+    # gemini-3.1-flash-lite-preview  – newest preview, free, fast        ← default
+    # gemini-2.5-flash               – 10 RPM, 250K TPM,  250 RPD
+    # gemini-2.5-flash-lite          – 15 RPM, 250K TPM, 1000 RPD
+    # gemini-3-flash-preview         – frontier flash preview, free
+    # gemini-2.0-flash               – 15 RPM,  1M  TPM, 1500 RPD
+    # gemini-2.0-flash-lite          – 30 RPM,  1M  TPM, 1500 RPD
+    # gemini-2.5-pro                  – paid only (premium reasoning)
+    # gemini-3.1-pro-preview         – paid only (frontier reasoning)
+    # gemini-3-pro-preview           – paid only (premium)
     models: List[str] = [
-        "gemini-2.5-flash-lite",   # default — highest quota among 2.5 line
-        "gemini-2.0-flash-lite",   # backup — high quota, lower quality
-        "gemini-2.0-flash",        # high quota, fast
-        "gemini-2.5-flash",        # quality bump
-        "gemini-2.5-pro",          # reasoning / premium (paid)
-        "gemini-3.1-pro-preview",  # frontier reasoning (paid only)
-        "gemini-3-pro-preview",    # premium (paid only)
-        "gemini-3.1-flash-lite-preview",  # newest fast (free)
-        "gemini-3-flash-preview",  # frontier flash (free)
+        "gemini-3.1-flash-lite-preview",  # 1st priority — newest free preview
+        "gemini-2.5-flash",               # 2nd priority — quality bump
+        "gemini-2.5-flash-lite",          # 3rd priority — highest free quota
+        "gemini-3-flash-preview",         # backup — frontier flash (free)
+        "gemini-2.0-flash",               # legacy backup — high quota
+        "gemini-2.0-flash-lite",          # legacy backup — highest quota
+        "gemini-2.5-pro",                 # paid only — reasoning / premium
+        "gemini-3.1-pro-preview",         # paid only — frontier reasoning
+        "gemini-3-pro-preview",           # paid only — premium
     ]
 
     # Models that REQUIRE a paid Google Cloud billing account.  The router
@@ -79,7 +81,7 @@ class GeminiProvider(BaseProvider):
     }
 
     max_context_tokens = 1_048_576   # 1 M tokens
-    default_model      = "gemini-2.5-flash-lite"
+    default_model      = "gemini-3.1-flash-lite-preview"
 
     # --------------------------------------------------------------------------
     def _map_messages(self, messages: List[Message]) -> tuple:

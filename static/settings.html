@@ -1006,6 +1006,12 @@ function switchTab(name, btn) {
   var panel = document.getElementById('tab-' + name);
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
+  // Persist active tab in URL hash so a page refresh stays on the same tab.
+  try {
+    if (window.location.hash !== '#' + name) {
+      history.replaceState(null, '', '#' + name);
+    }
+  } catch (e) { /* ignore */ }
   // Stop live deployment polling when leaving modal tab
   if (name !== 'modal' && _liveDepPollTimer) {
     clearInterval(_liveDepPollTimer); _liveDepPollTimer = null;
@@ -1020,10 +1026,18 @@ function switchTab(name, btn) {
 }
 
 function switchTabByName(name) {
+  // Find the tab button whose onclick references this tab name.  This is
+  // robust against tab-button reordering (the previous index-based lookup
+  // silently broke when new tabs were added).
   var btns = document.querySelectorAll('.tab-btn');
-  var tabOrder = ['keys','routing','models','images','cloudflare','modal','cache','gateway'];
-  var idx = tabOrder.indexOf(name);
-  if (idx >= 0 && btns[idx]) { switchTab(name, btns[idx]); }
+  for (var i = 0; i < btns.length; i++) {
+    var oc = btns[i].getAttribute('onclick') || '';
+    if (oc.indexOf("switchTab('" + name + "'") !== -1) {
+      switchTab(name, btns[i]);
+      return true;
+    }
+  }
+  return false;
 }
 
 // ── API Keys Tab ─────────────────────────────────────────────────────────────
@@ -2548,6 +2562,19 @@ document.addEventListener('DOMContentLoaded', function() {
   loadRouting();
   loadCustomTemplates();
   loadCustomProviders();
+  // Restore active tab from URL hash so refreshing the page on a non-default
+  // tab (e.g. Models, Gateway) keeps the user where they were.
+  var initialTab = (window.location.hash || '').replace(/^#/, '').trim();
+  var validTabs = ['keys','routing','models','images','cloudflare','modal',
+                   'cache','gateway','custom','autoroute'];
+  if (initialTab && validTabs.indexOf(initialTab) !== -1) {
+    switchTabByName(initialTab);
+  }
+  // React to back/forward navigation and manual hash edits.
+  window.addEventListener('hashchange', function() {
+    var t = (window.location.hash || '').replace(/^#/, '').trim();
+    if (t && validTabs.indexOf(t) !== -1) switchTabByName(t);
+  });
   // If gateway tab is active on load, fetch tokens
   var gatewayTab = document.getElementById('tab-gateway');
   if (gatewayTab && gatewayTab.classList.contains('active')) {

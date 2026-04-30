@@ -126,6 +126,7 @@
           <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Reload Providers
         </button>
+        <span id="providers-last-updated" style="font-size:10px;color:var(--text-3);margin-left:8px"></span>
       </div>
     </header>
 
@@ -1028,7 +1029,7 @@ function switchTabByName(name) {
 // ── API Keys Tab ─────────────────────────────────────────────────────────────
 async function loadProviders() {
   try {
-    var r = await fetch('/api/providers');
+    var r = await fetch('/api/providers?_=' + Date.now());
     if (!r.ok) throw new Error('HTTP ' + r.status);
     providersData = await r.json();
     renderProviders(providersData);
@@ -1036,6 +1037,12 @@ async function loadProviders() {
     var cf = providersData.find(function(p) { return p.name === 'cloudflare'; });
     var banner = document.getElementById('cf-setup-banner');
     if (banner && cf && !cf.configured) { banner.style.display = ''; }
+    // Update last-refreshed timestamp
+    var ts = document.getElementById('providers-last-updated');
+    if (ts) {
+      var now = new Date();
+      ts.textContent = 'Loaded ' + now.toTimeString().slice(0,8);
+    }
   } catch(e) {
     document.getElementById('keys-loading').innerHTML =
       '<span style="color:var(--red)">Failed to load providers: ' + e.message + '</span>';
@@ -2523,6 +2530,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (gatewayTab && gatewayTab.classList.contains('active')) {
     setTimeout(loadGatewayTokens, 0);
   }
+  // Auto-refresh provider status every 30 seconds so the UI never shows stale data.
+  setInterval(loadProviders, 30000);
 });
 
 // ── Auto-Routing Preferences ────────────────────────────────────────────────

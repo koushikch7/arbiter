@@ -157,6 +157,7 @@ class KeyPool:
         rpm_limit: int,
         tpm_limit: int,
         daily_limit: int,
+        key_tiers: Optional[Dict[str, str]] = None,
     ):
         self.provider    = provider
         self.keys        = keys          # raw API key strings
@@ -164,15 +165,24 @@ class KeyPool:
         self.rpm_limit   = rpm_limit
         self.tpm_limit   = tpm_limit
         self.daily_limit = daily_limit
+        # {key -> tier}.  Default tier is "free" when not specified.
+        self.key_tiers: Dict[str, str] = key_tiers or {}
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
-    async def get_best_key(self, exclude: Optional[Set[str]] = None) -> Optional[str]:
+    async def get_best_key(
+        self,
+        exclude: Optional[Set[str]] = None,
+        required_tier: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Return the key with the highest weighted availability score,
         skipping any keys in *exclude* (already tried this request).
+
+        When *required_tier* is set (e.g. "paid"), only keys tagged with that
+        tier are eligible.  Untagged keys default to "free".
 
         Returns None when every key is exhausted or on cooldown.
         """
@@ -183,6 +193,12 @@ class KeyPool:
         for key in self.keys:
             if key in exclude:
                 continue
+            if required_tier:
+                tier = self.key_tiers.get(key, "free")
+                # "paid" keys may also serve free models, but free keys may
+                # NOT serve paid models.
+                if required_tier == "paid" and tier != "paid":
+                    continue
             score = await self._score_key(key)
             logger.debug(
                 f"[{self.provider}] key={_hash_key(key)} score={score:.3f}"
@@ -194,7 +210,9 @@ class KeyPool:
         if best_key is None or best_score <= 0:
             logger.warning(
                 f"[{self.provider}] No available key "
-                f"(all {len(self.keys)} keys exhausted or on cooldown)"
+                f"(all {len(self.keys)} keys exhausted or on cooldown"
+                + (f", required_tier={required_tier}" if required_tier else "")
+                + ")"
             )
             return None
 

@@ -53,14 +53,30 @@ class GeminiProvider(BaseProvider):
     # gemini-2.0-flash-lite      30 RPM,  1M  TPM, 1500 RPD (highest quota)
     # gemini-2.5-flash           10 RPM,  250K TPM,  250 RPD
     # gemini-2.0-flash           15 RPM,  1M  TPM, 1500 RPD
-    # gemini-2.5-pro              5 RPM,  250K TPM,  100 RPD (premium)
+    # gemini-2.5-pro              5 RPM,  250K TPM,  100 RPD (premium / paid)
+    # gemini-3.1-pro-preview     paid only — premium frontier reasoning
+    # gemini-3-pro-preview       paid only — premium
     models: List[str] = [
         "gemini-2.5-flash-lite",   # default — highest quota among 2.5 line
         "gemini-2.0-flash-lite",   # backup — high quota, lower quality
         "gemini-2.0-flash",        # high quota, fast
         "gemini-2.5-flash",        # quality bump
-        "gemini-2.5-pro",          # reasoning / premium
+        "gemini-2.5-pro",          # reasoning / premium (paid)
+        "gemini-3.1-pro-preview",  # frontier reasoning (paid only)
+        "gemini-3-pro-preview",    # premium (paid only)
+        "gemini-3.1-flash-lite-preview",  # newest fast (free)
+        "gemini-3-flash-preview",  # frontier flash (free)
     ]
+
+    # Models that REQUIRE a paid Google Cloud billing account.  The router
+    # gates these to keys tagged `#paid` in .env (see config.get_key_tiers).
+    paid_models: set = {
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-pro-preview-customtools",
+        "gemini-3-pro-preview",
+        "gemini-2.5-pro",
+        "gemini-pro-latest",
+    }
 
     max_context_tokens = 1_048_576   # 1 M tokens
     default_model      = "gemini-2.5-flash-lite"

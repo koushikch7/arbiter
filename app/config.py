@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     def get_keys(self, provider: str) -> List[str]:
+        """Return raw API keys for *provider*, stripping any `#tier` suffix.
+
+        Keys may be tagged with a tier (e.g. `AIza...#paid` / `AIza...#free`)
+        via the comma-separated env var. Tiers are used by the router to
+        gate access to paid-only models. The bare key (without `#tier`) is
+        what gets sent upstream and stored in the KeyPool.
+        """
         mapping = {
             "gemini":       self.GEMINI_API_KEYS,
             "groq":         self.GROQ_API_KEYS,
@@ -115,7 +122,49 @@ class Settings(BaseSettings):
             "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")
-        return [k.strip() for k in raw.split(",") if k.strip()]
+        out: List[str] = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            # Strip optional "#tier" suffix; keep just the API key.
+            key = token.split("#", 1)[0].strip()
+            if key:
+                out.append(key)
+        return out
+
+    def get_key_tiers(self, provider: str) -> dict:
+        """Return a {key: tier} mapping derived from `KEY#tier` syntax.
+
+        Default tier is "free" when no suffix is provided.
+        """
+        mapping = {
+            "gemini":       self.GEMINI_API_KEYS,
+            "groq":         self.GROQ_API_KEYS,
+            "openrouter":   self.OPENROUTER_API_KEYS,
+            "cohere":       self.COHERE_API_KEYS,
+            "huggingface":  self.HUGGINGFACE_API_KEYS,
+            "cloudflare":   self.CLOUDFLARE_API_KEYS,
+            "cerebras":     self.CEREBRAS_API_KEYS,
+            "zai":          self.ZAI_API_KEYS,
+            "lightning":    self.LIGHTNING_API_KEYS,
+            "routeway":     self.ROUTEWAY_API_KEYS,
+            "ollama":       self.OLLAMA_API_KEYS,
+            "pollinations": self.POLLINATIONS_API_KEYS,
+            "modal":        self.MODAL_API_KEYS,
+        }
+        raw = mapping.get(provider, "")
+        tiers: dict = {}
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if "#" in token:
+                key, tier = token.split("#", 1)
+                tiers[key.strip()] = tier.strip().lower() or "free"
+            else:
+                tiers[token] = "free"
+        return tiers
 
     def get_gateway_api_keys(self) -> List[str]:
         """Return the combined list of valid gateway auth tokens."""

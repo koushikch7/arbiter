@@ -131,6 +131,7 @@ async def lifespan(app: FastAPI):
             rpm_limit=limits["rpm"],
             tpm_limit=limits["tpm"],
             daily_limit=limits["daily"],
+            key_tiers=settings.get_key_tiers(name),
         )
 
     app.state.key_pools = key_pools

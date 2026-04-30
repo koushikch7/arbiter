@@ -259,12 +259,22 @@ class IntelligentRouter:
 
             tried_keys: Set[str] = set()
 
+            # Determine if this model requires a paid tier key.  Providers
+            # may declare a `paid_models` set to gate frontier/billed models.
+            required_tier: Optional[str] = None
+            paid_models = getattr(provider, "paid_models", None)
+            if paid_models and model_name in paid_models:
+                required_tier = "paid"
+
             while True:
-                key = await key_pool.get_best_key(exclude=tried_keys)
+                key = await key_pool.get_best_key(
+                    exclude=tried_keys, required_tier=required_tier
+                )
                 if key is None:
                     logger.warning(
                         f"[{provider_name}/{model_name}] "
                         f"No available key after trying {len(tried_keys)} account(s)"
+                        + (f" (required_tier={required_tier})" if required_tier else "")
                     )
                     break  # → next candidate
 

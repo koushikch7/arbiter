@@ -354,10 +354,49 @@ def _read_env_keys(provider: str) -> List[str]:
         # Fallback to the live process environment (docker-compose env_file,
         # systemd EnvironmentFile, plain `export`, etc.).
         raw = os.environ.get(env_var, "") or ""
-    return [
-        k.strip() for k in raw.split(",")
-        if k.strip() and not _is_placeholder(k.strip())
-    ]
+    out: List[str] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token or _is_placeholder(token):
+            continue
+        # Strip optional `#tier` suffix; keep just the API key.
+        key = token.split("#", 1)[0].strip()
+        if key and not _is_placeholder(key):
+            out.append(key)
+    return out
+
+
+def _read_env_key_tiers(provider: str) -> dict:
+    """Return {key: tier} for the provider parsed from `.env` / env vars.
+
+    Default tier is `"free"` when no `#tier` suffix is present.
+    """
+    env_var = _ENV_VAR_MAP.get(provider)
+    if not env_var:
+        return {}
+    env_file = _PROJECT_ROOT / ".env"
+    raw: str = ""
+    if env_file.exists():
+        content = env_file.read_text(encoding="utf-8")
+        m = re.search(rf"^{env_var}=(.*)$", content, re.MULTILINE)
+        if m:
+            raw = m.group(1)
+    if not raw:
+        raw = os.environ.get(env_var, "") or ""
+    tiers: dict = {}
+    for token in raw.split(","):
+        token = token.strip()
+        if not token or _is_placeholder(token):
+            continue
+        if "#" in token:
+            key, tier = token.split("#", 1)
+            key = key.strip()
+            tier = tier.strip().lower() or "free"
+            if key:
+                tiers[key] = tier
+        else:
+            tiers[token] = "free"
+    return tiers
 
 
 def _write_env_keys(provider: str, keys: List[str]) -> None:
@@ -444,8 +483,10 @@ async def _reload_provider(name: str, request: Request) -> None:
         providers[name] = _classes[name]()
 
     limits = PROVIDER_LIMITS.get(name, {"rpm": 20, "tpm": 100_000, "daily": 1000})
+    key_tiers = _read_env_key_tiers(name)
     if name in key_pools:
         key_pools[name].keys = all_keys
+        key_pools[name].key_tiers = key_tiers
     else:
         key_pools[name] = KeyPool(
             provider=name,
@@ -454,6 +495,7 @@ async def _reload_provider(name: str, request: Request) -> None:
             rpm_limit=limits["rpm"],
             tpm_limit=limits["tpm"],
             daily_limit=limits["daily"],
+            key_tiers=key_tiers,
         )
     logger.info("Reloaded provider %s with %d key(s)", name, len(all_keys))
 

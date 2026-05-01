@@ -51,6 +51,9 @@ from app.middleware.auth import (
 )
 from starlette.middleware.sessions import SessionMiddleware
 
+# Single source of truth for the app version — update here only.
+APP_VERSION = "1.14.0"
+
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -228,9 +231,14 @@ async def _weekly_provider_sync(app: FastAPI, redis_client) -> None:
 
     SYNC_INTERVAL = 7 * 24 * 3600  # one week
 
-    class _Stub:
-        def __init__(self, app): self.app = app
-    stub_request = _Stub(app)
+    # _reload_provider expects a Request-like object that exposes `.app`.
+    # We use a minimal named wrapper so an AttributeError surfaces clearly
+    # rather than silently failing if the function signature changes.
+    class _AppRequest:
+        """Minimal request stand-in that provides only request.app."""
+        __slots__ = ("app",)
+        def __init__(self, app_instance): self.app = app_instance
+    app_request = _AppRequest(app)
 
     while True:
         try:
@@ -239,7 +247,7 @@ async def _weekly_provider_sync(app: FastAPI, redis_client) -> None:
             reloaded, failed = [], []
             for pname in _PROVIDER_META:
                 try:
-                    await _reload_provider(pname, stub_request)
+                    await _reload_provider(pname, app_request)
                     reloaded.append(pname)
                 except Exception as exc:
                     logger.warning(f"Weekly sync: failed to reload {pname}: {exc}")
@@ -272,7 +280,7 @@ app = FastAPI(
         "key rotation, rate-limit tracking, response caching, dynamic model "
         "discovery, and Google SSO with admin-approval workflow."
     ),
-    version="1.12.1",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -302,6 +310,23 @@ if _SSO_ON and not settings.SESSION_SECRET_KEY:
 
 # ── Security headers (outermost so they apply even to 4xx responses) ────────
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ── Request body size limit — 4 MB max (guards against memory-bomb DoS) ─────
+# FastAPI/Starlette has no built-in limit; we enforce it in a thin middleware
+# before any body parsing occurs.  4 MB is generous for chat payloads.
+_MAX_BODY_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > _MAX_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"error": {"message": "Request body too large (max 4 MB)",
+                               "type": "invalid_request_error", "code": 413}},
+        )
+    return await call_next(request)
 
 # ── CORS middleware ─────────────────────────────────────────────────────────
 _cors_origins = [
@@ -437,7 +462,7 @@ async def health(request: Request):
             "status": "ok" if redis_ok else "degraded",
             "redis": "connected" if redis_ok else "disconnected",
             "providers": providers,
-            "version": "1.12.1",
+            "version": APP_VERSION,
             "sso_enabled": _SSO_ON,
         }
     )
@@ -556,6 +581,9 @@ class _InMemoryRedis:
     async def get(self, key: str):
         self._evict(key)
         return self._store.get(key)
+
+    async def mget(self, *keys: str) -> list:
+        return [self._store.get(k) if k in self._store else None for k in keys]
 
     async def set(self, key: str, value, ex: int = None):
         self._store[key] = value

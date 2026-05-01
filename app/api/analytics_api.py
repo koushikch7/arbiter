@@ -38,8 +38,12 @@ _PROVIDER_HINTS = {
 }
 
 _FREE_TIER_KEYWORDS = {
-    "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash",
-    "gemini-flash", "mistral-small", "llama", "llama3", ":free",
+    # Gemini (all flash / flash-lite variants — paid is "pro")
+    "gemini-3.1-flash", "gemini-3-flash", "gemini-2.5-flash",
+    "gemini-2.0-flash", "gemini-1.5-flash",
+    # other providers
+    "mistral-small", "llama", "llama3", "llama4",
+    ":free",
 }
 
 
@@ -124,7 +128,9 @@ async def analytics_data(
     seen_providers: set[str] = set()
 
     try:
-        provider_keys = await redis.keys("arbiter:stats:provider:*:success")
+        provider_keys = []
+        async for key in redis.scan_iter("arbiter:stats:provider:*:success"):
+            provider_keys.append(key)
     except Exception:
         provider_keys = []
 
@@ -167,7 +173,9 @@ async def analytics_data(
     # ── Per-model stats ───────────────────────────────────────────────────────
     model_stats: list[dict] = []
     try:
-        model_keys = await redis.keys("arbiter:stats:model:*:requests")
+        model_keys = []
+        async for key in redis.scan_iter("arbiter:stats:model:*:requests"):
+            model_keys.append(key)
     except Exception:
         model_keys = []
 
@@ -207,7 +215,9 @@ async def analytics_data(
     # ── Time-series history (5-min buckets, last 48 = 4 hours) ───────────────
     ts_map: dict[str, dict] = {}
     try:
-        hist_keys = await redis.keys("arbiter:stats:history:*")
+        hist_keys = []
+        async for key in redis.scan_iter("arbiter:stats:history:*"):
+            hist_keys.append(key)
     except Exception:
         hist_keys = []
 
@@ -274,7 +284,9 @@ async def analytics_data(
     tokens_data: list[dict] = []
     try:
         # Discover all tokens that have any traffic
-        tok_keys = await redis.keys("arbiter:stats:token:*:requests")
+        tok_keys = []
+        async for k in redis.scan_iter("arbiter:stats:token:*:requests"):
+            tok_keys.append(k)
         seen_tokens: set[str] = set()
         for k in tok_keys:
             parts = k.split(":")
@@ -359,8 +371,7 @@ async def analytics_data(
             for d in days:
                 # Providers
                 try:
-                    pkeys = await redis.keys(f"arbiter:stats:day:{d}:provider:*:requests")
-                    for pk in pkeys:
+                    async for pk in redis.scan_iter(f"arbiter:stats:day:{d}:provider:*:requests"):
                         pn = pk.split(":")[5]
                         per_provider_rng[pn] = per_provider_rng.get(pn, 0) + \
                             await get_int(pk)
@@ -368,8 +379,7 @@ async def analytics_data(
                     pass
                 # Models
                 try:
-                    mkeys = await redis.keys(f"arbiter:stats:day:{d}:model:*:requests")
-                    for mk in mkeys:
+                    async for mk in redis.scan_iter(f"arbiter:stats:day:{d}:model:*:requests"):
                         mn = mk.split(":")[5]
                         per_model_rng[mn] = per_model_rng.get(mn, 0) + \
                             await get_int(mk)
@@ -377,8 +387,7 @@ async def analytics_data(
                     pass
                 # Tokens
                 try:
-                    tkeys = await redis.keys(f"arbiter:stats:day:{d}:token:*:requests")
-                    for tk in tkeys:
+                    async for tk in redis.scan_iter(f"arbiter:stats:day:{d}:token:*:requests"):
                         tn = tk.split(":")[5]
                         per_token_rng[tn] = per_token_rng.get(tn, 0) + \
                             await get_int(tk)
@@ -448,9 +457,9 @@ async def analytics_reset(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     deleted = 0
     try:
-        keys = await redis.keys("arbiter:stats:*")
-        if keys:
-            deleted = await redis.delete(*keys)
+        async for key in redis.scan_iter("arbiter:stats:*"):
+            await redis.delete(key)
+            deleted += 1
         logger.info("Analytics reset: deleted %d Redis keys", deleted)
     except Exception as exc:
         logger.error("Analytics reset failed: %s", exc)

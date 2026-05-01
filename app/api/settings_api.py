@@ -13,14 +13,20 @@ _KEY_ORDER  = "arbiter:config:provider_order"
 _KEY_MODELS = "arbiter:config:models:"
 
 
-@router.get("/routing")
+@router.get("/routing", dependencies=[Depends(require_admin)])
 async def get_routing(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     raw = await redis.get(_KEY_ORDER)
     provider_order = json.loads(raw) if raw else list(_DEFAULT_PROVIDER_ORDER)
+    # Fetch all model-override keys in one round-trip
+    keys_to_fetch = [f"{_KEY_MODELS}{p}" for p in _DEFAULT_PROVIDER_ORDER]
+    try:
+        values = await redis.mget(*keys_to_fetch)
+    except Exception:
+        # _InMemoryRedis may not support mget — fall back to sequential gets
+        values = [await redis.get(k) for k in keys_to_fetch]
     overrides = {}
-    for p in _DEFAULT_PROVIDER_ORDER:
-        r = await redis.get(f"{_KEY_MODELS}{p}")
+    for p, r in zip(_DEFAULT_PROVIDER_ORDER, values):
         if r:
             overrides[p] = json.loads(r)
     return JSONResponse({
@@ -74,7 +80,7 @@ async def clear_cache(request: Request) -> JSONResponse:
     return JSONResponse({"status": "cleared", "entries_deleted": count})
 
 
-@router.get("/cache")
+@router.get("/cache", dependencies=[Depends(require_admin)])
 async def cache_info(request: Request) -> JSONResponse:
     """Return cache configuration + live counters for the Cache tab UI."""
     from app.config import settings

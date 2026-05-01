@@ -240,9 +240,10 @@ async def logout(request: Request):
 
 @router.get("/pending", summary="Pending / rejected-user landing page")
 async def pending(request: Request) -> HTMLResponse:
-    email = request.query_params.get("email", "")
-    status = request.query_params.get("status", "pending")
-    admin = settings.ADMIN_EMAIL or "the administrator"
+    from html import escape
+    email = escape(request.query_params.get("email", ""))
+    status = escape(request.query_params.get("status", "pending"))
+    admin = escape(settings.ADMIN_EMAIL or "the administrator")
 
     if status == "rejected":
         title = "Access Denied"

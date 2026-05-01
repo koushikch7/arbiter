@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Images"])
@@ -44,14 +44,14 @@ _VALID_SIZES = {
 
 
 class ImageRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(..., max_length=4000)
     model: Optional[str] = "flux"
-    n: Optional[int] = 1
+    n: Optional[int] = Field(1, ge=1, le=4)
     size: Optional[str] = "1024x1024"
     seed: Optional[int] = None
     enhance: Optional[bool] = False
     nologo: Optional[bool] = True
-    negative_prompt: Optional[str] = None
+    negative_prompt: Optional[str] = Field(None, max_length=1000)
     response_format: Optional[str] = "url"
 
 

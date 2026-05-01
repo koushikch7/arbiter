@@ -73,6 +73,14 @@ class BaseProvider(ABC):
             raise NotImplementedError(
                 f"Provider {self.name!r} does not support dynamic model discovery"
             )
+        # Validate scheme to prevent SSRF against internal services.
+        from urllib.parse import urlparse
+        _parsed = urlparse(self.models_discovery_url)
+        if _parsed.scheme not in ("http", "https"):
+            raise ProviderError(
+                f"[{self.name}] models_discovery_url has an invalid scheme "
+                f"{_parsed.scheme!r} — only http/https are allowed"
+            )
         # Local imports keep the module dependency-light for tests that
         # subclass BaseProvider without httpx installed.
         import httpx

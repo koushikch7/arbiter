@@ -509,7 +509,8 @@ async def _reload_provider(name: str, request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("", summary="List all providers with status and key info")
+@router.get("", summary="List all providers with status and key info",
+            dependencies=[Depends(require_admin)])
 async def list_providers(request: Request) -> JSONResponse:
     redis     = request.app.state.redis
     key_pools = request.app.state.key_pools

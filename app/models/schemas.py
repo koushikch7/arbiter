@@ -5,19 +5,19 @@ from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
-    role: str
+    role: str = Field(..., max_length=64)
     content: Union[str, list]
 
     model_config = {"extra": "allow"}
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str
+    model: str = Field(..., max_length=256)
     messages: List[Message]
-    temperature: float = 0.7
-    max_tokens: Optional[int] = None
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(None, ge=1, le=128_000)
     stream: bool = False
-    top_p: float = 1.0
+    top_p: float = Field(1.0, ge=0.0, le=1.0)
     stop: Optional[list] = None
 
     # ── Arbiter routing controls (non-OpenAI extensions, all optional) ──

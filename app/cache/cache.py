@@ -18,13 +18,25 @@ class CacheLayer:
         self.default_ttl = default_ttl
 
     def make_key(self, request: ChatCompletionRequest) -> str:
-        """Build a deterministic cache key from the request model and messages."""
+        """Build a deterministic cache key from the request parameters.
+
+        Includes model, messages, max_tokens, stop sequences, and top_p so
+        that requests with different output constraints never share a cache
+        entry (otherwise a short-max_tokens response could be served as a
+        full-length answer).
+        """
         messages_data = []
         for m in request.messages:
             messages_data.append({"role": m.role, "content": m.content})
 
         key_payload = json.dumps(
-            {"model": request.model, "messages": messages_data},
+            {
+                "model":      request.model,
+                "messages":   messages_data,
+                "max_tokens": request.max_tokens,
+                "stop":       request.stop,
+                "top_p":      request.top_p,
+            },
             sort_keys=True,
         )
         digest = hashlib.sha256(key_payload.encode()).hexdigest()

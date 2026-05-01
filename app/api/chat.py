@@ -87,24 +87,6 @@ async def _proxy_cfworker(model_str: str, body, request) -> ChatCompletionRespon
     )
 
 
-def _check_auth(request: Request) -> None:
-    """Validate the gateway API key if one is configured (legacy single-key check)."""
-    from app.config import settings
-    if not settings.GATEWAY_API_KEY:
-        return
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header",
-        )
-    token = auth_header.removeprefix("Bearer ").strip()
-    if token != settings.GATEWAY_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid gateway API key",
-        )
-
 
 @router.post(
     "/v1/chat/completions",
@@ -151,11 +133,9 @@ async def chat_completions(
     The response includes ``X-Arbiter-Model-Used`` header showing the
     actual ``provider/model`` that fulfilled the request.
     """
-    _check_auth(request)
-
     if body.stream:
         raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Streaming is not yet supported. Set stream=false.",
         )
 

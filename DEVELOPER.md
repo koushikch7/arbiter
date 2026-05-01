@@ -51,8 +51,8 @@ Client Request
     ▼
 ┌─────────────────────────────────────────┐
 │  Cache Lookup (Redis)                   │
-│  - SHA256(model + messages)             │
-│  - Only if temp ≤ 0.3                   │
+│  - SHA256(model+messages+max_tokens+    │
+│    stop+top_p) · only if temp ≤ 0.3    │
 └─────────────────────────────────────────┘
     │ Cache Miss
     ▼
@@ -226,7 +226,7 @@ Keys are stored in `.env` and read fresh on every operation — no Redis layer.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET`    | `/api/providers` | List all providers with status, masked keys, pool stats |
+| `GET`    | `/api/providers` | List all providers with status, masked keys, pool stats *(admin only)* |
 | `POST`   | `/api/providers/{name}/keys` | Add a key `{"key": "..."}` — writes to `.env`, hot-reloads provider |
 | `DELETE` | `/api/providers/{name}/keys/{hash}` | Remove a key by MD5 hash — removes from `.env` |
 | `POST`   | `/api/providers/{name}/enable` | Enable a disabled provider (clears Redis disabled flag) |
@@ -238,10 +238,10 @@ Keys are stored in `.env` and read fresh on every operation — no Redis layer.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET`    | `/settings/routing` | Current routing config (provider order + model overrides) |
+| `GET`    | `/settings/routing` | Current routing config (provider order + model overrides) *(admin only)* |
 | `POST`   | `/settings/routing` | Update `{"provider_order": [...], "model_overrides": {...}}` |
 | `DELETE` | `/settings/routing` | Reset to built-in defaults |
-| `GET`    | `/settings/cache` | Cache config (TTL, key prefix, threshold) + live stats (hits/misses/hit-rate/entries). Powers the Cache tab. |
+| `GET`    | `/settings/cache` | Cache config (TTL, key prefix, threshold) + live stats (hits/misses/hit-rate/entries). Powers the Cache tab. *(admin only)* |
 | `DELETE` | `/settings/cache` | Clear all cached responses from Redis |
 
 ### Cloudflare Workers AI Management
@@ -534,7 +534,7 @@ class CacheLayer:
         """Cache response with TTL."""
 
     def make_key(self, request: ChatCompletionRequest) -> str:
-        """Generate cache key: SHA256(model + json(messages))"""
+        """Generate cache key: SHA256(model + messages + max_tokens + stop + top_p)"""
 ```
 
 **Cache Keys:**
@@ -545,7 +545,7 @@ arbiter:cache:{sha256_hash}  → Serialized ChatCompletionResponse (JSON)
 **Caching Policy:**
 - Only cache if `temperature ≤ 0.3` (deterministic)
 - TTL: configurable (default 3600s = 1 hour)
-- Hash includes: model + messages (not temperature/other params)
+- Hash includes: `model`, `messages`, `max_tokens`, `stop`, `top_p` — requests with different output constraints get distinct cache entries
 
 ---
 
@@ -992,19 +992,25 @@ import json
 
 def make_key(self, request: ChatCompletionRequest) -> str:
     """
-    Generate cache key from model + messages.
+    Generate cache key from model + messages + output-shaping params.
 
     SHA256(json.dumps({
         "model": request.model,
         "messages": serialized(request.messages),
-    }))
+        "max_tokens": request.max_tokens,
+        "stop": request.stop,
+        "top_p": request.top_p,
+    }, sort_keys=True))
     """
     data = {
         "model": request.model,
         "messages": [
             {"role": m.role, "content": m.content}
             for m in request.messages
-        ]
+        ],
+        "max_tokens": request.max_tokens,
+        "stop": request.stop,
+        "top_p": request.top_p,
     }
     json_str = json.dumps(data, sort_keys=True)
     sha256_hash = hashlib.sha256(json_str.encode()).hexdigest()

@@ -6,6 +6,94 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.14.1] – 2026-05-01 — Security hardening + reliability audit (21 issues)
+
+Full end-to-end code audit and remediation. No new features; all changes are
+security, correctness, or performance improvements.
+
+### 🔒 Security
+
+- **XSS fix (`app/auth/sso.py`)** — `/auth/pending` HTML response now escapes
+  `email`, `status`, and `admin` query parameters via `html.escape()` before
+  interpolating them into the page body. A crafted URL with
+  `?email=<script>...</script>@x.com` previously executed in the victim's browser.
+- **SSRF protection (`app/providers/base.py`)** — `fetch_models()` now validates
+  the scheme of `models_discovery_url` with `urlparse` before making the HTTP
+  call. Anything other than `http` or `https` raises `ProviderError` immediately,
+  blocking `file://`, `gopher://`, and internal network probes.
+- **Admin guard on `GET /api/providers` (`app/api/keys_api.py`)** — previously
+  any valid bearer token could read the masked key hashes and rate-limit health of
+  every provider. Now requires `require_admin`.
+- **Admin guard on `GET /settings/routing` and `GET /settings/cache`
+  (`app/api/settings_api.py`)** — routing config and cache stats were readable
+  by any authenticated caller. Both GET endpoints now require `require_admin`.
+- **Request body size limit (`app/main.py`)** — a `limit_request_body` middleware
+  checks the `Content-Length` header and returns `413 Request Entity Too Large`
+  for payloads > 4 MB. Prevents memory-exhaustion via arbitrarily large JSON.
+
+### 🐛 Bug fixes
+
+- **Cache key collision (`app/cache/cache.py`)** — `make_key()` previously hashed
+  only `model + messages`, so two requests with the same prompt but different
+  `max_tokens` / `stop` / `top_p` could serve each other's cached responses.
+  The key payload now includes all four parameters.
+- **Version drift (`app/main.py`)** — the FastAPI constructor and `/health`
+  response each hard-coded `"1.12.1"` independently. Both now read a single
+  `APP_VERSION = "1.14.1"` constant declared once at module level.
+- **Dead auth code (`app/api/chat.py`)** — `_check_auth()` was an incomplete
+  duplicate of the middleware enforcement already performed by
+  `GatewayAuthMiddleware`. Removed entirely; middleware is the single
+  enforcement point.
+- **stream returns 400 not 501 (`app/api/chat.py`)** — `stream=true` was
+  rejected with `501 Not Implemented`, which caused SDK clients to retry the
+  unsupported feature. Changed to `400 Bad Request`.
+
+### ⚡ Performance
+
+- **Non-blocking Redis scans (`app/api/analytics_api.py`)** — all 8 calls to
+  `redis.keys()` replaced with `async for key in redis.scan_iter(...)`.
+  `keys()` is an O(N) blocking call that stalls the event loop on large
+  keyspaces; `scan_iter` uses cursor-based iteration without blocking.
+- **`mget` batch for routing config (`app/api/settings_api.py`)** — `GET
+  /settings/routing` previously issued 13 sequential `redis.get()` calls for
+  per-provider model overrides. Replaced with a single `redis.mget()` round-trip.
+  `_InMemoryRedis` gained a matching `mget()` method for local-dev parity.
+
+### ✅ Input validation
+
+- **`ChatCompletionRequest` (`app/models/schemas.py`)** — added Pydantic `Field`
+  constraints: `model` max 256 chars, `temperature` ∈ [0, 2], `max_tokens` ∈
+  [1, 128 000], `top_p` ∈ [0, 1], `Message.role` max 64 chars.
+- **`ImageRequest` (`app/api/image_api.py`)** — added constraints: `prompt` max
+  4 000 chars, `negative_prompt` max 1 000 chars, `n` ∈ [1, 4].
+
+### 🔧 Reliability
+
+- **Free-tier keyword accuracy (`app/api/analytics_api.py`)** —
+  `_FREE_TIER_KEYWORDS` updated: added `gemini-3.1-flash`, `gemini-3-flash`,
+  `gemini-2.0-flash`, `llama4`; removed stale `gemini-flash` alias. Prevents new
+  free models being misclassified as paid traffic.
+- **Weekly sync robustness (`app/main.py`)** — the `_Stub` duck-typed hack
+  replaced with a named `_AppRequest` class with `__slots__ = ("app",)` so any
+  future signature drift surfaces as `AttributeError` immediately.
+
+### Files changed
+
+```
+app/auth/sso.py          XSS fix: html.escape on 3 query params
+app/cache/cache.py       Cache key: add max_tokens, stop, top_p
+app/main.py              APP_VERSION constant, body-size middleware, _AppRequest, _InMemoryRedis.mget
+app/api/chat.py          Remove _check_auth(), stream 501→400
+app/api/settings_api.py  require_admin on GET /routing + GET /cache; mget batch
+app/api/keys_api.py      require_admin on GET /api/providers
+app/api/analytics_api.py 8× scan_iter, free-tier keyword sync
+app/providers/base.py    SSRF scheme validation in fetch_models()
+app/models/schemas.py    Field constraints on all request models
+app/api/image_api.py     Field import fix; prompt/n/negative_prompt constraints
+```
+
+---
+
 ## [1.14.0] – 2026-05-01 — PWA + Enterprise UI + Tiered cache strategy
 
 ### 📱 Progressive Web App (mobile install)

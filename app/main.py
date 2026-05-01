@@ -52,7 +52,7 @@ from app.middleware.auth import (
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.14.1"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),

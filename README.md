@@ -4,6 +4,8 @@ A self-hosted, production-ready gateway that aggregates **12+ LLM providers** (p
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.
 
+> **v1.14.1 highlights (2026-05-01):** 🔒 **Security hardening + 21-issue audit** — XSS fix in `/auth/pending` (query-param `email` now HTML-escaped); SSRF protection in provider URL discovery; admin-only guards added to `GET /api/providers`, `GET /settings/routing`, and `GET /settings/cache`; 4 MB request body size limit; cache key collision fixed (now includes `max_tokens`, `stop`, `top_p`); Pydantic field bounds on all request models (`temperature` ∈ [0,2], `max_tokens` ∈ [1,128k], `model` max 256 chars); `redis.keys()` → `scan_iter` everywhere in analytics; `mget` batching for routing config.
+>
 > **v1.14.0 highlights:** 📱 **Installable PWA** — Arbiter now installs to your phone's home-screen / desktop dock with its own icon, splash, and offline page (Android Chrome / iOS Safari / Edge / Samsung Internet).  Service worker with 3-tier strategy (network-only for APIs, stale-while-revalidate for static, network-first for HTML).  • 🛡️ **Tiered Cloudflare cache strategy**: sensitive routes (incl. all HTML pages) emit `no-store + Cloudflare-CDN-Cache-Control: no-store + Vary: Cookie`; static assets get `public, max-age=86400` at the edge — fixes the "logged-in email leaks to incognito visitors" bug while restoring CDN performance for CSS/JS/icons.  • 🎨 **Settings UI overhaul** — Models tab gets ranked priority pills + provider colour dots, Image Gen pulls model/size catalog live from `/v1/images/models`, Cache tab redesigned with KPI strip + effectiveness donut + config card.  • 📐 Full responsive layout for mobile + safe-area support for iOS notched devices.
 >
 > **v1.13.3 highlights:** 🆕 **Per-key tier tagging** (`#paid` / `#free` suffix in env vars) — Gemini paid keys reserved for frontier models (3.1-pro-preview), free keys for everyday traffic. Catalog reordered to prioritize gemini-3.1-flash-lite-preview as the top free model.
@@ -75,7 +77,7 @@ Try Gemini (large context required):
 
 ### ✅ Semantic & Exact-Match Caching
 - **Cache deterministic requests** (temperature ≤ 0.3) to Redis
-- **SHA-256 keyed** on (model + messages)
+- **SHA-256 keyed** on `(model, messages, max_tokens, stop, top_p)` — all parameters that affect output are included so requests with different `max_tokens` or sampling settings never collide
 - Configurable TTL (default 1 hour)
 - Transparent — client receives cached response instantly
 

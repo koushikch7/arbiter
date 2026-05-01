@@ -41,6 +41,9 @@ env/
 *.swp
 .DS_Store
 
+# Dev/test scripts (not needed at runtime)
+scripts/
+
 # Logs / temp / backups
 *.log
 *.bak

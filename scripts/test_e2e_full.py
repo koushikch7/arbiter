@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-end smoke test for Arbiter v1.12.1.
+End-to-end smoke test for Arbiter v1.14.1.
 
 Exercises every accessible feature class:
   1. Health / root / docs / login / openapi

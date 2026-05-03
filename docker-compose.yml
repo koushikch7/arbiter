@@ -29,7 +29,7 @@ services:
     # No host port binding — Redis is internal only, accessed via Docker network
     expose:
       - "6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     healthcheck:

@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Backup &amp; Restore — Arbiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <script src="/static/arbiter.js"></script>
+  <style>
+    /* ── Backup-page specific styles ───────────────────────────────────────── */
+    .backup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .backup-grid { grid-template-columns: 1fr; } }
+
+    .storage-bar-wrap {
+      margin: 10px 0 4px;
+      height: 10px;
+      background: var(--bg-2);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .storage-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--accent);
+      transition: width .5s ease;
+    }
+    .storage-bar.warn  { background: var(--yellow); }
+    .storage-bar.crit  { background: var(--red);    }
+    .storage-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+
+    .bk-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 900px) { .bk-kpi-row { grid-template-columns: 1fr 1fr; } }
+
+    .bk-kpi {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .bk-kpi-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .bk-kpi-val   { font-size: 20px; font-weight: 600; color: var(--text-1); font-family: var(--font-mono); }
+    .bk-kpi-sub   { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+    .backup-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .btn-backup {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+    }
+    .btn-backup:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-backup.primary  { background: var(--accent); color: #fff; }
+    .btn-backup.secondary{ background: var(--bg-2); color: var(--text-1); border: 1px solid var(--border); }
+    .btn-backup.danger   { background: var(--red-dim); color: var(--red); border: 1px solid color-mix(in srgb,var(--red) 25%,transparent); }
+
+    .bk-table-wrap { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .bk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .bk-table thead th {
+      background: var(--bg-2);
+      color: var(--text-3);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: .05em;
+      padding: 10px 14px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .bk-table tbody td { padding: 11px 14px; border-top: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
+    .bk-table tbody tr:hover td { background: var(--bg-2); }
+    .bk-table .mono { font-family: var(--font-mono); font-size: 12px; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-full  { background: var(--accent-dim); color: var(--accent-br); }
+    .badge-incr  { background: var(--green-dim);  color: var(--green); }
+
+    .action-btns { display: flex; gap: 6px; }
+    .btn-sm {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
+      transition: background .12s;
+    }
+    .btn-sm:hover { background: var(--bg-3); }
+    .btn-sm.danger { color: var(--red); border-color: color-mix(in srgb,var(--red) 25%,transparent); }
+    .btn-sm.danger:hover { background: var(--red-dim); }
+
+    .warn-banner {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-radius: var(--radius);
+      background: var(--yellow-dim); border: 1px solid color-mix(in srgb,var(--yellow) 30%,transparent);
+      color: var(--yellow); font-size: 13px; font-weight: 500;
+      margin-bottom: 18px;
+    }
+    .warn-banner svg { flex-shrink: 0; }
+
+    #spinner-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.45); z-index: 999;
+      align-items: center; justify-content: center;
+    }
+    #spinner-overlay.active { display: flex; }
+    .spinner-box {
+      background: var(--bg-1); border: 1px solid var(--border); border-radius: 12px;
+      padding: 32px 40px; text-align: center;
+    }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--bg-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Confirmation dialog */
+    #confirm-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.45); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    #confirm-overlay.active { display: flex; }
+    .confirm-box {
+      background: var(--bg-1); border: 1px solid var(--border); border-radius: 12px;
+      padding: 28px 32px; max-width: 420px; width: 92%;
+    }
+    .confirm-box h3 { margin: 0 0 10px; font-size: 16px; color: var(--text-1); }
+    .confirm-box p  { margin: 0 0 20px; font-size: 13px; color: var(--text-2); }
+    .confirm-btns { display: flex; gap: 10px; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <div class="main-wrapper">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="page-title">Backup &amp; Restore</h1>
+      <div class="topbar-right">
+        <span class="topbar-time" id="last-refresh">–</span>
+      </div>
+    </header>
+
+    <main class="page-content">
+
+      <!-- Storage warning -->
+      <div id="warn-banner" class="warn-banner" style="display:none">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span id="warn-text">Storage is above 90% — consider deleting old backups or expanding the quota.</span>
+      </div>
+
+      <!-- Storage bar -->
+      <div class="section-hd" style="margin-bottom:12px">
+        <span class="section-label">Storage Usage</span>
+        <span id="storage-label" style="font-size:11px;color:var(--text-3)">calculating…</span>
+      </div>
+      <div class="card" style="padding:18px 20px;margin-bottom:24px">
+        <div class="storage-bar-wrap">
+          <div class="storage-bar" id="storage-bar" style="width:0%"></div>
+        </div>
+        <div class="storage-labels">
+          <span id="storage-used">–</span>
+          <span id="storage-max">–</span>
+        </div>
+        <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-3)">Full backups: <b id="st-full-size">–</b> (<span id="st-full-count">–</span>)</span>
+          <span style="font-size:12px;color:var(--text-3)">Incremental: <b id="st-incr-size">–</b> (<span id="st-incr-count">–</span>)</span>
+          <span style="font-size:12px;color:var(--text-3)">Prefix: <code id="st-prefix" style="font-size:11px">–</code></span>
+        </div>
+      </div>
+
+      <!-- KPI cards -->
+      <div class="bk-kpi-row">
+        <div class="bk-kpi">
+          <div class="bk-kpi-label">Last Full Backup</div>
+          <div class="bk-kpi-val" id="kpi-last-full" style="font-size:14px">Never</div>
+          <div class="bk-kpi-sub">weekly on Sundays 01:00 UTC</div>
+        </div>
+        <div class="bk-kpi">
+          <div class="bk-kpi-label">Last Incremental</div>
+          <div class="bk-kpi-val" id="kpi-last-incr" style="font-size:14px">Never</div>
+          <div class="bk-kpi-sub">daily at 02:00 UTC</div>
+        </div>
+        <div class="bk-kpi">
+          <div class="bk-kpi-label">Total Backups</div>
+          <div class="bk-kpi-val" id="kpi-total">–</div>
+          <div class="bk-kpi-sub" id="kpi-total-sub">–</div>
+        </div>
+        <div class="bk-kpi">
+          <div class="bk-kpi-label">Scheduler Status</div>
+          <div class="bk-kpi-val" id="kpi-status" style="font-size:14px;color:var(--green)">Idle</div>
+          <div class="bk-kpi-sub">auto-backup enabled</div>
+        </div>
+      </div>
+
+      <!-- Manual trigger -->
+      <div class="section-hd" style="margin-bottom:12px">
+        <span class="section-label">Manual Backup</span>
+      </div>
+      <div class="backup-actions">
+        <button class="btn-backup primary" id="btn-full" onclick="triggerBackup('full')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Take Full Backup
+        </button>
+        <button class="btn-backup secondary" id="btn-incr" onclick="triggerBackup('incremental')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4 4 4-4M12 3v13"/></svg>
+          Take Incremental Backup
+        </button>
+        <button class="btn-backup secondary" onclick="loadAll()">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+        <button class="btn-backup" style="background:#dc3545;color:#fff;border:none" onclick="purgeDuplicates()">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          Purge Duplicates
+        </button>
+      </div>
+      <p style="font-size:12px;color:var(--text-3);margin:-12px 0 20px">
+        <b>Full backup</b> exports all Redis keys + data/ directory (~2–10 MB).
+        <b>Incremental</b> exports config + gateway tokens + last 48h stats + changed data/ files (~0.5–2 MB).
+        Retention: incremental &gt; 7 days deleted, full &gt; 90 days deleted.
+      </p>
+
+      <!-- Backup list -->
+      <div class="section-hd" style="margin-bottom:12px">
+        <span class="section-label">Available Backups</span>
+        <span id="list-count" style="font-size:11px;color:var(--text-3)"></span>
+      </div>
+      <div class="bk-table-wrap">
+        <table class="bk-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Date &amp; Time</th>
+              <th>Version</th>
+              <th>Redis Keys</th>
+              <th>Size</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="backup-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="spinner-overlay">
+  <div class="spinner-box">
+    <div class="spinner"></div>
+    <div style="color:var(--text-2);font-size:14px" id="spinner-msg">Working…</div>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div id="confirm-overlay">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-msg"></p>
+    <div class="confirm-btns">
+      <button class="btn-backup secondary" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-backup danger" id="confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/components/sidebar.js" defer></script>
+<script src="/static/components/ui.js" defer></script>
+<script>
+/* ── Backup page JS ──────────────────────────────────────────────────────── */
+
+const PAGE_SIZE = 20;
+let _backupList = [];
+let _currentPage = 1;
+
+function fmtBytes(bytes) {
+  if (!bytes) return "0 B";
+  const u = ["B","KB","MB","GB"];
+  let i = 0;
+  while (bytes >= 1024 && i < u.length - 1) { bytes /= 1024; i++; }
+  return bytes.toFixed(i === 0 ? 0 : 1) + " " + u[i];
+}
+function fmtDate(iso) {
+  if (!iso) return "Never";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      year:"numeric", month:"short", day:"2-digit",
+      hour:"2-digit", minute:"2-digit", timeZoneName:"short"
+    });
+  } catch(e) { return iso; }
+}
+function timeAgo(iso) {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1)   return "just now";
+  if (m < 60)  return m + "m ago";
+  if (m < 1440) return Math.floor(m/60) + "h ago";
+  return Math.floor(m/1440) + "d ago";
+}
+
+function showSpinner(msg) {
+  document.getElementById("spinner-msg").textContent = msg || "Working…";
+  document.getElementById("spinner-overlay").classList.add("active");
+}
+function hideSpinner() {
+  document.getElementById("spinner-overlay").classList.remove("active");
+}
+
+let _confirmCb = null;
+function openConfirm(title, msg, cb) {
+  document.getElementById("confirm-title").textContent = title;
+  document.getElementById("confirm-msg").textContent   = msg;
+  _confirmCb = cb;
+  document.getElementById("confirm-overlay").classList.add("active");
+}
+function closeConfirm() {
+  _confirmCb = null;
+  document.getElementById("confirm-overlay").classList.remove("active");
+}
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("confirm-ok").onclick = () => {
+    closeConfirm();
+    if (_confirmCb) _confirmCb();
+  };
+});
+
+/* ── API helpers ─────────────────────────────────────────────────────────── */
+async function apiFetch(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || r.statusText);
+  }
+  return r.json();
+}
+
+/* ── Load status + storage ──────────────────────────────────────────────── */
+async function loadStatus() {
+  try {
+    const st = await apiFetch("/api/backup/status");
+    // KPI cards
+    document.getElementById("kpi-last-full").textContent =
+      st.last_full ? fmtDate(st.last_full) : "Never";
+    document.getElementById("kpi-last-incr").textContent =
+      st.last_incr ? fmtDate(st.last_incr) : "Never";
+    document.getElementById("kpi-status").textContent = st.running ? "Running…" : "Idle";
+    document.getElementById("kpi-status").style.color = st.running
+      ? "var(--yellow)" : "var(--green)";
+
+    // Warning banner
+    if (st.storage_warning) {
+      document.getElementById("warn-banner").style.display = "flex";
+    }
+
+    // Storage bar
+    const pct = Math.min(st.storage_pct || 0, 100);
+    const bar  = document.getElementById("storage-bar");
+    bar.style.width = pct + "%";
+    bar.className = "storage-bar" + (pct >= 90 ? " crit" : pct >= 70 ? " warn" : "");
+    document.getElementById("storage-used").textContent = fmtBytes(st.storage_bytes) + " used";
+    document.getElementById("storage-max").textContent  = fmtBytes(st.storage_max_bytes) + " max";
+    document.getElementById("storage-label").textContent = pct.toFixed(1) + "% of " +
+      (st.storage_max_bytes / 1073741824).toFixed(0) + " GB";
+    document.getElementById("st-prefix").textContent = st.prefix || "–";
+
+    if (!st.configured) {
+      document.getElementById("storage-label").textContent = "S3 not configured";
+    }
+  } catch(e) {
+    console.warn("Status load error:", e);
+  }
+}
+
+async function loadStorage() {
+  try {
+    const d = await apiFetch("/api/backup/storage");
+    document.getElementById("st-full-size").textContent  = fmtBytes(d.full_bytes);
+    document.getElementById("st-full-count").textContent = d.full_count + " backup" + (d.full_count === 1 ? "" : "s");
+    document.getElementById("st-incr-size").textContent  = fmtBytes(d.incremental_bytes);
+    document.getElementById("st-incr-count").textContent = d.incremental_count + " backup" + (d.incremental_count === 1 ? "" : "s");
+  } catch(e) {
+    console.warn("Storage detail error:", e);
+  }
+}
+
+/* ── Backup list ─────────────────────────────────────────────────────────── */
+async function loadList() {
+  const tbody = document.getElementById("backup-tbody");
+  try {
+    const data = await apiFetch("/api/backup/list");
+    _backupList = data.backups || [];
+    // Sort: newest first
+    _backupList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    document.getElementById("kpi-total").textContent = _backupList.length;
+    const fullCount = _backupList.filter(b => b.type === "full").length;
+    const incrCount = _backupList.length - fullCount;
+    document.getElementById("kpi-total-sub").textContent =
+      fullCount + " full, " + incrCount + " incremental";
+    document.getElementById("list-count").textContent =
+      _backupList.length + " backup" + (_backupList.length === 1 ? "" : "s");
+
+    _currentPage = 1;
+    renderBackupPage();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--red);padding:24px">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderBackupPage() {
+  const tbody = document.getElementById("backup-tbody");
+  const totalPages = Math.ceil(_backupList.length / PAGE_SIZE);
+  const start = (_currentPage - 1) * PAGE_SIZE;
+  const page = _backupList.slice(start, start + PAGE_SIZE);
+
+  if (_backupList.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:32px">No backups found. Take your first backup above.</td></tr>';
+    return;
+  }
+
+  let html = page.map(b => {
+    const badge = b.type === "full"
+      ? '<span class="badge badge-full">Full</span>'
+      : '<span class="badge badge-incr">Incremental</span>';
+    const rawKey = b.key || "";
+    return `<tr>
+      <td>${badge}</td>
+      <td>
+        <div>${fmtDate(b.timestamp)}</div>
+        <div style="font-size:11px;color:var(--text-3)">${timeAgo(b.timestamp)}</div>
+      </td>
+      <td class="mono">${b.version || "–"}</td>
+      <td class="mono">${b.redis_key_count != null ? b.redis_key_count.toLocaleString() : "–"}</td>
+      <td class="mono">${b.size_bytes ? fmtBytes(b.size_bytes) : "–"}</td>
+      <td>
+        <div class="action-btns">
+          <a class="btn-sm" href="/api/backup/${rawKey}/download" download title="Download">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Download
+          </a>
+          <button class="btn-sm" onclick="doRestore('${rawKey}')" title="Restore">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Restore
+          </button>
+          <button class="btn-sm danger" onclick="doDelete('${rawKey}')" title="Delete">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+            Delete
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+
+  // Pagination controls
+  if (totalPages > 1) {
+    html += `<tr><td colspan="6" style="text-align:center;padding:12px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px">
+        <button class="btn-sm" onclick="goPage(${_currentPage - 1})" ${_currentPage <= 1 ? 'disabled' : ''}>← Prev</button>
+        <span style="font-size:12px;color:var(--text-3)">Page ${_currentPage} of ${totalPages} (${_backupList.length} total)</span>
+        <button class="btn-sm" onclick="goPage(${_currentPage + 1})" ${_currentPage >= totalPages ? 'disabled' : ''}>Next →</button>
+      </div>
+    </td></tr>`;
+  }
+
+  tbody.innerHTML = html;
+}
+
+function goPage(n) {
+  const totalPages = Math.ceil(_backupList.length / PAGE_SIZE);
+  if (n < 1 || n > totalPages) return;
+  _currentPage = n;
+  renderBackupPage();
+}
+
+async function loadAll() {
+  await Promise.all([loadStatus(), loadList(), loadStorage()]);
+  document.getElementById("last-refresh").textContent =
+    "Refreshed " + new Date().toLocaleTimeString();
+}
+
+/* ── Trigger manual backup ──────────────────────────────────────────────── */
+async function triggerBackup(type) {
+  document.getElementById("btn-full").disabled = true;
+  document.getElementById("btn-incr").disabled = true;
+  showSpinner("Starting " + type + " backup…");
+  try {
+    await apiFetch("/api/backup/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type }),
+    });
+    // Poll until no longer running (max 3 min)
+    let polls = 0;
+    const poll = setInterval(async () => {
+      polls++;
+      if (polls > 36) { clearInterval(poll); hideSpinner(); await loadAll(); return; }
+      try {
+        const st = await apiFetch("/api/backup/status");
+        document.getElementById("spinner-msg").textContent =
+          "Backup running… (" + Math.round(polls * 5) + "s)";
+        if (!st.running) {
+          clearInterval(poll);
+          hideSpinner();
+          await loadAll();
+        }
+      } catch(e) { /* ignore poll errors */ }
+    }, 5000);
+    // Initial wait before first poll
+    setTimeout(() => {}, 2000);
+  } catch(e) {
+    hideSpinner();
+    alert("Backup failed: " + e.message);
+  } finally {
+    document.getElementById("btn-full").disabled = false;
+    document.getElementById("btn-incr").disabled = false;
+  }
+}
+
+async function purgeDuplicates() {
+  if (!confirm("This will delete all duplicate backups (keeps only the newest per day/type). Continue?")) return;
+  showSpinner("Purging duplicates…");
+  try {
+    const res = await apiFetch("/api/backup/purge-duplicates", { method: "POST" });
+    hideSpinner();
+    alert("Purged " + res.deleted + " duplicates. " + res.remaining + " backups remaining.");
+    await loadAll();
+  } catch(e) {
+    hideSpinner();
+    alert("Purge failed: " + e.message);
+  }
+}
+
+/* ── Restore ────────────────────────────────────────────────────────────── */
+function doRestore(key) {
+  const fname = key.split("/").pop();
+  openConfirm(
+    "Restore from backup?",
+    `This will overwrite all current Redis config keys and data/ files with the contents of "${fname}". This action cannot be undone. Continue?`,
+    async () => {
+      showSpinner("Restoring…");
+      try {
+        const r = await apiFetch(`/api/backup/${key}/restore`, { method: "POST" });
+        hideSpinner();
+        alert(`Restore complete.\n• Redis keys restored: ${r.redis_restored}\n• Data files restored: ${r.files_restored}\n\nYou may need to reload the page for changes to take effect.`);
+        await loadAll();
+      } catch(e) {
+        hideSpinner();
+        alert("Restore failed: " + e.message);
+      }
+    }
+  );
+}
+
+/* ── Delete ─────────────────────────────────────────────────────────────── */
+function doDelete(key) {
+  const fname = key.split("/").pop();
+  openConfirm(
+    "Delete backup?",
+    `Are you sure you want to permanently delete "${fname}" from S3? This cannot be undone.`,
+    async () => {
+      showSpinner("Deleting…");
+      try {
+        await apiFetch(`/api/backup/${key}`, { method: "DELETE" });
+        hideSpinner();
+        await loadAll();
+      } catch(e) {
+        hideSpinner();
+        alert("Delete failed: " + e.message);
+      }
+    }
+  );
+}
+
+/* ── Init ───────────────────────────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", () => {
+  loadAll();
+  // Auto-refresh every 30s
+  setInterval(loadAll, 30000);
+});
+</script>
+</body>
+</html>

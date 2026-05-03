@@ -25,6 +25,7 @@ from app.providers.zai_provider import ZaiProvider
 from app.providers.lightning_provider import LightningProvider
 from app.providers.routeway import RoutewayProvider
 from app.providers.ollama_provider import OllamaProvider
+from app.providers.nvidia_provider import NvidiaProvider
 from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
 from app.api import chat, models_api, dashboard
@@ -42,6 +43,7 @@ from app.api.custom_providers_api import router as custom_providers_router
 from app.api.custom_providers_api import load_custom_providers_to_app
 from app.api.users_api import router as users_router
 from app.api.analytics_api import router as analytics_router
+from app.api.backup_api import router as backup_router
 from app.auth.sso import router as auth_router, register_google_oauth, sso_enabled
 from app.middleware.auth import (
     GatewayAuthMiddleware,
@@ -52,7 +54,7 @@ from app.middleware.auth import (
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.14.1"
+APP_VERSION = "1.15.0"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
@@ -99,6 +101,7 @@ async def lifespan(app: FastAPI):
         "routeway":     RoutewayProvider,
         "ollama":       OllamaProvider,
         "modal":        ModalProvider,
+        "nvidia":       NvidiaProvider,
     }
 
     for name, cls in provider_classes.items():
@@ -207,13 +210,31 @@ async def lifespan(app: FastAPI):
     )
     app.state.sync_task = sync_task
 
+    # Daily incremental / weekly full backup scheduler
+    backup_task = asyncio.create_task(
+        _backup_scheduler(app, redis_client),
+        name="backup-scheduler",
+    )
+    app.state.backup_task = backup_task
+
+    # Daily analytics email report scheduler
+    from app.services.daily_report import start_scheduler as start_report_scheduler
+    start_report_scheduler(app)
+
     yield
 
     # Cleanup
     logger.info("Shutting down Arbiter...")
     sync_task.cancel()
+    backup_task.cancel()
+    from app.services.daily_report import stop_scheduler as stop_report_scheduler
+    stop_report_scheduler()
     try:
         await sync_task
+    except (asyncio.CancelledError, Exception):
+        pass
+    try:
+        await backup_task
     except (asyncio.CancelledError, Exception):
         pass
     try:
@@ -265,6 +286,82 @@ async def _weekly_provider_sync(app: FastAPI, redis_client) -> None:
             break
         except Exception as exc:
             logger.warning(f"Weekly provider sync errored: {exc}")
+
+
+async def _backup_scheduler(app: FastAPI, redis_client) -> None:
+    """Scheduled backup driver.
+
+    Daily incremental at 02:00 UTC.  Weekly full on Sunday at 01:00 UTC.
+    Runs in the background for the lifetime of the app.
+
+    Guards:
+      - Minimum sleep of 60s prevents tight-loop if time calc goes wrong.
+      - Redis "last ran" timestamp prevents duplicate runs within 23 hours.
+    """
+    from datetime import datetime, timedelta, timezone as _tz
+    from app.api.backup_api import run_backup
+    from app.config import settings as _cfg
+
+    _MIN_SLEEP = 60          # never sleep less than 60s
+    _MIN_INTERVAL = 82800    # 23 hours in seconds — dedup guard
+
+    while True:
+        try:
+            now = datetime.now(_tz.utc)
+            # Sleep until the next 02:00 UTC (or 01:00 on Sunday)
+            if now.weekday() == 6 and now.hour < 1:
+                target = now.replace(hour=1, minute=0, second=0, microsecond=0)
+            else:
+                target = now.replace(hour=2, minute=0, second=0, microsecond=0)
+                if target <= now:
+                    target += timedelta(days=1)
+                # If next target is a Sunday 02:00, bump to 01:00
+                if target.weekday() == 6:
+                    target = target.replace(hour=1)
+            sleep_secs = max((target - now).total_seconds(), _MIN_SLEEP)
+            logger.info(
+                "Backup scheduler: next run in %.0f minutes (%s)",
+                sleep_secs / 60, target.isoformat(),
+            )
+            await asyncio.sleep(sleep_secs)
+
+            if not _cfg.BACKUP_ENABLED or not _cfg.BACKUP_S3_ENDPOINT:
+                continue
+
+            # ── Dedup guard: skip if we already ran within 23 hours ───────────
+            now = datetime.now(_tz.utc)
+            btype = "full" if now.weekday() == 6 else "incremental"
+            last_ts_raw = await redis_client.get(f"arbiter:backup:last_{btype}_ts")
+            if last_ts_raw:
+                try:
+                    last_dt = datetime.fromisoformat(last_ts_raw)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=_tz.utc)
+                    elapsed = (now - last_dt).total_seconds()
+                    if elapsed < _MIN_INTERVAL:
+                        logger.info(
+                            "Backup scheduler: skipping %s — last ran %.0fh ago (< 23h)",
+                            btype, elapsed / 3600,
+                        )
+                        continue
+                except (ValueError, TypeError):
+                    pass  # corrupted timestamp — proceed with backup
+
+            logger.info("Backup scheduler: starting %s backup…", btype)
+            try:
+                result = await run_backup(redis_client, backup_type=btype)
+                logger.info(
+                    "Backup scheduler: %s backup done — size=%.1fKB",
+                    btype, result.get("size_bytes", 0) / 1024,
+                )
+            except Exception as exc:
+                logger.error("Backup scheduler: backup failed: %s", exc)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning("Backup scheduler error: %s", exc)
+            await asyncio.sleep(3600)  # back off 1 hour on unexpected error
 
 
 _STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -444,6 +541,7 @@ app.include_router(custom_providers_router, tags=["Custom Providers"])
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(analytics_router, tags=["Analytics"])
+app.include_router(backup_router, tags=["Backup"])
 
 
 @app.get("/health", summary="Health check")
@@ -512,6 +610,22 @@ async def users_page():
     if users_html.exists():
         return FileResponse(str(users_html))
     return RedirectResponse("/dashboard")
+
+
+@app.get("/developer", include_in_schema=False)
+async def developer_page():
+    """Serve the Developer Documentation page."""
+    from fastapi.responses import FileResponse
+    dev_html = _STATIC_DIR / "developer.html"
+    if dev_html.exists():
+        return FileResponse(str(dev_html))
+    return RedirectResponse("/docs")
+
+
+@app.get("/api-docs", include_in_schema=False)
+async def api_docs_redirect():
+    """Legacy redirect — api-docs is now Developer Docs."""
+    return RedirectResponse("/developer")
 
 
 @app.get("/", include_in_schema=False)

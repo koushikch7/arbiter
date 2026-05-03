@@ -46,6 +46,37 @@
           </div>
         </div>
 
+        <!-- Invite via Email -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd">
+            <span class="card-title">📧 Invite via Email</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-2);margin:0 0 12px 0">
+              Send an invitation email. The user will receive a link to sign in with Google.
+              They will be <strong>auto-approved</strong> upon accepting the invite.
+            </p>
+            <form id="invite-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+              <div style="flex:1;min-width:220px">
+                <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:4px">Email to invite</label>
+                <input type="email" id="invite-email" class="input" required placeholder="colleague@example.com">
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;color:var(--text-3);margin-bottom:4px">Role</label>
+                <select id="invite-role" class="input">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                Send Invite
+              </button>
+            </form>
+            <div id="invite-status" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px"></div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-hd">
             <span class="card-title">All Users</span>
@@ -176,6 +207,38 @@
         document.getElementById('pre-email').value = '';
         loadUsers();
       } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
+
+    document.getElementById('invite-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('invite-email').value.trim();
+      const role  = document.getElementById('invite-role').value;
+      const statusEl = document.getElementById('invite-status');
+      if (!email) return;
+      statusEl.style.display = 'none';
+      try {
+        const res = await fetch('/api/users/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ email, is_admin: role === 'admin' }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        statusEl.style.display = 'block';
+        statusEl.style.background = 'var(--green-dim, #dcfce7)';
+        statusEl.style.color = 'var(--green, #166534)';
+        statusEl.style.border = '1px solid var(--green, #86efac)';
+        statusEl.textContent = `✓ Invitation sent to ${email}`;
+        document.getElementById('invite-email').value = '';
+        loadUsers();
+      } catch (err) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = 'var(--red-dim, #fef2f2)';
+        statusEl.style.color = 'var(--red, #991b1b)';
+        statusEl.style.border = '1px solid var(--red, #fecaca)';
+        statusEl.textContent = `✗ Failed: ${err.message}`;
+      }
     });
 
     document.addEventListener('DOMContentLoaded', loadUsers);

@@ -21,8 +21,10 @@ import time
 from collections import deque
 from typing import Deque, Dict, List, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from app.api.users_api import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Logs"])
@@ -209,7 +211,7 @@ async def list_loggers() -> JSONResponse:
     return JSONResponse(content={"loggers": log_buffer.get_loggers()})
 
 
-@router.delete("/logs/clear", summary="Clear the in-memory log buffer")
+@router.delete("/logs/clear", summary="Clear the in-memory log buffer", dependencies=[Depends(require_admin)])
 async def clear_logs() -> JSONResponse:
     n = log_buffer.clear()
     return JSONResponse(content={"cleared": n})

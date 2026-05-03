@@ -21,15 +21,10 @@ _NO_CACHE_HEADERS = {
 
 
 @router.get("/api-docs", response_class=HTMLResponse, summary="Interactive API documentation")
-async def api_docs() -> HTMLResponse:
-    """Serve the interactive API docs page."""
-    path = os.path.join(_STATIC_DIR, "api-docs.html")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return HTMLResponse(content=html_content, status_code=200, headers=_NO_CACHE_HEADERS)
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>API docs page not found</h1>", status_code=404)
+async def api_docs():
+    """Legacy route — redirects to /developer."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse("/developer")
 
 
 @router.get("/dashboard", response_class=HTMLResponse, summary="Web dashboard")
@@ -80,6 +75,17 @@ async def playground_page() -> HTMLResponse:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE_HEADERS)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Playground page not found</h1>", status_code=404)
+
+
+@router.get("/backup", response_class=HTMLResponse, summary="Backup & Restore page")
+async def backup_page() -> HTMLResponse:
+    """Serve the backup management page."""
+    path = os.path.join(_STATIC_DIR, "backup.html")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE_HEADERS)
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Backup page not found</h1>", status_code=404)
 
 
 @router.get("/dashboard/stats", summary="Dashboard stats JSON")

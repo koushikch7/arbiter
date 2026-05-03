@@ -6,6 +6,173 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.15.0] – 2026-05-03 — SSOT Registry, Daily Reports, Gateway Routing Policies
+
+### ✨ New features
+
+- **SSOT Provider Registry** (`app/providers/provider_registry.py`) — Single
+  source of truth for all 13 provider specs: `ProviderSpec`, `ModelSpec`,
+  `ProviderLimits` dataclasses. Functions: `get_provider()`, `get_limits()`,
+  `get_models()`, `provider_meta_for_api()`, `get_all_active_models()`. New API
+  endpoint `GET /api/providers/meta` returns full provider metadata + active model list.
+
+- **Daily Analytics Email** (`app/services/daily_report.py`) — Automated daily
+  report sent at 06:00 UTC via SMTP (Zoho). Includes:
+  - KPI summary (requests, success rate, cache hit rate)
+  - Top 5 models and top 5 gateway tokens by usage
+  - Provider health table
+  - AI-classified error analysis (temporary/critical/warning)
+  - Scheduler starts on app lifespan, stops on shutdown.
+
+- **Email Service** (`app/services/email_service.py`) — Async SMTP sender using
+  thread pool for non-blocking sends. Methods: `send()`, `send_to_admin()`,
+  `send_invite()`. Configured via `SMTP_*` env vars.
+
+- **Gateway Routing Policies** — Per-token model routing controls:
+  - `auto` (default): unchanged smart routing behavior
+  - `restricted`: token can ONLY use models in its `allowed_models` list
+  - `preferred`: `allowed_models` are tried first, then auto fallback
+  - `blocked_models`: always excluded regardless of policy
+  - Backend: `gateway_tokens_api.py` (create/update bodies), `auth.py` middleware
+    (attaches policy to request.state), `router.py` (applies filter after perf sort)
+  - UI: Settings → Gateway Keys tab now shows Policy column in token table,
+    Create Token form has routing policy dropdown + model picker + blocked models input.
+
+- **Developer Documentation Page** (`static/developer.html`) — Replaces
+  `/api-docs`. 6-tab layout: Quick Start, Authentication, Endpoints, Routing,
+  SDK Examples, Gateway Tokens. Code examples for Python, JS/TS, LangChain,
+  LiteLLM, cURL. `/api-docs` redirects to `/developer`.
+
+- **User Email Invite** (`app/api/users_api.py`) — `POST /api/users/invite`
+  pre-approves a user and sends an HTML invitation email via the email service.
+  UI: Users page has "Invite via Email" card.
+
+- **Sidebar Updates** (`static/components/sidebar.js`) — Version `v1.15.0`;
+  "Developer Docs" nav item replacing "API Docs"; "Users & Access" under new
+  "Administration" section; free-tier warning div in sidebar footer.
+
+### 🔧 Changes
+
+- **Session TTL** — Extended from 24 hours to 5 days (`SESSION_MAX_AGE=432000`)
+  to prevent PWA logout on mobile devices.
+- **Backup Pagination** (`static/backup.html`) — Fixed infinite-row rendering.
+  Now paginated at 20 items/page with prev/next navigation.
+- **Config** (`app/config.py`) — Added SMTP settings (`SMTP_HOST`, `SMTP_PORT`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_TO`,
+  `DAILY_REPORT_HOUR`).
+- **APP_VERSION** bumped to `1.15.0`.
+
+---
+
+## [1.14.3] – 2026-05-03 — NVIDIA NIM provider + Playground fixes
+
+### ✨ New features
+
+- **NVIDIA NIM provider** (`app/providers/nvidia_provider.py`) — 13th provider
+  added. OpenAI-compatible endpoint at `integrate.api.nvidia.com`. Free tier:
+  40 RPM, 1000 RPD, 131K context window.
+  - 5 verified reliable models: `nvidia/nemotron-3-super-120b-a12b` (120B MoE,
+    flagship), `meta/llama-3.3-70b-instruct`, `mistralai/mistral-medium-3.5-128b`,
+    `mistralai/mistral-small-4-119b-2603`, `google/gemma-3-27b-it`.
+  - Auto-discovery: `fetch_models()` returns 140+ models from NVIDIA's catalog.
+  - Integrated into free-tier catalog, router fallback chain (position 4 after
+    cerebras), PROVIDER_LIMITS, Settings UI (color #76b900), and Playground.
+  - Key format: `nvapi-...` from https://build.nvidia.com.
+- **Playground SSO fallback** (`app/middleware/auth.py`) — `/v1/*` routes now
+  accept a valid Google SSO session as fallback when no Bearer token is present.
+  This allows the built-in Playground (same-origin, session-authenticated) to
+  call the completions API without requiring a separate gateway token.
+
+### 🐛 Fixes
+
+- **Playground `[object Object]` error** (`static/playground.html`) — Error
+  parser now correctly extracts `error.message` from OpenAI-format error
+  responses instead of coercing the error object to string. Also handles
+  non-JSON responses (Cloudflare HTML 502 pages) gracefully with HTML tag
+  stripping.
+- **Playground content normalization** — `_extractContent()` helper handles
+  content returned as string, array of blocks, or object (covers all provider
+  quirks). `marked.parse()` no longer receives null/undefined.
+- **NVIDIA empty extras** (`app/providers/nvidia_provider.py`) — Empty
+  `tool_calls: []`, null `refusal`, etc. from NVIDIA responses are no longer
+  serialized into the output. Keeps response JSON minimal and avoids confusing
+  downstream parsers.
+- **Provider timeout** — Reduced from 60s to 45s with explicit
+  `TimeoutException` handler that returns a descriptive error message
+  ("model may be overloaded or unavailable") instead of generic network error.
+
+### 📝 Configuration
+
+- `app/config.py` — Added `NVIDIA_API_KEYS` field to Settings model.
+- `app/key_management/key_pool.py` — Added NVIDIA to `PROVIDER_LIMITS`
+  (40 RPM, 500K TPM, 1000 RPD).
+- `app/providers/_free_tier_catalog.py` — Added 5 NVIDIA ModelSpec entries.
+- `app/api/keys_api.py` — Added NVIDIA to `_ENV_VAR_MAP` and `_PROVIDER_META`.
+- `app/api/models_api.py` — Added "nvidia" to `_FREE_TIER_PROVIDERS` and
+  `_VENDOR_LABELS`.
+- `app/routing/router.py` — Added "nvidia" to `_DEFAULT_PROVIDER_ORDER`
+  (position 4, after cerebras).
+- `static/settings.html` — Added `PROVIDER_COLORS.nvidia` (#76b900) and
+  `PROVIDER_DESCS.nvidia`.
+
+---
+
+## [1.14.2] – 2026-05-21 — Data persistence fix + Enterprise backup system
+
+### 🐛 Critical fixes
+
+- **Redis eviction policy** (`docker-compose.yml`) — Changed from `allkeys-lru`
+  to `volatile-lru` and increased max memory from 256 MB to 512 MB. The old
+  policy evicted *any* key under memory pressure, including history buckets that
+  have no TTL — causing the analytics data loss (400 → 125 visible requests).
+  `volatile-lru` only evicts keys that have a TTL set, leaving permanent counters
+  safe. Also enabled `appendfsync everysec` for durability.
+- **History bucket TTLs** (`app/observability/stats.py`) — 5-min history buckets
+  now have a 7-day TTL and hourly buckets have a 30-day TTL, making them immune to
+  `volatile-lru` eviction while still expiring stale data naturally.
+
+### ✨ New features
+
+- **Enterprise backup system** (`app/api/backup_api.py`, `static/backup.html`) —
+  Full and incremental backups to OCI Object Storage (S3-compatible).
+  - Full backup: all `arbiter:*` Redis keys + `data/` directory.
+  - Incremental backup: config + gateway tokens + last-48h stats + changed `data/` files.
+  - Automatic scheduling: daily incremental at 02:00 UTC, weekly full on Sundays at 01:00 UTC.
+  - Retention policy: incremental > 7 days deleted, full > 90 days deleted.
+  - Storage quota monitoring: warns at 90% of 10 GB (prefix-scoped to `arbiter/backups/`).
+  - Enterprise UI at `/backup` with storage bar, backup list, restore, download, delete.
+  - Isolated from other apps sharing the same bucket via strict prefix enforcement.
+
+- **Hourly rollup buckets** (`app/observability/stats.py`) — New
+  `arbiter:stats:hourly:{ts}:*` keys (30-day TTL) enable 24h and 7d chart windows.
+
+- **Analytics time-window selector** (`app/api/analytics_api.py`) — `/analytics/data`
+  now accepts `?window=1h|4h|24h|7d|30d|90d`. 1h/4h use 5-min buckets; 24h/7d use
+  hourly rollups; 30d/90d use daily rollups.
+
+- **Experience-based model routing** (`app/routing/router.py`) — Router now reads
+  per-model error rate + avg latency from Redis (cached 5 min) and reorders models
+  within each provider group so lower-error / lower-latency models are tried first.
+  Provider order is preserved; only intra-provider model order changes.
+
+- **Backup nav entry** (`static/components/sidebar.js`) — Backup & Restore page
+  added to the sidebar. Version label updated to v1.14.2.
+
+### 🔧 Dependencies
+
+- `boto3>=1.34.0` added to `requirements.txt` for S3-compatible storage access.
+
+### 🐛 OCI S3 compatibility fix
+
+- **Disable automatic checksums** (`app/api/backup_api.py`) — boto3 >= 1.26 uses
+  `aws-chunked` transfer encoding by default for PutObject, which OCI Object Storage
+  rejects with `MissingContentLength`. Fixed by setting
+  `request_checksum_calculation="when_required"` and
+  `response_checksum_validation="when_required"` in the botocore Config, plus
+  `payload_signing_enabled: False` for path-style access.
+
+---
+
 ## [1.14.1] – 2026-05-01 — Security hardening + reliability audit (21 issues)
 
 Full end-to-end code audit and remediation. No new features; all changes are

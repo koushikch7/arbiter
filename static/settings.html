@@ -881,10 +881,38 @@ class Model:
                 <label class="form-label">Token Name <span style="color:var(--red)">*</span></label>
                 <input type="text" id="gw-token-name" class="form-control" placeholder="e.g. My App, CI Pipeline…">
               </div>
-              <div class="form-group" style="margin-bottom:16px">
+              <div class="form-group" style="margin-bottom:12px">
                 <label class="form-label">Expires At <span style="font-size:11px;font-weight:400;color:var(--text-3)">(optional)</span></label>
                 <input type="datetime-local" id="gw-token-expiry" class="form-control">
               </div>
+
+              <!-- Routing Policy -->
+              <div class="form-group" style="margin-bottom:12px">
+                <label class="form-label">Routing Policy</label>
+                <select id="gw-routing-policy" class="form-control" onchange="gwPolicyChanged()">
+                  <option value="auto">Auto (default smart routing)</option>
+                  <option value="restricted">Restricted (only allowed models)</option>
+                  <option value="preferred">Preferred (prioritize selected, fallback to auto)</option>
+                </select>
+                <small style="font-size:11px;color:var(--text-3)">Controls which models this token can access.</small>
+              </div>
+
+              <!-- Allowed Models (shown for restricted/preferred) -->
+              <div id="gw-allowed-models-group" class="form-group" style="margin-bottom:12px;display:none">
+                <label class="form-label">Allowed / Preferred Models</label>
+                <div id="gw-model-picker" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-md);padding:8px;background:var(--surface-2)">
+                  <div style="color:var(--text-3);font-size:11px;text-align:center;padding:12px">Loading models…</div>
+                </div>
+                <small style="font-size:11px;color:var(--text-3)">Select models this token is allowed to use. Drag to reorder priority.</small>
+              </div>
+
+              <!-- Blocked Models -->
+              <div class="form-group" style="margin-bottom:16px">
+                <label class="form-label">Blocked Models <span style="font-size:11px;font-weight:400;color:var(--text-3)">(optional)</span></label>
+                <input type="text" id="gw-blocked-models" class="form-control" placeholder="model-a, model-b, …">
+                <small style="font-size:11px;color:var(--text-3)">Comma-separated. These models will never be used by this token.</small>
+              </div>
+
               <button class="btn btn-primary" onclick="createGatewayToken()" style="width:100%">
                 <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Create Token
@@ -1088,6 +1116,7 @@ var PROVIDER_COLORS = {
   zai:          '#ff6a3d',
   routeway:     '#10b981',
   ollama:       '#0ea5e9',
+  nvidia:       '#76b900',
 };
 
 var PROVIDER_DESCS = {
@@ -1104,6 +1133,7 @@ var PROVIDER_DESCS = {
   zai:          'Z.ai / Zhipu — GLM-4.7-Flash is free',
   routeway:     'Routeway — unified OpenAI / Anthropic / DeepSeek gateway',
   ollama:       'Ollama Cloud — free :cloud tier (gpt-oss, deepseek-v3.1, kimi-k2, qwen3-coder)',
+  nvidia:       'NVIDIA NIM — 1000 RPD free tier, 120B+ models',
 };
 
 // ── Tab switching ────────────────────────────────────────────────────────────
@@ -2485,10 +2515,10 @@ async function loadGatewayTokens() {
       '<thead><tr style="border-bottom:1px solid var(--border)">' +
       '<th data-sort-type="str" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Name</th>' +
       '<th data-sortable="false" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Key (prefix)</th>' +
+      '<th data-sort-type="str" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Policy</th>' +
       '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Created</th>' +
       '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Expires</th>' +
       '<th data-sort-type="num" style="text-align:right;padding:6px 4px;color:var(--text-3);font-weight:500">Requests</th>' +
-      '<th data-sort-type="num" style="text-align:right;padding:6px 4px;color:var(--text-3);font-weight:500">Tokens</th>' +
       '<th data-sort-type="num" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Last used</th>' +
       '<th data-sort-type="str" style="text-align:left;padding:6px 4px;color:var(--text-3);font-weight:500">Status</th>' +
       '<th data-sortable="false" style="padding:6px 4px"></th>' +
@@ -2502,7 +2532,6 @@ async function loadGatewayTokens() {
       var lastUsed = t.last_used_at
         ? new Date(t.last_used_at * 1000).toLocaleString()
         : '<span style="color:var(--text-3)">Never</span>';
-      var tokensUsed = (t.tokens_used || 0).toLocaleString();
       var requestCount = (t.request_count || 0).toLocaleString();
       var statusBadge = !t.active
         ? '<span style="color:var(--red);font-size:10px">revoked</span>'
@@ -2512,13 +2541,17 @@ async function loadGatewayTokens() {
 
       var keyPrefix = t.key_prefix || (t.key ? t.key.slice(0, 18) + '…' : '—');
 
+      var policyLabel = t.routing_policy || 'auto';
+      var policyColor = policyLabel === 'restricted' ? 'var(--red)' : policyLabel === 'preferred' ? 'var(--accent)' : 'var(--text-3)';
+      var policyBadge = '<span style="font-size:10px;color:' + policyColor + ';font-weight:500">' + policyLabel + '</span>';
+
       html += '<tr style="border-bottom:1px solid var(--border)">' +
         '<td style="padding:7px 4px;font-weight:500;color:var(--text)">' + _esc(t.name) + '</td>' +
         '<td style="padding:7px 4px;font-family:\'JetBrains Mono\',monospace;color:var(--text-3)">' + _esc(keyPrefix) + '</td>' +
+        '<td style="padding:7px 4px">' + policyBadge + '</td>' +
         '<td data-sort="' + (t.created_at || 0) + '" style="padding:7px 4px;color:var(--text-3)">' + created + '</td>' +
         '<td data-sort="' + (t.expires_at || 0) + '" style="padding:7px 4px;color:' + (expired ? 'var(--red)' : 'var(--text-3)') + '">' + _esc(expires) + '</td>' +
         '<td data-sort="' + (t.request_count || 0) + '" style="padding:7px 4px;color:var(--text);text-align:right;font-weight:500">' + requestCount + '</td>' +
-        '<td data-sort="' + (t.tokens_used || 0) + '" style="padding:7px 4px;color:var(--text-2);text-align:right">' + tokensUsed + '</td>' +
         '<td data-sort="' + (t.last_used_at || 0) + '" style="padding:7px 4px;color:var(--text-2);font-size:11px">' + lastUsed + '</td>' +
         '<td style="padding:7px 4px">' + statusBadge + '</td>' +
         '<td style="padding:7px 4px;white-space:nowrap">' +
@@ -2549,6 +2582,25 @@ async function createGatewayToken() {
     if (expiryEl && expiryEl.value) {
       body.expires_at = Math.floor(new Date(expiryEl.value).getTime() / 1000);
     }
+
+    // Routing policy
+    var policyEl = document.getElementById('gw-routing-policy');
+    var policy = policyEl ? policyEl.value : 'auto';
+    if (policy !== 'auto') body.routing_policy = policy;
+
+    // Allowed models
+    var selectedModels = getSelectedGwModels();
+    if (selectedModels.length > 0 && policy !== 'auto') {
+      body.allowed_models = selectedModels;
+    }
+
+    // Blocked models
+    var blockedEl = document.getElementById('gw-blocked-models');
+    var blocked = blockedEl ? blockedEl.value.trim() : '';
+    if (blocked) {
+      body.blocked_models = blocked.split(',').map(function(m) { return m.trim(); }).filter(Boolean);
+    }
+
     var r = await fetch('/api/gateway/tokens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2569,6 +2621,8 @@ async function createGatewayToken() {
     // Reset form
     if (nameEl)   nameEl.value   = '';
     if (expiryEl) expiryEl.value = '';
+    if (policyEl) { policyEl.value = 'auto'; gwPolicyChanged(); }
+    if (blockedEl) blockedEl.value = '';
     toast('Token created', 'success');
     await loadGatewayTokens();
   } catch(e) {
@@ -2586,6 +2640,63 @@ function copyNewGatewayToken() {
     toast('Copy failed — select and copy manually', 'error');
   });
 }
+
+/* ── Routing Policy helpers ── */
+var _gwModelList = null; // cached model list
+
+function gwPolicyChanged() {
+  var pol = document.getElementById('gw-routing-policy');
+  var grp = document.getElementById('gw-allowed-models-group');
+  if (!pol || !grp) return;
+  if (pol.value === 'auto') {
+    grp.style.display = 'none';
+  } else {
+    grp.style.display = '';
+    if (!_gwModelList) loadGwModels();
+  }
+}
+
+async function loadGwModels() {
+  var picker = document.getElementById('gw-model-picker');
+  if (!picker) return;
+  picker.innerHTML = '<div style="color:var(--text-3);font-size:11px;text-align:center;padding:12px">Loading…</div>';
+  try {
+    var r = await fetch('/api/providers/meta');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+    _gwModelList = data.all_models || [];
+    renderGwModelPicker(_gwModelList, []);
+  } catch(e) {
+    picker.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px">Failed: ' + _esc(e.message) + '</div>';
+  }
+}
+
+function renderGwModelPicker(models, selected) {
+  var picker = document.getElementById('gw-model-picker');
+  if (!picker) return;
+  if (!models || models.length === 0) {
+    picker.innerHTML = '<div style="color:var(--text-3);font-size:11px;padding:8px">No models available</div>';
+    return;
+  }
+  var html = '';
+  models.forEach(function(m) {
+    var id = typeof m === 'string' ? m : m.id || m.name || '';
+    var checked = selected.indexOf(id) >= 0 ? ' checked' : '';
+    html += '<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--text-1)" ' +
+            'onmouseenter="this.style.background=\'var(--surface-3)\'" onmouseleave="this.style.background=\'none\'">' +
+            '<input type="checkbox" class="gw-model-cb" value="' + _esc(id) + '"' + checked + ' style="accent-color:var(--accent)">' +
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px">' + _esc(id) + '</span></label>';
+  });
+  picker.innerHTML = html;
+}
+
+function getSelectedGwModels() {
+  var cbs = document.querySelectorAll('.gw-model-cb:checked');
+  var out = [];
+  cbs.forEach(function(cb) { out.push(cb.value); });
+  return out;
+}
+
 
 async function revokeGatewayToken(id) {
   if (!confirm('Revoke this token? It will stop working immediately.')) return;

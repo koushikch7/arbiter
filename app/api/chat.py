@@ -169,6 +169,9 @@ async def chat_completions(
         # Identify the calling gateway token (set by GatewayAuthMiddleware)
         token_id = getattr(request.state, "gateway_token_id", None)
         token_name = getattr(request.state, "gateway_token_name", None)
+        routing_policy = getattr(request.state, "gateway_routing_policy", "auto")
+        allowed_models = getattr(request.state, "gateway_allowed_models", None)
+        blocked_models = getattr(request.state, "gateway_blocked_models", None)
         response = await router_instance.route(
             body,
             vendor=vendor,
@@ -177,6 +180,9 @@ async def chat_completions(
             prefer_provider_override=prefer_provider_override,
             token_id=token_id,
             token_name=token_name,
+            routing_policy=routing_policy,
+            allowed_models=allowed_models,
+            blocked_models=blocked_models,
         )
         # Surface the actual provider/model used so SDK callers can verify.
         chosen_provider = getattr(response, "_arbiter_provider", "") or ""

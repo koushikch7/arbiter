@@ -46,12 +46,18 @@ _REDIS_TOKENS_KEY = "arbiter:gateway:tokens"
 class CreateTokenBody(BaseModel):
     name: str
     expires_at: Optional[float] = None
+    routing_policy: str = "auto"                    # "auto" | "restricted" | "preferred"
+    allowed_models: Optional[List[str]] = None      # for restricted/preferred modes
+    blocked_models: Optional[List[str]] = None      # models to never use
 
 
 class UpdateTokenBody(BaseModel):
     name: Optional[str] = None
     expires_at: Optional[float] = Field(None)
     active: Optional[bool] = None
+    routing_policy: Optional[str] = None
+    allowed_models: Optional[List[str]] = None
+    blocked_models: Optional[List[str]] = None
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
@@ -96,7 +102,13 @@ async def _sync_app_tokens(request: Request, tokens: List[dict]) -> None:
             if t.get("expires_at") is None or t["expires_at"] > now:
                 key = t["key"]
                 active_keys.add(key)
-                meta[key] = {"id": t["id"], "name": t.get("name", "")}
+                meta[key] = {
+                    "id": t["id"],
+                    "name": t.get("name", ""),
+                    "routing_policy": t.get("routing_policy", "auto"),
+                    "allowed_models": t.get("allowed_models"),
+                    "blocked_models": t.get("blocked_models"),
+                }
     # Merge with env-var keys
     env_keys = settings.get_gateway_api_keys()
     for k in env_keys:
@@ -124,7 +136,13 @@ async def load_gateway_tokens_to_state(app) -> None:
             if t.get("expires_at") is None or t["expires_at"] > now:
                 key = t["key"]
                 active_keys.add(key)
-                meta[key] = {"id": t["id"], "name": t.get("name", "")}
+                meta[key] = {
+                    "id": t["id"],
+                    "name": t.get("name", ""),
+                    "routing_policy": t.get("routing_policy", "auto"),
+                    "allowed_models": t.get("allowed_models"),
+                    "blocked_models": t.get("blocked_models"),
+                }
     env_keys = settings.get_gateway_api_keys()
     for k in env_keys:
         active_keys.add(k)
@@ -271,6 +289,9 @@ async def create_token(body: CreateTokenBody, request: Request):
         "last_used_at": None,
         "request_count": 0,
         "active": True,
+        "routing_policy": body.routing_policy,
+        "allowed_models": body.allowed_models,
+        "blocked_models": body.blocked_models,
     }
 
     tokens.append(new_token)
@@ -326,6 +347,14 @@ async def update_token(token_id: str, body: UpdateTokenBody, request: Request):
         token["expires_at"] = body.expires_at
     if body.active is not None:
         token["active"] = body.active
+    if body.routing_policy is not None:
+        if body.routing_policy not in ("auto", "restricted", "preferred"):
+            raise HTTPException(422, "routing_policy must be auto, restricted, or preferred")
+        token["routing_policy"] = body.routing_policy
+    if body.allowed_models is not None:
+        token["allowed_models"] = body.allowed_models
+    if body.blocked_models is not None:
+        token["blocked_models"] = body.blocked_models
 
     await _save_tokens(redis, tokens)
     await _sync_app_tokens(request, tokens)

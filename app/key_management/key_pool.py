@@ -115,6 +115,13 @@ PROVIDER_LIMITS = {
         "tpm":   500_000,     # sentinel
         "daily": 10_000,      # sentinel — mix of free + paid models
     },
+    "nvidia": {
+        # NVIDIA NIM — build.nvidia.com free tier
+        # 1000 requests/day, no published RPM/TPM limits
+        "rpm":   40,          # conservative estimate (not published)
+        "tpm":   500_000,     # sentinel — no published TPM limit
+        "daily": 1_000,       # 1000 requests/day free tier
+    },
     "custom": {
         # Default limits for user-added custom OpenAI-compatible providers.
         # Users can override per-provider in the UI in the future.

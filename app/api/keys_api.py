@@ -58,6 +58,7 @@ _ENV_VAR_MAP: dict = {
     "ollama":      "OLLAMA_API_KEYS",
     "modal":       "MODAL_API_KEYS",
     "pollinations": "POLLINATIONS_API_KEYS",
+    "nvidia":      "NVIDIA_API_KEYS",
 }
 
 # ── Provider metadata ────────────────────────────────────────────────────────
@@ -289,6 +290,26 @@ _PROVIDER_META = {
             "deepseek-chat", "deepseek-coder", "llama-3.3-70b",
         ],
     },
+    "nvidia": {
+        "label":      "NVIDIA NIM",
+        "key_format": "API key",
+        "key_hint":   "nvapi-...",
+        "signup_url": "https://build.nvidia.com",
+        "free":       True,
+        "setup_steps": [
+            "Sign up at build.nvidia.com",
+            "Click any model → 'Get API Key' → generate a key",
+            "Key starts with nvapi-...",
+            "Free tier: 1000 requests/day for most models",
+        ],
+        "models": [
+            "nvidia/nemotron-3-super-120b-a12b",
+            "meta/llama-3.3-70b-instruct",
+            "mistralai/mistral-medium-3.5-128b",
+            "mistralai/mistral-small-4-119b-2603",
+            "google/gemma-3-27b-it",
+        ],
+    },
     "ollama": {
         "label":      "Ollama Cloud",
         "key_format": "API key",
@@ -454,6 +475,7 @@ async def _reload_provider(name: str, request: Request) -> None:
     from app.providers.lightning_provider import LightningProvider
     from app.providers.zai_provider     import ZaiProvider
     from app.providers.routeway         import RoutewayProvider
+    from app.providers.nvidia_provider  import NvidiaProvider
 
     _classes = {
         "gemini": GeminiProvider, "groq": GroqProvider,
@@ -462,6 +484,7 @@ async def _reload_provider(name: str, request: Request) -> None:
         "huggingface": HuggingFaceProvider, "pollinations": PollinationsProvider,
         "modal": ModalProvider, "lightning": LightningProvider,
         "zai": ZaiProvider, "routeway": RoutewayProvider,
+        "nvidia": NvidiaProvider,
     }
     # Ollama is imported lazily to avoid circular imports on reload
     from app.providers.ollama_provider import OllamaProvider

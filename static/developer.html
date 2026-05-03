@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Developer Documentation — Arbiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/arbiter.css" />
+  <script src="/static/arbiter.js"></script>
+  <style>
+    .doc-tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 24px; flex-wrap: wrap; }
+    .doc-tab { padding: 10px 18px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; color: var(--text-3); transition: all .15s; border-radius: 6px 6px 0 0; }
+    .doc-tab:hover { color: var(--text-1); background: var(--bg-2); }
+    .doc-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .doc-section { display: none; }
+    .doc-section.active { display: block; }
+    .code-block { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7; overflow-x: auto; margin: 12px 0; position: relative; }
+    .code-block .lang-tag { position: absolute; top: 6px; right: 10px; font-size: 10px; color: var(--text-3); text-transform: uppercase; }
+    .doc-h2 { font-size: 18px; font-weight: 600; margin: 28px 0 12px; color: var(--text-1); }
+    .doc-h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--text-1); }
+    .doc-p { font-size: 13px; line-height: 1.7; color: var(--text-2); margin: 8px 0; }
+    .doc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 12px 0; }
+    .doc-table th { text-align: left; padding: 8px 12px; background: var(--bg-2); border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-3); }
+    .doc-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+    .doc-table code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: var(--bg-2); padding: 2px 5px; border-radius: 3px; }
+    .badge-method { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: .04em; font-family: 'JetBrains Mono', monospace; }
+    .badge-get { background: #dbeafe; color: #1d4ed8; }
+    .badge-post { background: #dcfce7; color: #166534; }
+    .badge-delete { background: #fef2f2; color: #991b1b; }
+    .badge-patch { background: #fef3c7; color: #92400e; }
+    .info-callout { padding: 14px 18px; border-radius: 8px; border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); margin: 16px 0; font-size: 13px; color: var(--text-2); }
+    .warn-callout { padding: 14px 18px; border-radius: 8px; border-left: 4px solid var(--yellow); background: var(--yellow-dim); margin: 16px 0; font-size: 13px; color: var(--text-2); }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrapper">
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 class="page-title">Developer Documentation</h1>
+      <div class="topbar-right">
+        <a href="/docs" target="_blank" class="btn btn-ghost" style="font-size:12px">Swagger UI ↗</a>
+        <a href="/redoc" target="_blank" class="btn btn-ghost" style="font-size:12px">ReDoc ↗</a>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div class="doc-tabs">
+        <div class="doc-tab active" data-tab="quickstart">Quick Start</div>
+        <div class="doc-tab" data-tab="authentication">Authentication</div>
+        <div class="doc-tab" data-tab="endpoints">Endpoints</div>
+        <div class="doc-tab" data-tab="routing">Routing</div>
+        <div class="doc-tab" data-tab="sdks">SDK Examples</div>
+        <div class="doc-tab" data-tab="gateway">Gateway Tokens</div>
+      </div>
+
+      <!-- Quick Start -->
+      <div class="doc-section active" id="tab-quickstart">
+        <h2 class="doc-h2">Quick Start</h2>
+        <p class="doc-p">Arbiter exposes an <strong>OpenAI-compatible API</strong>. Any SDK or tool that works with the OpenAI API works with Arbiter — just change the base URL.</p>
+
+        <div class="info-callout">
+          <strong>Base URL:</strong> <code id="base-url">https://arbiter.chkoushik.com</code><br>
+          <strong>Endpoint:</strong> <code>/v1/chat/completions</code>
+        </div>
+
+        <h3 class="doc-h3">Python (OpenAI SDK)</h3>
+        <div class="code-block"><span class="lang-tag">python</span>from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://arbiter.chkoushik.com/v1",
+    api_key="your-gateway-token",  # from Settings → Gateway Tokens
+)
+
+response = client.chat.completions.create(
+    model="auto",  # let Arbiter choose the best model
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)</div>
+
+        <h3 class="doc-h3">cURL</h3>
+        <div class="code-block"><span class="lang-tag">bash</span>curl -X POST https://arbiter.chkoushik.com/v1/chat/completions \
+  -H "Authorization: Bearer your-gateway-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</div>
+
+        <h3 class="doc-h3">Model Selection</h3>
+        <table class="doc-table">
+          <thead><tr><th>Model Value</th><th>Behavior</th></tr></thead>
+          <tbody>
+            <tr><td><code>"auto"</code></td><td>Arbiter classifies the request and picks the best free-tier model</td></tr>
+            <tr><td><code>"gemini-2.5-flash"</code></td><td>Use a specific model — Arbiter routes to the correct provider</td></tr>
+            <tr><td><code>"nvidia/nemotron-3-super-120b-a12b"</code></td><td>Fully-qualified model — routed directly to NVIDIA NIM</td></tr>
+            <tr><td><code>"cfworker/my-worker"</code></td><td>Route to a deployed Cloudflare Worker</td></tr>
+          </tbody>
+        </table>
+
+        <div class="warn-callout">
+          <strong>⚠️ Free Tier Mode:</strong> By default, Arbiter routes through free API providers (Gemini, Groq, NVIDIA, etc.). These have rate limits and may not be suitable for production workloads. Configure paid API keys in Settings for production stability.
+        </div>
+      </div>
+
+      <!-- Authentication -->
+      <div class="doc-section" id="tab-authentication">
+        <h2 class="doc-h2">Authentication</h2>
+        <p class="doc-p">All <code>/v1/*</code> endpoints require authentication via Bearer token.</p>
+
+        <h3 class="doc-h3">Gateway API Token</h3>
+        <div class="code-block"><span class="lang-tag">http</span>Authorization: Bearer arbiter-sk-xxxxxxxxxxxxxx</div>
+        <p class="doc-p">Create tokens in <strong>Settings → Gateway Tokens</strong>. Each token has:</p>
+        <ul style="font-size:13px;color:var(--text-2);padding-left:20px;line-height:2">
+          <li>Unique name for identification</li>
+          <li>Optional expiry date</li>
+          <li>Enable/disable toggle</li>
+          <li>Per-token analytics (requests, models used, providers hit)</li>
+          <li><strong>Routing policy</strong> — restrict which models this token can use</li>
+        </ul>
+
+        <h3 class="doc-h3">Routing Policies (per token)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Policy</th><th>Behavior</th></tr></thead>
+          <tbody>
+            <tr><td><code>auto</code></td><td>Arbiter chooses freely from all available models (default)</td></tr>
+            <tr><td><code>restricted</code></td><td>Only models in the token's <em>allowed_models</em> list are used. Order = priority.</td></tr>
+            <tr><td><code>preferred</code></td><td>Preferred models tried first, falls back to full auto if exhausted</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Per-Request Overrides (Headers)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Header</th><th>Values</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-Arbiter-Priority</code></td><td>speed, quality, balanced</td><td>Influences model selection in auto mode</td></tr>
+            <tr><td><code>X-Arbiter-Prefer-Provider</code></td><td>nvidia, gemini, groq…</td><td>Boost a specific provider</td></tr>
+            <tr><td><code>X-Arbiter-Fallback</code></td><td>none, same_provider, chain</td><td>Control fallback behavior when pinning a model</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Endpoints -->
+      <div class="doc-section" id="tab-endpoints">
+        <h2 class="doc-h2">API Endpoints</h2>
+
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/chat/completions</code></td><td>Create a chat completion (OpenAI-compatible)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/models</code></td><td>List available models</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/images/generations</code></td><td>Generate images (DALL-E compatible)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/providers/meta</code></td><td>Provider registry metadata (models, limits, colors)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/gateway/tokens</code></td><td>List gateway tokens (admin)</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/gateway/tokens</code></td><td>Create gateway token (admin)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/health</code></td><td>Health check</td></tr>
+          </tbody>
+        </table>
+
+        <p class="doc-p">For the complete API schema with request/response types, use <a href="/docs" target="_blank">Swagger UI</a> or <a href="/redoc" target="_blank">ReDoc</a>.</p>
+
+        <h3 class="doc-h3">Chat Completion Request Body</h3>
+        <div class="code-block"><span class="lang-tag">json</span>{
+  "model": "auto",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Explain quantum computing in simple terms."}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 2048,
+  "fallback": "chain"
+}</div>
+
+        <h3 class="doc-h3">Response Headers</h3>
+        <table class="doc-table">
+          <thead><tr><th>Header</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-Arbiter-Model-Used</code></td><td>The actual provider/model that fulfilled the request (e.g. <code>nvidia/nemotron-3-super-120b-a12b</code>)</td></tr>
+            <tr><td><code>X-Response-Time-Ms</code></td><td>Total response time in milliseconds</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Routing -->
+      <div class="doc-section" id="tab-routing">
+        <h2 class="doc-h2">Routing Algorithm</h2>
+        <p class="doc-p">Arbiter uses a multi-level intelligent routing system:</p>
+
+        <h3 class="doc-h3">1. Cache Check</h3>
+        <p class="doc-p">For requests with <code>temperature ≤ 0.3</code>, check Redis cache first. Instant response on hit.</p>
+
+        <h3 class="doc-h3">2. Candidate Chain</h3>
+        <p class="doc-p">Build an ordered list of (provider, model) pairs based on:</p>
+        <ul style="font-size:13px;color:var(--text-2);padding-left:20px;line-height:2">
+          <li>Explicit model name → route to owning provider</li>
+          <li>Token count → prefer providers with sufficient context window</li>
+          <li>Capability tags → code, reasoning, creative → different models</li>
+          <li>Gateway routing policy → filter/reorder based on token config</li>
+        </ul>
+
+        <h3 class="doc-h3">3. Gateway Policy Filter</h3>
+        <p class="doc-p">If the calling token has <code>routing_policy: "restricted"</code>, only allowed models survive. If <code>"preferred"</code>, preferred models are moved to the front of the chain.</p>
+
+        <h3 class="doc-h3">4. Key Rotation (per model)</h3>
+        <p class="doc-p">For each candidate, rotate through all API keys using weighted scoring:</p>
+        <div class="code-block"><span class="lang-tag">formula</span>score = (rpm_available × 0.25) + (tpm_available × 0.15) + (daily_available × 0.40) + (health × 0.20)</div>
+
+        <h3 class="doc-h3">5. Fallback</h3>
+        <p class="doc-p">On rate limit → try next key. On provider error → try next model. All exhausted → 503.</p>
+
+        <h3 class="doc-h3">Provider Priority (default)</h3>
+        <div class="code-block"><span class="lang-tag">text</span>gemini → groq → cerebras → nvidia → zai → cloudflare → openrouter → cohere → huggingface → pollinations → ollama → routeway → lightning</div>
+      </div>
+
+      <!-- SDK Examples -->
+      <div class="doc-section" id="tab-sdks">
+        <h2 class="doc-h2">SDK Integration Examples</h2>
+
+        <h3 class="doc-h3">JavaScript / TypeScript</h3>
+        <div class="code-block"><span class="lang-tag">typescript</span>import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://arbiter.chkoushik.com/v1",
+  apiKey: "your-gateway-token",
+});
+
+const completion = await client.chat.completions.create({
+  model: "auto",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+console.log(completion.choices[0].message.content);</div>
+
+        <h3 class="doc-h3">LangChain (Python)</h3>
+        <div class="code-block"><span class="lang-tag">python</span>from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    base_url="https://arbiter.chkoushik.com/v1",
+    api_key="your-gateway-token",
+    model="auto",
+)
+response = llm.invoke("What is the meaning of life?")</div>
+
+        <h3 class="doc-h3">LiteLLM</h3>
+        <div class="code-block"><span class="lang-tag">python</span>import litellm
+
+response = litellm.completion(
+    model="openai/auto",
+    api_base="https://arbiter.chkoushik.com/v1",
+    api_key="your-gateway-token",
+    messages=[{"role": "user", "content": "Hello!"}],
+)</div>
+
+        <h3 class="doc-h3">Force a Specific Provider</h3>
+        <div class="code-block"><span class="lang-tag">python</span># Query parameter: ?vendor=nvidia
+response = client.chat.completions.create(
+    model="nvidia/nemotron-3-super-120b-a12b",
+    messages=[{"role": "user", "content": "Hello!"}],
+    extra_query={"vendor": "nvidia"},
+)</div>
+      </div>
+
+      <!-- Gateway Tokens -->
+      <div class="doc-section" id="tab-gateway">
+        <h2 class="doc-h2">Gateway Token Management</h2>
+        <p class="doc-p">Gateway tokens control access to Arbiter's completions API. Each token can have its own routing policy.</p>
+
+        <h3 class="doc-h3">Create a Token with Model Restrictions</h3>
+        <div class="code-block"><span class="lang-tag">bash</span># Create a token restricted to specific models
+curl -X POST https://arbiter.chkoushik.com/api/gateway/tokens \
+  -H "Cookie: arbiter_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "OpenClaw Production",
+    "routing_policy": "restricted",
+    "allowed_models": [
+      "nvidia/nemotron-3-super-120b-a12b",
+      "mistralai/mistral-medium-3.5-128b",
+      "meta/llama-3.3-70b-instruct"
+    ]
+  }'</div>
+
+        <h3 class="doc-h3">Update Routing Policy</h3>
+        <div class="code-block"><span class="lang-tag">bash</span># Switch to preferred mode (try these first, fall back to auto)
+curl -X PATCH https://arbiter.chkoushik.com/api/gateway/tokens/gwtk_abc123 \
+  -H "Cookie: arbiter_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "routing_policy": "preferred",
+    "allowed_models": ["nvidia/nemotron-3-super-120b-a12b"]
+  }'</div>
+
+        <h3 class="doc-h3">Block Specific Models</h3>
+        <div class="code-block"><span class="lang-tag">json</span>{
+  "blocked_models": ["gemini-2.5-pro", "gpt-4"]
+}</div>
+        <p class="doc-p">Blocked models are never used regardless of routing policy. Useful for preventing accidental use of expensive paid models.</p>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/static/components/sidebar.js" defer></script>
+<script src="/static/components/ui.js" defer></script>
+<script>
+  // Tab switching
+  document.querySelectorAll('.doc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.doc-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.doc-section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

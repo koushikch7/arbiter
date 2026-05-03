@@ -562,6 +562,42 @@ async function sendMessage() {
 async function _callEndpoint(ep, messages, temperature, maxTokens) {
   var payload = { messages: messages, temperature: temperature, max_tokens: maxTokens };
 
+  function _parseError(errData, prefix, status, statusText) {
+    var msg = errData.detail
+      || (typeof errData.error === 'string' ? errData.error : (errData.error && errData.error.message) || '')
+      || '';
+    if (!msg && status) {
+      msg = 'HTTP ' + status + (statusText ? ' ' + statusText : '');
+      if (status === 502 || status === 504) {
+        msg += ' — upstream provider timeout or unavailable. Try a different model.';
+      }
+    }
+    return (prefix ? prefix + ': ' : '') + (msg || 'Unknown error');
+  }
+
+  async function _readError(r) {
+    var ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (ct.indexOf('application/json') !== -1) {
+      return await r.json().catch(function() { return {}; });
+    }
+    // Non-JSON (e.g. Cloudflare HTML 502 page) — extract a hint
+    var text = await r.text().catch(function() { return ''; });
+    return { detail: text ? (text.length > 200 ? text.slice(0, 200) + '...' : text).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '' };
+  }
+
+  function _extractContent(msg) {
+    var c = msg.content;
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) {
+      return c.map(function(b) {
+        if (typeof b === 'string') return b;
+        return b.text || b.content || '';
+      }).join('\n');
+    }
+    if (c && typeof c === 'object') return c.text || c.content || JSON.stringify(c);
+    return String(c || '');
+  }
+
   if (ep.type === 'cfworker') {
     // Route via gateway using cfworker/ model prefix
     payload.model = ep.model;
@@ -571,12 +607,12 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       body: JSON.stringify(payload),
     });
     if (!r.ok) {
-      var errData = await r.json().catch(function() { return {}; });
-      throw new Error(errData.detail || errData.error || ('HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : '')));
+      var errData = await _readError(r);
+      throw new Error(_parseError(errData, null, r.status, r.statusText));
     }
     var data = await r.json();
     return {
-      text:  data.choices[0].message.content,
+      text:  _extractContent(data.choices[0].message),
       model: data.model || ep.model,
     };
 
@@ -588,12 +624,12 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       body: JSON.stringify(Object.assign({}, payload, {model: ep.model})),
     });
     if (!r.ok) {
-      var errData = await r.json().catch(function() { return {detail: r.statusText}; });
-      throw new Error('Modal: ' + (errData.detail || errData.error || r.statusText));
+      var errData = await _readError(r);
+      throw new Error(_parseError(errData, 'Modal', r.status, r.statusText));
     }
     var data = await r.json();
     return {
-      text:  data.choices[0].message.content,
+      text:  _extractContent(data.choices[0].message),
       model: data.model || ep.model,
     };
 
@@ -607,12 +643,12 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       body: JSON.stringify(payload),
     });
     if (!r.ok) {
-      var errData = await r.json().catch(function() { return {}; });
-      throw new Error(errData.detail || errData.error || ('HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : '')));
+      var errData = await _readError(r);
+      throw new Error(_parseError(errData, null, r.status, r.statusText));
     }
     var data = await r.json();
     return {
-      text:  data.choices[0].message.content,
+      text:  _extractContent(data.choices[0].message),
       model: data.model || ep.model,
     };
   }
@@ -652,7 +688,7 @@ function renderMessages(lastAssistantText, latencyMs, modelUsed) {
 
     var bubbleContent = isUser
       ? escHtml(msg.content)
-      : (typeof marked !== 'undefined' ? marked.parse(msg.content) : escHtml(msg.content));
+      : (typeof marked !== 'undefined' ? marked.parse(String(msg.content || '')) : escHtml(String(msg.content || '')));
     div.innerHTML = avatar +
       '<div><div class="msg-bubble">' + bubbleContent + '</div>' + metaHtml + '</div>';
     container.appendChild(div);

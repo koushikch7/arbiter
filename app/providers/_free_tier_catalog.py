@@ -708,6 +708,40 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             quality=2, speed=4,
         ),
     ],
+
+    # ── NVIDIA NIM — build.nvidia.com free tier (1000 RPD) ────────────
+    "nvidia": [
+        ModelSpec(
+            id="nvidia/nemotron-3-super-120b-a12b", context=131_072,
+            tags={"reasoning", "creative", "large", "balanced"},
+            rpm=10, rpd=1_000, quality=5, speed=3,
+            notes="NVIDIA flagship MoE · 120B active params · 131K ctx",
+        ),
+        ModelSpec(
+            id="meta/llama-3.3-70b-instruct", context=131_072,
+            tags={"balanced", "creative", "code", "large"},
+            rpm=10, rpd=1_000, quality=4, speed=3,
+            notes="Meta Llama 3.3 70B via NVIDIA NIM",
+        ),
+        ModelSpec(
+            id="mistralai/mistral-medium-3.5-128b", context=131_072,
+            tags={"reasoning", "creative", "large", "code"},
+            rpm=10, rpd=1_000, quality=5, speed=3,
+            notes="Mistral Medium 3.5 · 128B params · 131K ctx",
+        ),
+        ModelSpec(
+            id="mistralai/mistral-small-4-119b-2603", context=131_072,
+            tags={"balanced", "code", "large"},
+            rpm=10, rpd=1_000, quality=4, speed=3,
+            notes="Mistral Small 4 hybrid MoE · 119B params",
+        ),
+        ModelSpec(
+            id="google/gemma-3-27b-it", context=131_072,
+            tags={"balanced", "creative"},
+            rpm=10, rpd=1_000, quality=4, speed=4,
+            notes="Google Gemma 3 27B instruction-tuned",
+        ),
+    ],
 }
 
 

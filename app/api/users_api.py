@@ -175,3 +175,56 @@ async def create(
         body.email, body.is_admin, admin.get("email")
     )
     return JSONResponse(user, status_code=201)
+
+
+class InviteBody(BaseModel):
+    email: str
+    is_admin: bool = False
+
+
+@router.post("/invite", summary="Invite a user via email", status_code=201)
+async def invite_user(
+    body: InviteBody, admin: dict = Depends(require_admin)
+) -> JSONResponse:
+    """
+    Send an invitation email to a user. The user is pre-approved immediately
+    so they can sign in as soon as they click the link. The email contains a
+    direct link to the app's login page.
+    """
+    from app.services.email_service import email_service
+
+    if not email_service.configured:
+        raise HTTPException(
+            503,
+            "SMTP is not configured. Add SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD to .env"
+        )
+
+    # Pre-approve the user
+    user = upsert_user(
+        email=body.email,
+        name="",
+        status="approved",
+        is_admin=body.is_admin,
+    )
+
+    # Send the invitation email
+    invite_url = f"{settings.APP_BASE_URL}/auth/login"
+    inviter = admin.get("email", "Admin")
+    sent = await email_service.send_invite(
+        to_email=body.email,
+        invite_url=invite_url,
+        inviter_name=inviter,
+    )
+
+    if not sent:
+        logger.warning("Invite email failed to send to %s (user still pre-approved)", body.email)
+        return JSONResponse(
+            {"detail": "User pre-approved but email delivery failed. Check SMTP config.", "user": user},
+            status_code=201,
+        )
+
+    logger.info("Invitation sent to %s by %s", body.email, inviter)
+    return JSONResponse(
+        {"detail": f"Invitation sent to {body.email}", "user": user},
+        status_code=201,
+    )

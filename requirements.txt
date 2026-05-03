@@ -14,3 +14,5 @@ modal>=0.73.0
 authlib==1.6.11
 itsdangerous==2.2.0
 filelock==3.20.3
+# ── v1.14.2 additions ──
+boto3>=1.34.0

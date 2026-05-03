@@ -1639,6 +1639,96 @@ Model 'gpt-4' is not available
 
 ---
 
+## Backup System (v1.14.2)
+
+### Overview
+
+Arbiter includes an enterprise-grade backup system that automatically backs up all Redis state and configuration to OCI Object Storage (S3-compatible).
+
+### Accessing the Backup UI
+
+Navigate to the **Backup** page from the sidebar. The UI shows:
+- Storage usage bar and quota
+- Last full/incremental backup timestamps
+- Manual trigger buttons for full or incremental backups
+- Backup history table with download/restore/delete actions
+
+### Backup Types
+
+| Type | Content | Schedule |
+|------|---------|----------|
+| **Full** | All Redis keys + data files | Weekly (Sunday 01:00 UTC) |
+| **Incremental** | Config + tokens + last 48h stats | Daily (02:00 UTC) |
+
+### Manual Backup
+
+Click "Run Incremental" or "Run Full" in the Backup UI, or via API:
+
+```bash
+# Incremental
+curl -X POST -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"incremental"}' \
+  http://localhost:8080/api/backup/run
+
+# Full
+curl -X POST -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"full"}' \
+  http://localhost:8080/api/backup/run
+```
+
+### Restore from Backup
+
+From the UI: click the restore icon next to any backup in the list.
+
+Via API:
+```bash
+curl -X POST -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/backup/<key>/restore
+```
+
+> **Warning**: Restore overwrites current Redis state. Consider taking a backup first.
+
+### Retention Policy
+
+- Incremental backups older than **7 days** → auto-deleted
+- Full backups older than **90 days** → auto-deleted
+- Storage quota: **10 GB** (warning at 9 GB)
+
+### Configuration
+
+Add to `.env`:
+```env
+BACKUP_ENABLED=true
+BACKUP_S3_ENDPOINT=https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
+BACKUP_S3_BUCKET=app-backups
+BACKUP_S3_PREFIX=arbiter/backups
+BACKUP_S3_ACCESS_KEY=<your-access-key>
+BACKUP_S3_SECRET_KEY=<your-secret-key>
+BACKUP_S3_REGION=us-chicago-1
+BACKUP_MAX_GB=10
+```
+
+---
+
+## Analytics Window Selection (v1.14.2)
+
+The Analytics page now supports multiple time windows. Use the dropdown to select:
+
+| Window | Granularity | Data Source |
+|--------|-------------|-------------|
+| 1 hour | 5 minutes | Real-time buckets |
+| 4 hours | 5 minutes | Real-time buckets |
+| 24 hours | 1 hour | Hourly rollups |
+| 7 days | 1 hour | Hourly rollups |
+| 30 days | 1 day | Daily rollups |
+| 90 days | 1 day | Daily rollups |
+
+Longer windows use progressively coarser granularity to maintain performance.
+
+---
+
 ## Getting Help
 
 - **Check logs**: `docker compose logs -f gateway`

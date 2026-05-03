@@ -1566,6 +1566,114 @@ mypy app/ --ignore-missing-imports
 
 ---
 
+## Observability & Stats (v1.14.2)
+
+### Redis Key Schema
+
+```
+arbiter:stats:total:requests         ← lifetime counter (no TTL)
+arbiter:stats:total:success          ← lifetime counter (no TTL)
+arbiter:stats:total:cache_hits       ← lifetime counter (no TTL)
+arbiter:stats:total:tokens           ← lifetime counter (no TTL)
+
+arbiter:stats:history:{bucket}:requests   ← 5-min bucket (TTL: 7 days)
+arbiter:stats:history:{bucket}:success    ← 5-min bucket (TTL: 7 days)
+arbiter:stats:history:{bucket}:cache_hits ← 5-min bucket (TTL: 7 days)
+arbiter:stats:history:{bucket}:tokens     ← 5-min bucket (TTL: 7 days)
+
+arbiter:stats:hourly:{hour}:requests      ← hourly rollup (TTL: 30 days)
+arbiter:stats:hourly:{hour}:success       ← hourly rollup (TTL: 30 days)
+arbiter:stats:hourly:{hour}:cache_hits    ← hourly rollup (TTL: 30 days)
+arbiter:stats:hourly:{hour}:tokens        ← hourly rollup (TTL: 30 days)
+
+arbiter:stats:day:{YYYY-MM-DD}:requests   ← daily rollup (TTL: 90 days)
+```
+
+- `{bucket}` = `int(time.time()) // 300 * 300` (5-min aligned epoch)
+- `{hour}` = `int(time.time()) // 3600 * 3600` (hour-aligned epoch)
+- All TTLs are set via `volatile-lru` eviction policy (only keys with TTL are evicted)
+
+### Analytics Window Parameter
+
+`GET /analytics/data?window=<value>` supports: `1h`, `4h`, `24h`, `7d`, `30d`, `90d`
+
+| Window  | Source         | Granularity |
+|---------|----------------|-------------|
+| 1h, 4h  | history:* keys | 5 minutes   |
+| 24h, 7d | hourly:* keys  | 1 hour      |
+| 30d, 90d| day:* keys     | 1 day       |
+
+### Experience-Based Routing
+
+The router maintains a 5-minute performance cache (`_perf_cache`) that tracks:
+- Error rate per model (from `arbiter:perf:{provider}:{model}`)
+- Average latency per model
+
+Candidates are reordered within each provider by: `error_rate * 10 + latency_seconds`.
+
+---
+
+## Backup System (v1.14.2)
+
+### Architecture
+
+- **Storage**: OCI Object Storage (S3-compatible) via `boto3`
+- **Schedule**: Daily incremental (02:00 UTC), Weekly full (Sunday 01:00 UTC)
+- **Retention**: Incremental >7 days auto-deleted, Full >90 days auto-deleted
+- **Quota**: 10 GB max (configurable via `BACKUP_MAX_GB`)
+- **Locking**: Redis-based distributed lock (30-min TTL) prevents overlapping jobs
+
+### S3 Client Configuration (OCI-specific)
+
+```python
+Config(
+    signature_version="s3v4",
+    s3={"addressing_style": "path", "payload_signing_enabled": False},
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
+)
+```
+
+> **Important**: OCI Object Storage does not support `aws-chunked` transfer encoding.
+> The `request_checksum_calculation="when_required"` setting is critical — without it,
+> boto3 >= 1.26 uses chunked encoding which OCI rejects with `MissingContentLength`.
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/backup/status` | Current backup state, storage usage |
+| GET | `/api/backup/list` | List all backups from manifest |
+| POST | `/api/backup/run` | Trigger manual backup `{"type":"full\|incremental"}` |
+| GET | `/api/backup/{key}/download` | Download backup archive |
+| POST | `/api/backup/{key}/restore` | Restore Redis state from backup |
+| DELETE | `/api/backup/{key}` | Delete a single backup |
+| GET | `/api/backup/storage` | Detailed storage breakdown |
+
+### Environment Variables
+
+```env
+BACKUP_ENABLED=true
+BACKUP_S3_ENDPOINT=https://namespace.compat.objectstorage.region.oraclecloud.com
+BACKUP_S3_BUCKET=app-backups
+BACKUP_S3_PREFIX=arbiter/backups
+BACKUP_S3_ACCESS_KEY=...
+BACKUP_S3_SECRET_KEY=...
+BACKUP_S3_REGION=us-chicago-1
+BACKUP_MAX_GB=10
+```
+
+### Object Layout
+
+```
+arbiter/backups/
+  manifest.json
+  full/2026/05/arbiter-full-20260501T010000Z.tar.gz
+  incremental/2026/05/arbiter-incr-20260501T020000Z.tar.gz
+```
+
+---
+
 ## Next Steps
 
 - Read [README.md](README.md) for user overview

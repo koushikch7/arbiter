@@ -60,6 +60,7 @@ _ALWAYS_OPEN: frozenset = frozenset([
     "/health",
     "/",  # redirects to /dashboard, auth enforced on target
     "/docs", "/redoc", "/openapi.json",
+    "/api-docs",  # redirects to /developer
     "/login",
     "/favicon.ico",
     # PWA assets — must be reachable without auth so installable browsers
@@ -283,10 +284,16 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         if info:
             request.state.gateway_token_id = info.get("id")
             request.state.gateway_token_name = info.get("name")
+            request.state.gateway_routing_policy = info.get("routing_policy", "auto")
+            request.state.gateway_allowed_models = info.get("allowed_models")
+            request.state.gateway_blocked_models = info.get("blocked_models")
         else:
             # env-var key — bucket under a synthetic id
             request.state.gateway_token_id = "env"
             request.state.gateway_token_name = "env-var"
+            request.state.gateway_routing_policy = "auto"
+            request.state.gateway_allowed_models = None
+            request.state.gateway_blocked_models = None
         return True
 
     def _check_session(self, request: Request) -> tuple[bool, str]:
@@ -326,6 +333,13 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             if self._check_bearer(request, effective_keys):
                 return await call_next(request)
+            # Fallback: accept a valid SSO session for /v1/* routes so the
+            # built-in Playground (same-origin, session-authenticated) can
+            # call the API without requiring a separate Bearer token.
+            if self._sso_enabled:
+                ok, _reason = self._check_session(request)
+                if ok:
+                    return await call_next(request)
             return _error_401("Missing or invalid Bearer token")
 
         # -----------------------------------------------------------------

@@ -23,7 +23,7 @@ router = APIRouter()
 # Which models are free-tier vs paid
 _FREE_TIER_PROVIDERS = {"gemini", "groq", "openrouter", "cohere", "cloudflare",
                         "cerebras", "huggingface", "pollinations", "zai",
-                        "routeway"}
+                        "routeway", "nvidia"}
 
 # Models known to be paid-only (not in the free hierarchy)
 _PAID_ONLY_MODELS = {
@@ -200,6 +200,7 @@ _VENDOR_LABELS = {
     "modal":       "Modal.com",
     "lightning":   "Lightning.ai (LitAI)",
     "routeway":    "Routeway",
+    "nvidia":      "NVIDIA NIM",
 }
 
 
@@ -285,4 +286,21 @@ async def toggle_model(
         "provider": provider,
         "model":    model_id,
         "enabled":  body.enabled,
+    })
+
+
+@router.get(
+    "/api/providers/meta",
+    summary="Provider metadata registry (SSOT)",
+)
+async def providers_meta(request: Request) -> JSONResponse:
+    """
+    Return the full provider registry metadata. Used by the UI to render
+    provider info, model lists, and routing policy editors from a single
+    authoritative source.
+    """
+    from app.providers.provider_registry import provider_meta_for_api, get_all_active_models
+    return JSONResponse({
+        "providers": provider_meta_for_api(),
+        "models": get_all_active_models(),
     })

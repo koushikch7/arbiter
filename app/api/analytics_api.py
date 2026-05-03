@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -92,6 +93,8 @@ async def analytics_page() -> HTMLResponse:
 @router.get("/analytics/data", summary="Analytics data JSON")
 async def analytics_data(
     request: Request,
+    window: Optional[str] = Query("4h",
+        description="Time window for history chart: 1h | 4h | 24h | 7d | 30d"),
     from_date: Optional[str] = Query(None, alias="from",
         description="ISO date YYYY-MM-DD (inclusive). When set with `to`, returns daily-rollup data."),
     to_date: Optional[str] = Query(None, alias="to",
@@ -212,32 +215,113 @@ async def analytics_data(
         prov = m["provider"]
         token_by_provider[prov] = token_by_provider.get(prov, 0) + m["tokens"]
 
-    # ── Time-series history (5-min buckets, last 48 = 4 hours) ───────────────
-    ts_map: dict[str, dict] = {}
-    try:
-        hist_keys = []
-        async for key in redis.scan_iter("arbiter:stats:history:*"):
-            hist_keys.append(key)
-    except Exception:
-        hist_keys = []
+    # ── Time-series history (window-aware) ───────────────────────────────────
+    _WINDOW_SPECS = {
+        "1h":  ("5m",  12),       # 12 × 5-min buckets
+        "4h":  ("5m",  48),       # 48 × 5-min buckets
+        "24h": ("1h",  24),       # 24 × hourly buckets
+        "7d":  ("1h",  168),      # 168 × hourly buckets
+        "30d": ("1d",  30),       # 30 daily rollups
+        "90d": ("1d",  90),       # 90 daily rollups
+    }
+    win = window if window in _WINDOW_SPECS else "4h"
+    bucket_type, bucket_count = _WINDOW_SPECS[win]
+    now_ts = int(_time.time())
 
-    for key in hist_keys:
-        parts = key.split(":")
-        if len(parts) < 5:
-            continue
-        ts     = parts[3]
-        metric = parts[4]
-        if ts not in ts_map:
-            ts_map[ts] = {"ts": int(ts) if ts.isdigit() else 0, "requests": 0, "success": 0, "errors": 0}
-        val = await get_int(key)
-        if metric == "requests":
-            ts_map[ts]["requests"] = val
-        elif metric == "success":
-            ts_map[ts]["success"] = val
-        elif metric in ("errors", "failed"):
-            ts_map[ts]["errors"] = val
+    history: list[dict] = []
 
-    history = sorted(ts_map.values(), key=lambda x: x["ts"])[-48:]
+    if bucket_type == "5m":
+        # 5-min buckets from arbiter:stats:history:{ts}:*
+        cutoff_ts = now_ts - bucket_count * 300
+        ts_map: dict[str, dict] = {}
+        try:
+            hist_keys = []
+            async for key in redis.scan_iter("arbiter:stats:history:*"):
+                hist_keys.append(key)
+        except Exception:
+            hist_keys = []
+        for key in hist_keys:
+            parts = key.split(":")
+            if len(parts) < 5:
+                continue
+            ts     = parts[3]
+            metric = parts[4]
+            ts_int = int(ts) if ts.isdigit() else 0
+            if ts_int < cutoff_ts:
+                continue
+            if ts not in ts_map:
+                ts_map[ts] = {"ts": ts_int, "requests": 0, "success": 0, "errors": 0}
+            val = await get_int(key)
+            if metric == "requests":
+                ts_map[ts]["requests"] = val
+            elif metric == "success":
+                ts_map[ts]["success"] = val
+            elif metric in ("errors", "failed"):
+                ts_map[ts]["errors"] = val
+        history = sorted(ts_map.values(), key=lambda x: x["ts"])
+
+    elif bucket_type == "1h":
+        # Hourly buckets from arbiter:stats:hourly:{ts}:*
+        cutoff_ts = now_ts - bucket_count * 3600
+        hr_map: dict[str, dict] = {}
+        try:
+            hr_keys = []
+            async for key in redis.scan_iter("arbiter:stats:hourly:*"):
+                hr_keys.append(key)
+        except Exception:
+            hr_keys = []
+        for key in hr_keys:
+            parts = key.split(":")
+            if len(parts) < 5:
+                continue
+            ts     = parts[3]
+            metric = parts[4]
+            ts_int = int(ts) if ts.isdigit() else 0
+            if ts_int < cutoff_ts:
+                continue
+            if ts not in hr_map:
+                hr_map[ts] = {"ts": ts_int, "requests": 0, "success": 0, "errors": 0}
+            val = await get_int(key)
+            if metric == "requests":
+                hr_map[ts]["requests"] = val
+            elif metric == "success":
+                hr_map[ts]["success"] = val
+            elif metric in ("errors", "failed"):
+                hr_map[ts]["errors"] = val
+        history = sorted(hr_map.values(), key=lambda x: x["ts"])
+
+    else:
+        # Daily rollups from arbiter:stats:day:{YYYY-MM-DD}:*
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=bucket_count)
+        day_map: dict[str, dict] = {}
+        try:
+            day_keys = []
+            async for key in redis.scan_iter("arbiter:stats:day:????-??-??:requests"):
+                day_keys.append(key)
+        except Exception:
+            day_keys = []
+        for key in day_keys:
+            parts = key.split(":")
+            if len(parts) < 5:
+                continue
+            d = parts[3]
+            try:
+                dt = datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if dt < cutoff_dt:
+                continue
+            req = await get_int(f"arbiter:stats:day:{d}:requests")
+            ok  = await get_int(f"arbiter:stats:day:{d}:success")
+            err = await get_int(f"arbiter:stats:day:{d}:errors")
+            day_map[d] = {
+                "ts":       int(dt.timestamp()),
+                "date":     d,
+                "requests": req,
+                "success":  ok,
+                "errors":   err,
+            }
+        history = sorted(day_map.values(), key=lambda x: x["ts"])
 
     # ── Key pool health (live) ────────────────────────────────────────────────
     key_pools_data: list[dict] = []
@@ -445,6 +529,7 @@ async def analytics_data(
         "providers":         provider_stats,
         "models":            model_stats,
         "history":           history,
+        "window":            win,
         "key_pools":         key_pools_data,
         "token_by_provider": token_by_provider,
         "tokens":            tokens_data,

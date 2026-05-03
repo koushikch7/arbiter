@@ -14,7 +14,7 @@
   "use strict";
 
   // Single source of truth for the version label shown under the brand.
-  const VERSION = "v1.13";
+  const VERSION = "v1.15.0";
 
   // Each entry: { href, label, icon, target?, section, tip }
   // `tip` becomes the title="" attribute (native tooltip).
@@ -33,9 +33,9 @@
       icon: '<path d="M3 3v18h18M7 16l4-4 4 4 5-7"/>',
     },
     {
-      href: "/api-docs",
-      label: "API Documentation",
-      tip: "OpenAI-compatible endpoints, examples and SDK guides.",
+      href: "/developer",
+      label: "Developer Docs",
+      tip: "Integration guides, SDK examples, and API reference.",
       icon: '<path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>',
     },
     {
@@ -61,6 +61,20 @@
       label: "Logs",
       tip: "Live request log with filters and export.",
       icon: '<path d="M4 6h16M4 10h16M4 14h10M4 18h6"/>',
+    },
+    {
+      href: "/backup",
+      label: "Backup",
+      tip: "Manage backups and restore from OCI Object Storage.",
+      icon: '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+    },
+    { divider: true },
+    { section: "Administration" },
+    {
+      href: "/users",
+      label: "Users & Access",
+      tip: "Manage users, roles, and email invitations.",
+      icon: '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>',
     },
     { divider: true },
     { section: "Developer" },
@@ -132,6 +146,10 @@
     html +=
       "</nav>" +
       '<div class="sidebar-footer">' +
+      '<div class="sidebar-notice" title="Using free API providers by default. For production stability, configure paid models.">' +
+      '<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>' +
+      '<span>Free tier mode — <a href="/settings" style="color:var(--accent)">configure paid keys</a> for production</span>' +
+      '</div>' +
       '<button class="sidebar-install-btn" id="pwa-install-btn" type="button" ' +
       'title="Install Arbiter as a mobile/desktop app" ' +
       'onclick="if(window.installArbiterPWA)window.installArbiterPWA()">' +

@@ -71,7 +71,11 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # 90 days of daily rollups should be plenty for analytics filtering.
-_DAILY_TTL_SECONDS = 90 * 24 * 3600
+_DAILY_TTL_SECONDS  = 90 * 24 * 3600
+# 5-min history buckets: keep 7 days (TTL prevents volatile-lru eviction).
+_HISTORY_5M_TTL     =  7 * 24 * 3600
+# Hourly rollup buckets: keep 30 days (powers 24h / 7d analytics windows).
+_HISTORY_1H_TTL     = 30 * 24 * 3600
 
 _INVALID_KEY_CHARS = re.compile(r"[^a-zA-Z0-9._\-]")
 
@@ -148,10 +152,17 @@ async def record_success(
         await _incr(redis, f"arbiter:stats:latency:model:{m}:sum", latency_ms)
         await _incr(redis, f"arbiter:stats:latency:model:{m}:count")
 
-    # ── 5-min history bucket ───────────────────────────────────────────
+    # ── 5-min history bucket (7-day TTL so volatile-lru never evicts) ──────
     bucket = (int(time.time()) // 300) * 300
-    await _incr(redis, f"arbiter:stats:history:{bucket}:requests")
-    await _incr(redis, f"arbiter:stats:history:{bucket}:success")
+    await _incr(redis, f"arbiter:stats:history:{bucket}:requests", ttl=_HISTORY_5M_TTL)
+    await _incr(redis, f"arbiter:stats:history:{bucket}:success",  ttl=_HISTORY_5M_TTL)
+
+    # ── Hourly rollup bucket (30-day TTL, powers 24h / 7d analytics views) ──
+    hour = (int(time.time()) // 3600) * 3600
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:requests", ttl=_HISTORY_1H_TTL)
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:success",  ttl=_HISTORY_1H_TTL)
+    if tokens_used > 0:
+        await _incr(redis, f"arbiter:stats:hourly:{hour}:tokens", tokens_used, ttl=_HISTORY_1H_TTL)
 
     # ── Daily rollup (90-day TTL) ──────────────────────────────────────
     ttl = _DAILY_TTL_SECONDS
@@ -223,8 +234,11 @@ async def record_request_failed(
     await _incr(redis, f"arbiter:stats:day:{day}:errors", ttl=ttl)
 
     bucket = (int(time.time()) // 300) * 300
-    await _incr(redis, f"arbiter:stats:history:{bucket}:requests")
-    await _incr(redis, f"arbiter:stats:history:{bucket}:errors")
+    await _incr(redis, f"arbiter:stats:history:{bucket}:requests", ttl=_HISTORY_5M_TTL)
+    await _incr(redis, f"arbiter:stats:history:{bucket}:errors",   ttl=_HISTORY_5M_TTL)
+    hour = (int(time.time()) // 3600) * 3600
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:requests", ttl=_HISTORY_1H_TTL)
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:errors",   ttl=_HISTORY_1H_TTL)
 
     if token_id:
         tid = _safe(token_id, 40)
@@ -245,8 +259,11 @@ async def record_cache_hit(redis, token_id: Optional[str] = None) -> None:
     await _incr(redis, f"arbiter:stats:day:{day}:requests", ttl=ttl)
     await _incr(redis, f"arbiter:stats:day:{day}:success", ttl=ttl)
     bucket = (int(time.time()) // 300) * 300
-    await _incr(redis, f"arbiter:stats:history:{bucket}:requests")
-    await _incr(redis, f"arbiter:stats:history:{bucket}:success")
+    await _incr(redis, f"arbiter:stats:history:{bucket}:requests", ttl=_HISTORY_5M_TTL)
+    await _incr(redis, f"arbiter:stats:history:{bucket}:success",  ttl=_HISTORY_5M_TTL)
+    hour = (int(time.time()) // 3600) * 3600
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:requests", ttl=_HISTORY_1H_TTL)
+    await _incr(redis, f"arbiter:stats:hourly:{hour}:success",  ttl=_HISTORY_1H_TTL)
     if token_id:
         tid = _safe(token_id, 40)
         await _incr(redis, f"arbiter:stats:token:{tid}:requests")
@@ -324,3 +341,46 @@ def daterange(from_date: str, to_date: str) -> list[str]:
         out.append(cur.strftime("%Y-%m-%d"))
         cur += timedelta(days=1)
     return out
+
+
+async def get_model_performance(redis) -> dict[str, dict]:
+    """Return per-model error-rate + avg latency from lifetime counters.
+
+    Used by the router to sort candidates by observed performance.
+    Returns a mapping of model_id → {error_rate, avg_latency_ms, requests}.
+    Only models with ≥5 requests are included so cold-start models retain
+    neutral score.
+    """
+    if redis is None:
+        return {}
+    perf: dict[str, dict] = {}
+    try:
+        async for key in redis.scan_iter("arbiter:stats:model:*:requests"):
+            prefix = "arbiter:stats:model:"
+            suffix = ":requests"
+            if not (key.startswith(prefix) and key.endswith(suffix)):
+                continue
+            model_id = key[len(prefix):-len(suffix)]
+            if not model_id:
+                continue
+            try:
+                req_v  = await redis.get(f"arbiter:stats:model:{model_id}:requests")
+                err_v  = await redis.get(f"arbiter:stats:model:{model_id}:errors")
+                ls_v   = await redis.get(f"arbiter:stats:latency:model:{model_id}:sum")
+                lc_v   = await redis.get(f"arbiter:stats:latency:model:{model_id}:count")
+                req    = int(req_v) if req_v else 0
+                err    = int(err_v) if err_v else 0
+                ls     = int(ls_v)  if ls_v  else 0
+                lc     = int(lc_v)  if lc_v  else 0
+                if req < 5:
+                    continue
+                perf[model_id] = {
+                    "requests":      req,
+                    "error_rate":    round(err / req, 4) if req > 0 else 0.0,
+                    "avg_latency_ms": round(ls / lc) if lc > 0 else 0,
+                }
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return perf

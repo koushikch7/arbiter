@@ -368,11 +368,16 @@
             <option value="">All models</option>
           </select>
         </div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center">
           <button class="btn btn-primary" onclick="applyFilters()" style="font-size:12px">Apply</button>
           <button class="btn btn-ghost"   onclick="clearFilters()" style="font-size:12px">Clear</button>
-          <button class="btn btn-ghost"   onclick="setFilterPreset('7d')"  style="font-size:11px">7d</button>
-          <button class="btn btn-ghost"   onclick="setFilterPreset('30d')" style="font-size:11px">30d</button>
+          <span style="font-size:11px;opacity:.6;margin-left:6px">Quick:</span>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('1h')"  style="font-size:11px">1h</button>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('4h')"  style="font-size:11px">4h</button>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('24h')" style="font-size:11px">24h</button>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('7d')"  style="font-size:11px">7d</button>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('30d')" style="font-size:11px">30d</button>
+          <button class="btn btn-ghost"   onclick="setWindowPreset('90d')" style="font-size:11px">90d</button>
         </div>
       </div>
 
@@ -1024,6 +1029,16 @@ function setFilterPreset(p) {
   else if (p === '30d') back.setDate(today.getDate() - 29);
   document.getElementById('filter-from').value = back.toISOString().slice(0,10);
   document.getElementById('filter-to').value   = today.toISOString().slice(0,10);
+  _activeWindow = '';
+  fetchData();
+}
+
+let _activeWindow = '';
+function setWindowPreset(w) {
+  // Clear date-range filters — use real-time window instead
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value   = '';
+  _activeWindow = w;
   fetchData();
 }
 
@@ -1174,8 +1189,12 @@ async function fetchData() {
     // Build query string from filter inputs (if present on this page)
     const qp = new URLSearchParams();
     const f  = id => (document.getElementById(id) || {}).value || '';
-    if (f('filter-from'))     qp.set('from',     f('filter-from'));
-    if (f('filter-to'))       qp.set('to',       f('filter-to'));
+    if (_activeWindow) {
+      qp.set('window', _activeWindow);
+    } else {
+      if (f('filter-from'))     qp.set('from',     f('filter-from'));
+      if (f('filter-to'))       qp.set('to',       f('filter-to'));
+    }
     if (f('filter-token'))    qp.set('token_id', f('filter-token'));
     if (f('filter-provider')) qp.set('provider', f('filter-provider'));
     if (f('filter-model'))    qp.set('model',    f('filter-model'));

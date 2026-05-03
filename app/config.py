@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # Pollinations — single key or comma-separated; required since 2026.
     POLLINATIONS_API_KEYS: str = ""
 
+    # NVIDIA NIM — build.nvidia.com (free tier: 1000 req/day)
+    NVIDIA_API_KEYS: str = ""
+
     # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
     MODAL_API_KEYS: str = ""
     # Modal account token (used by the one-click deploy feature)
@@ -85,8 +88,19 @@ class Settings(BaseSettings):
     # Set to True in production (requires HTTPS) so the session cookie is
     # only sent over TLS. Leave False for local dev over http://localhost.
     SESSION_COOKIE_SECURE: bool = False
-    # Session lifetime in seconds (default 24h).
-    SESSION_MAX_AGE: int = 86_400
+    # Session lifetime in seconds (default 5 days — sliding window resets on activity).
+    SESSION_MAX_AGE: int = 432_000
+
+    # ── SMTP / Email ─────────────────────────────────────────────────────────
+    # Configure these to enable daily analytics reports and user invitations.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_FROM_NAME: str = "Arbiter Gateway"
+    SMTP_TO: str = ""                  # default recipient for admin reports
+    DAILY_REPORT_HOUR: int = 6         # UTC hour to send daily analytics email
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins. Empty value means same-origin
@@ -95,6 +109,18 @@ class Settings(BaseSettings):
     ALLOWED_CORS_ORIGINS: str = ""
     # ── Logging ──────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
+
+    # ── S3 Backup (OCI Object Storage S3-compatible) ─────────────────────────
+    # All backups are stored under BACKUP_S3_PREFIX/ — other objects in the
+    # bucket are never touched. See app/api/backup_api.py for details.
+    BACKUP_S3_ENDPOINT: str = ""
+    BACKUP_S3_BUCKET: str = "app-backups"
+    BACKUP_S3_PREFIX: str = "arbiter/backups"
+    BACKUP_S3_ACCESS_KEY: str = ""
+    BACKUP_S3_SECRET_KEY: str = ""
+    BACKUP_S3_REGION: str = "us-chicago-1"
+    BACKUP_MAX_GB: float = 10.0
+    BACKUP_ENABLED: bool = True
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -120,6 +146,7 @@ class Settings(BaseSettings):
             "ollama":       self.OLLAMA_API_KEYS,
             "pollinations": self.POLLINATIONS_API_KEYS,
             "modal":        self.MODAL_API_KEYS,
+            "nvidia":       self.NVIDIA_API_KEYS,
         }
         raw = mapping.get(provider, "")
         out: List[str] = []

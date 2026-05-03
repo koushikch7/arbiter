@@ -89,6 +89,7 @@ _DEFAULT_PROVIDER_ORDER: List[str] = [
     "gemini",        # 1M ctx · free tier · 10-15 RPM
     "groq",          # fastest · free tier · 30 RPM
     "cerebras",      # fast · free tier · 30 RPM
+    "nvidia",        # NIM free tier · 1000 RPD
     "zai",           # GLM flash models are $0
     "cloudflare",    # Workers AI free tier
     "openrouter",    # all :free models in hierarchy
@@ -123,6 +124,8 @@ class IntelligentRouter:
         self._cfg_cache_ts: float = 0.0
         self._disabled_cache: Set[str] = set()
         self._disabled_cache_ts: float = 0.0
+        self._perf_cache: dict = {}
+        self._perf_cache_ts: float = 0.0
 
     async def _get_disabled_providers(self) -> Set[str]:
         """Return the set of provider names disabled via the Settings UI.
@@ -168,6 +171,61 @@ class IntelligentRouter:
         self._cfg_cache_ts = now
         return cfg
 
+    async def _get_model_perf(self) -> dict:
+        """Return per-model performance data, cached for 5 minutes."""
+        now = time.monotonic()
+        if now - self._perf_cache_ts < 300 and self._perf_cache:
+            return self._perf_cache
+        try:
+            perf = await obs_stats.get_model_performance(self.redis)
+            self._perf_cache = perf
+            self._perf_cache_ts = now
+        except Exception as e:
+            logger.debug(f"perf cache load error: {e}")
+        return self._perf_cache
+
+    def _sort_candidates_by_perf(
+        self,
+        candidates: List[Tuple[str, str]],
+        perf: dict,
+    ) -> List[Tuple[str, str]]:
+        """Reorder candidates by performance within each provider group.
+
+        Provider order is preserved (Gemini still comes before Groq).
+        Only the intra-provider model order is changed based on historical
+        error_rate and avg_latency. Models with < 5 requests keep neutral
+        score so cold-start models are still tried.
+        """
+        if not perf:
+            return candidates
+
+        def _score(model_id: str) -> float:
+            m = perf.get(model_id)
+            if not m:
+                return 0.5  # neutral — not enough data
+            err_rate = m.get("error_rate", 0.0)
+            avg_ms   = m.get("avg_latency_ms", 0)
+            # Penalise high error rate more than high latency
+            latency_score = max(0.0, 1.0 - avg_ms / 30_000)
+            return (1.0 - err_rate) * 0.75 + latency_score * 0.25
+
+        # Group by provider, preserving provider order
+        provider_order: List[str] = []
+        groups: Dict[str, List[str]] = {}
+        for prov, model in candidates:
+            if prov not in groups:
+                provider_order.append(prov)
+                groups[prov] = []
+            groups[prov].append(model)
+
+        # Sort within each provider group
+        result: List[Tuple[str, str]] = []
+        for prov in provider_order:
+            sorted_models = sorted(groups[prov], key=_score, reverse=True)
+            for m in sorted_models:
+                result.append((prov, m))
+        return result
+
     # ------------------------------------------------------------------
     # Main entry point
     # ------------------------------------------------------------------
@@ -181,6 +239,9 @@ class IntelligentRouter:
         prefer_provider_override: Optional[str] = None,
         token_id: Optional[str] = None,
         token_name: Optional[str] = None,
+        routing_policy: Optional[str] = None,
+        allowed_models: Optional[List[str]] = None,
+        blocked_models: Optional[List[str]] = None,
     ) -> ChatCompletionResponse:
         """
         Route *request* to the best available provider/model/key.
@@ -190,6 +251,11 @@ class IntelligentRouter:
         vendor                    If provided, put this provider first.
         force_model               Override the model field (legacy).
         priority_override         "speed" | "quality" | "balanced" — per-request
+                                  priority for auto routing.
+        prefer_provider_override  Boost a specific provider in auto routing.
+        routing_policy            "auto" | "restricted" | "preferred" — gateway-level.
+        allowed_models            Model allowlist for restricted/preferred modes.
+        blocked_models            Model blocklist (applied after candidates built).
                                   priority for auto routing.
         prefer_provider_override  Boost a specific provider in auto routing.
         """
@@ -239,6 +305,51 @@ class IntelligentRouter:
                     f"Filtered {before - len(candidates)} candidate(s) from "
                     f"disabled providers: {sorted(disabled_providers)}"
                 )
+
+        # ── Experience-based intra-provider model reordering ─────────
+        try:
+            perf = await self._get_model_perf()
+            candidates = self._sort_candidates_by_perf(candidates, perf)
+        except Exception as _perf_err:
+            logger.debug(f"perf sort skipped: {_perf_err}")
+
+        # ── Gateway-level routing policy ─────────────────────────────
+        # Apply per-token model restrictions AFTER building the full chain
+        # and performance reordering, so that restricted gateways still get
+        # the best available model from their allowed set.
+        if routing_policy == "restricted" and allowed_models:
+            allowed_set = set(allowed_models)
+            before = len(candidates)
+            # Keep only candidates whose model is in the allowed list
+            candidates = [(p, m) for (p, m) in candidates if m in allowed_set]
+            # Re-sort by the allowed_models order (user-defined priority)
+            model_priority = {m: i for i, m in enumerate(allowed_models)}
+            candidates.sort(key=lambda x: model_priority.get(x[1], 999))
+            if before != len(candidates):
+                logger.info(
+                    f"Gateway routing_policy=restricted: {before}→{len(candidates)} candidates "
+                    f"(allowed: {allowed_models[:5]})"
+                )
+        elif routing_policy == "preferred" and allowed_models:
+            # Move preferred models to front (in order), rest follow
+            preferred_set = set(allowed_models)
+            preferred = [(p, m) for (p, m) in candidates if m in preferred_set]
+            # Sort preferred by user-defined order
+            model_priority = {m: i for i, m in enumerate(allowed_models)}
+            preferred.sort(key=lambda x: model_priority.get(x[1], 999))
+            rest = [(p, m) for (p, m) in candidates if m not in preferred_set]
+            candidates = preferred + rest
+            if preferred:
+                logger.info(
+                    f"Gateway routing_policy=preferred: {len(preferred)} preferred models "
+                    f"moved to front ({allowed_models[:3]}…)"
+                )
+
+        # Apply blocked models (regardless of policy)
+        if blocked_models:
+            blocked_set = set(blocked_models)
+            candidates = [(p, m) for (p, m) in candidates if m not in blocked_set]
+
         logger.info(
             f"Routing  model={request.model!r}  tokens≈{token_est}  "
             f"candidates={candidates[:8]}{'…' if len(candidates) > 8 else ''}"

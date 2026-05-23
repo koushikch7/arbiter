@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # startup warning. Recommended: keep True in production.
     REQUIRE_AUTH: bool = True
 
+    # Per-token sliding-window rate limit (requests per minute). 0 disables
+    # the global limiter. Individual gateway tokens may override this via
+    # the ``request_limit_per_minute`` field on the token record.
+    GATEWAY_TOKEN_RATE_LIMIT_PER_MIN: int = 100
+
     # ── Provider API Keys ────────────────────────────────────────────────────
     GEMINI_API_KEYS: str = ""
     GROQ_API_KEYS: str = ""
@@ -40,9 +45,6 @@ class Settings(BaseSettings):
     # Z.ai / Zhipu AI — GLM-4.7-Flash, GLM-4.5-Flash (free tier)
     ZAI_API_KEYS: str = ""
 
-    # Lightning.ai LitAI — natively hosted open-weight models (pay-per-token)
-    LIGHTNING_API_KEYS: str = ""
-
     # Routeway — unified gateway to OpenAI, Anthropic, DeepSeek, etc.
     # https://routeway.ai (docs: https://docs.routeway.ai)
     ROUTEWAY_API_KEYS: str = ""
@@ -56,12 +58,6 @@ class Settings(BaseSettings):
 
     # NVIDIA NIM — build.nvidia.com (free tier: 1000 req/day)
     NVIDIA_API_KEYS: str = ""
-
-    # Modal.com serverless GPU — format: endpoint_url|token (comma-separated)
-    MODAL_API_KEYS: str = ""
-    # Modal account token (used by the one-click deploy feature)
-    MODAL_TOKEN_ID: str = ""
-    MODAL_TOKEN_SECRET: str = ""
 
     # ── Cloudflare Zero Trust / Access ───────────────────────────────────────
     # Team name, e.g. "myteam"  → https://myteam.cloudflareaccess.com
@@ -100,7 +96,8 @@ class Settings(BaseSettings):
     SMTP_FROM: str = ""
     SMTP_FROM_NAME: str = "Arbiter Gateway"
     SMTP_TO: str = ""                  # default recipient for admin reports
-    DAILY_REPORT_HOUR: int = 6         # UTC hour to send daily analytics email
+    DAILY_REPORT_HOUR: int = 16        # UTC hour to send daily report (16:30 UTC = 22:00 IST)
+    DAILY_REPORT_MINUTE: int = 30      # UTC minute for report dispatch
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins. Empty value means same-origin
@@ -141,11 +138,9 @@ class Settings(BaseSettings):
             "cloudflare":   self.CLOUDFLARE_API_KEYS,
             "cerebras":     self.CEREBRAS_API_KEYS,
             "zai":          self.ZAI_API_KEYS,
-            "lightning":    self.LIGHTNING_API_KEYS,
             "routeway":     self.ROUTEWAY_API_KEYS,
             "ollama":       self.OLLAMA_API_KEYS,
             "pollinations": self.POLLINATIONS_API_KEYS,
-            "modal":        self.MODAL_API_KEYS,
             "nvidia":       self.NVIDIA_API_KEYS,
         }
         raw = mapping.get(provider, "")
@@ -174,11 +169,9 @@ class Settings(BaseSettings):
             "cloudflare":   self.CLOUDFLARE_API_KEYS,
             "cerebras":     self.CEREBRAS_API_KEYS,
             "zai":          self.ZAI_API_KEYS,
-            "lightning":    self.LIGHTNING_API_KEYS,
             "routeway":     self.ROUTEWAY_API_KEYS,
             "ollama":       self.OLLAMA_API_KEYS,
             "pollinations": self.POLLINATIONS_API_KEYS,
-            "modal":        self.MODAL_API_KEYS,
         }
         raw = mapping.get(provider, "")
         tiers: dict = {}

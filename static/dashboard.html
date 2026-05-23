@@ -33,6 +33,9 @@
 
     <main class="page-content">
 
+      <!-- Major-change announcement banners (v1.18.0) -->
+      <div id="announcement-banners" class="announcement-banners"></div>
+
       <!-- KPI cards -->
       <div class="section-hd" style="margin-bottom:12px">
         <span class="section-label">Overview</span>
@@ -306,7 +309,14 @@ function render(data) {
   }
 
   // Key details accordion
+  // Preserve which providers are currently expanded so 10s auto-refresh
+  // doesn't collapse open accordions while the user is inspecting keys.
   const kd = document.getElementById('key-details');
+  const _openSet = new Set(
+    Array.from(kd.querySelectorAll('.accordion-item'))
+      .filter(function(item) { return item.querySelector('.accordion-body.open'); })
+      .map(function(item) { return item.dataset.provider; })
+  );
   kd.innerHTML = provs.map(function(p) {
     const keysHtml = (!p.keys || !p.keys.length)
       ? '<div style="padding:16px 18px;color:var(--text-3);font-size:13px">No keys configured</div>'
@@ -323,16 +333,18 @@ function render(data) {
             '</tr>';
         }).join('') +
         '</tbody></table></div>';
-    return '<div class="accordion-item">' +
+    const isOpen = _openSet.has(p.name);
+    const openCls = isOpen ? ' open' : '';
+    return '<div class="accordion-item" data-provider="' + p.name + '">' +
       '<div class="accordion-hd" onclick="toggleAccordion(this)">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
       '<span style="font-weight:600;text-transform:capitalize">' + p.name + '</span>' +
       statusBadge(p.status) +
       '<span style="font-size:12px;color:var(--text-3)">' + p.active_keys + '/' + p.total_keys + ' keys active</span>' +
       '</div>' +
-      '<svg class="accordion-arrow" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
+      '<svg class="accordion-arrow' + openCls + '" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>' +
       '</div>' +
-      '<div class="accordion-body">' + keysHtml + '</div>' +
+      '<div class="accordion-body' + openCls + '">' + keysHtml + '</div>' +
       '</div>';
   }).join('');
 }
@@ -356,10 +368,15 @@ async function fetchStats() {
 document.addEventListener('DOMContentLoaded', function() {
   initCharts();
   fetchStats();
-  setInterval(fetchStats, 10000);
+  // Auto-refresh every 10s — but skip refresh when tab is hidden so the
+  // user doesn't see flicker / lose accordion state on return.
+  setInterval(function() {
+    if (!document.hidden) fetchStats();
+  }, 10000);
 });
 </script>
 <script src="/static/components/sidebar.js" defer></script>
 <script src="/static/components/ui.js" defer></script>
+<script src="/static/components/announcements.js" defer></script>
 </body>
 </html>

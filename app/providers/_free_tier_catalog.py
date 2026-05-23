@@ -110,11 +110,18 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             notes="paid only · Gemini 3 Pro frontier",
         ),
         ModelSpec(
+            id="gemini-3.1-flash-lite", context=1_048_576,
+            tags={"long-context", "balanced", "fast", "creative", "vision"},
+            rpm=15, rpd=1_500, quality=5, speed=5,
+            modality="multimodal",
+            notes="free · GA (was preview) · TOP free Gemini",
+        ),
+        ModelSpec(
             id="gemini-3.1-flash-lite-preview", context=1_048_576,
             tags={"long-context", "balanced", "fast", "creative", "vision"},
             rpm=15, rpd=1_500, quality=5, speed=5,
             modality="multimodal",
-            notes="free · newest fast preview · TOP free Gemini",
+            notes="free · preview bridge (active until May 25 2026, then discontinued)",
         ),
         ModelSpec(
             id="gemini-3-flash-preview", context=1_048_576,
@@ -629,35 +636,8 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
         ),
     ],
 
-    # ── Lightning.ai LitAI (welcome credits, then paid) ─────────────────
-    # NOTE: includes credit-only entries — kept for last-resort fallback.
-    "lightning": [
-        ModelSpec(
-            id="nvidia/nemotron-3-super", context=256_000,
-            tags={"long-context", "fast", "balanced"},
-            quality=3, speed=5,
-        ),
-        ModelSpec(
-            id="lightning-ai/gpt-oss-120b", context=131_072,
-            tags={"reasoning", "code", "creative", "large"},
-            quality=5, speed=3,
-        ),
-        ModelSpec(
-            id="deepseek/deepseek-v3.1", context=164_000,
-            tags={"reasoning", "code", "creative", "long-context", "large"},
-            quality=5, speed=3,
-        ),
-        ModelSpec(
-            id="lightning-ai/gpt-oss-20b", context=131_072,
-            tags={"balanced", "code", "reasoning"},
-            quality=3, speed=4,
-        ),
-        ModelSpec(
-            id="meta/llama-3.3-70b", context=128_000,
-            tags={"balanced", "reasoning", "creative", "large"},
-            quality=4, speed=3,
-        ),
-    ],
+    # ── Lightning.ai LitAI (REMOVED in v1.17.0) ────────────────────────
+    # Provider was deprecated; entries removed.
 
     # ── Routeway — :free-tagged subset (price_per_million_t == 0) ──────
     "routeway": [

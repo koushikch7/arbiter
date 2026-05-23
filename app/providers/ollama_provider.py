@@ -155,3 +155,26 @@ class OllamaProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for Ollama Cloud."""
+        from app.streaming.openai_stream import stream_openai_chat
+        requested = (request.model or "").strip()
+        model = requested if requested and requested.lower() != "auto" else self.default_model
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature,
+        }
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        async for chunk in stream_openai_chat(
+            url=OLLAMA_CLOUD_API, headers=headers, payload=payload,
+            provider_name="Ollama", timeout=120.0,
+        ):
+            yield chunk

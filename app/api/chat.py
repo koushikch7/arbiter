@@ -5,13 +5,31 @@ import httpx as _httpx
 import time as _time
 import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, ErrorResponse
 from app.models.schemas import Choice, Message, Usage
 from app.providers.base import RateLimitError, ProviderError
+from app.observability.persistent_log import log_api_call as _persist_api_call
 
 logger = logging.getLogger(__name__)
+
+
+def _client_ip(request) -> Optional[str]:
+    try:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
+        return request.client.host if request.client else None
+    except Exception:
+        return None
+
+
+async def _safe_persist(**kwargs):
+    try:
+        await _persist_api_call(**kwargs)
+    except Exception:
+        pass
 
 router = APIRouter()
 
@@ -132,19 +150,54 @@ async def chat_completions(
 
     The response includes ``X-Arbiter-Model-Used`` header showing the
     actual ``provider/model`` that fulfilled the request.
-    """
-    if body.stream:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Streaming is not yet supported. Set stream=false.",
-        )
 
+    Streaming
+    ─────────
+    Set ``stream: true`` in the request body to receive an OpenAI-compatible
+    Server-Sent Events stream (``text/event-stream``). The same routing,
+    fallback, key-rotation, and caching logic applies; the response is
+    delivered as a sequence of ``chat.completion.chunk`` events terminated
+    by ``data: [DONE]``.
+    """
     router_instance = request.app.state.router
+    _req_start = _time.monotonic()
+    _req_ip = _client_ip(request)
 
     # ── CF Worker direct proxy (model = "cfworker/{name}") ────────────────
     effective_model = force_model or body.model or ""
     if effective_model.startswith("cfworker/"):
-        return await _proxy_cfworker(effective_model, body, request)
+        if body.stream:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Streaming is not supported for cfworker/* direct proxies.",
+            )
+        _tok = (
+            getattr(request.state, "gateway_token_id", None)
+            or getattr(request.state, "gateway_token_name", None)
+            or "anon"
+        )
+        try:
+            _cf_resp = await _proxy_cfworker(effective_model, body, request)
+            _u = getattr(_cf_resp, "usage", None)
+            await _safe_persist(
+                token_id=_tok, method="POST", path="/v1/chat/completions",
+                model=effective_model, provider="cfworker", status_code=200,
+                latency_ms=int((_time.monotonic() - _req_start) * 1000),
+                prompt_tokens=getattr(_u, "prompt_tokens", None) if _u else None,
+                completion_tokens=getattr(_u, "completion_tokens", None) if _u else None,
+                cached=False, error=None, request_id=None, client_ip=_req_ip,
+            )
+            return _cf_resp
+        except HTTPException as e:
+            await _safe_persist(
+                token_id=_tok, method="POST", path="/v1/chat/completions",
+                model=effective_model, provider="cfworker",
+                status_code=e.status_code,
+                latency_ms=int((_time.monotonic() - _req_start) * 1000),
+                prompt_tokens=None, completion_tokens=None, cached=False,
+                error=str(e.detail), request_id=None, client_ip=_req_ip,
+            )
+            raise
 
     # ── Per-request routing overrides (headers + metadata) ────────────────
     priority_override        = request.headers.get("x-arbiter-priority")
@@ -165,13 +218,69 @@ async def chat_completions(
         if priority_override not in ("speed", "quality", "balanced"):
             priority_override = None
 
+    # Identify the calling gateway token (set by GatewayAuthMiddleware)
+    token_id = getattr(request.state, "gateway_token_id", None)
+    token_name = getattr(request.state, "gateway_token_name", None)
+    routing_policy = getattr(request.state, "gateway_routing_policy", "auto")
+    allowed_models = getattr(request.state, "gateway_allowed_models", None)
+    blocked_models = getattr(request.state, "gateway_blocked_models", None)
+
+    _tok_for_log = token_id or token_name or "anon"
+
+    # ── Streaming branch: return SSE response ─────────────────────────────
+    if body.stream:
+        agen = router_instance.route_stream(
+            body,
+            vendor=vendor,
+            force_model=force_model,
+            priority_override=priority_override,
+            prefer_provider_override=prefer_provider_override,
+            token_id=token_id,
+            token_name=token_name,
+            routing_policy=routing_policy,
+            allowed_models=allowed_models,
+            blocked_models=blocked_models,
+        )
+
+        async def _logged_stream():
+            _err = None
+            _status = 200
+            try:
+                async for chunk in agen:
+                    yield chunk
+            except Exception as e:
+                _err = str(e)
+                _status = 500
+                raise
+            finally:
+                await _safe_persist(
+                    token_id=_tok_for_log,
+                    method="POST",
+                    path="/v1/chat/completions",
+                    model=effective_model or "auto",
+                    provider=None,
+                    status_code=_status,
+                    latency_ms=int((_time.monotonic() - _req_start) * 1000),
+                    prompt_tokens=None,
+                    completion_tokens=None,
+                    cached=False,
+                    error=_err,
+                    request_id=None,
+                    client_ip=_req_ip,
+                )
+
+        return StreamingResponse(
+            _logged_stream(),
+            media_type="text/event-stream",
+            headers={
+                # Disable nginx buffering so chunks arrive as they're yielded
+                "Cache-Control":     "no-cache",
+                "Connection":        "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     try:
-        # Identify the calling gateway token (set by GatewayAuthMiddleware)
-        token_id = getattr(request.state, "gateway_token_id", None)
-        token_name = getattr(request.state, "gateway_token_name", None)
-        routing_policy = getattr(request.state, "gateway_routing_policy", "auto")
-        allowed_models = getattr(request.state, "gateway_allowed_models", None)
-        blocked_models = getattr(request.state, "gateway_blocked_models", None)
         response = await router_instance.route(
             body,
             vendor=vendor,
@@ -195,6 +304,22 @@ async def chat_completions(
                 chosen_provider = ""
         from fastapi.responses import JSONResponse as _JR
         payload = response.model_dump()
+        _usage = getattr(response, "usage", None)
+        await _safe_persist(
+            token_id=_tok_for_log,
+            method="POST",
+            path="/v1/chat/completions",
+            model=str(chosen_model) if chosen_model else (effective_model or "auto"),
+            provider=chosen_provider or None,
+            status_code=200,
+            latency_ms=int((_time.monotonic() - _req_start) * 1000),
+            prompt_tokens=getattr(_usage, "prompt_tokens", None) if _usage else None,
+            completion_tokens=getattr(_usage, "completion_tokens", None) if _usage else None,
+            cached=bool(getattr(response, "_arbiter_cached", False)),
+            error=None,
+            request_id=None,
+            client_ip=_req_ip,
+        )
         return _JR(
             content=payload,
             headers={
@@ -205,6 +330,13 @@ async def chat_completions(
         )
     except RateLimitError as e:
         logger.warning(f"All providers rate-limited: {e}")
+        await _safe_persist(
+            token_id=_tok_for_log, method="POST", path="/v1/chat/completions",
+            model=effective_model or "auto", provider=None, status_code=429,
+            latency_ms=int((_time.monotonic() - _req_start) * 1000),
+            prompt_tokens=None, completion_tokens=None, cached=False,
+            error=str(e), request_id=None, client_ip=_req_ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(e),
@@ -214,7 +346,15 @@ async def chat_completions(
         # "All keys on cooldown / exhausted" → 503 (service temporarily
         # unavailable) is more accurate than 502 (bad upstream response).
         msg = str(e)
-        if "on cooldown" in msg or "quota exhausted" in msg:
+        _sc = 503 if ("on cooldown" in msg or "quota exhausted" in msg) else 502
+        await _safe_persist(
+            token_id=_tok_for_log, method="POST", path="/v1/chat/completions",
+            model=effective_model or "auto", provider=None, status_code=_sc,
+            latency_ms=int((_time.monotonic() - _req_start) * 1000),
+            prompt_tokens=None, completion_tokens=None, cached=False,
+            error=msg, request_id=None, client_ip=_req_ip,
+        )
+        if _sc == 503:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=msg,
@@ -225,6 +365,13 @@ async def chat_completions(
         )
     except Exception as e:
         logger.exception(f"Unexpected error in chat completions: {e}")
+        await _safe_persist(
+            token_id=_tok_for_log, method="POST", path="/v1/chat/completions",
+            model=effective_model or "auto", provider=None, status_code=500,
+            latency_ms=int((_time.monotonic() - _req_start) * 1000),
+            prompt_tokens=None, completion_tokens=None, cached=False,
+            error=str(e), request_id=None, client_ip=_req_ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",

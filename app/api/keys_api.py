@@ -34,6 +34,26 @@ from pydantic import BaseModel
 
 from app.key_management.key_pool import KeyPool, PROVIDER_LIMITS
 from app.api.users_api import require_admin
+from app.observability.persistent_log import (
+    log_activity as _log_activity,
+    resolve_actor as _resolve_actor,
+    client_ip_of as _client_ip_of,
+)
+
+
+async def _audit(request: Request, action: str, target: str,
+                 before=None, after=None, note: str | None = None) -> None:
+    """Best-effort admin activity audit."""
+    try:
+        email, role = _resolve_actor(request)
+        await _log_activity(
+            actor_email=email, actor_role=role,
+            action=action, target=target,
+            before=before, after=after,
+            request_ip=_client_ip_of(request), note=note,
+        )
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/providers", tags=["Provider Management"])
@@ -53,10 +73,8 @@ _ENV_VAR_MAP: dict = {
     "cloudflare":  "CLOUDFLARE_API_KEYS",
     "cerebras":    "CEREBRAS_API_KEYS",
     "zai":         "ZAI_API_KEYS",
-    "lightning":   "LIGHTNING_API_KEYS",
     "routeway":    "ROUTEWAY_API_KEYS",
     "ollama":      "OLLAMA_API_KEYS",
-    "modal":       "MODAL_API_KEYS",
     "pollinations": "POLLINATIONS_API_KEYS",
     "nvidia":      "NVIDIA_API_KEYS",
 }
@@ -70,8 +88,8 @@ _PROVIDER_META = {
         "signup_url": "https://aistudio.google.com/app/apikey",
         "free":       True,
         "models": [
-            # Free-tier priority order (newest preview first, Apr 2026).
-            "gemini-3.1-flash-lite-preview",  # default — newest free preview
+            # Free-tier priority order (GA model first, May 2026).
+            "gemini-3.1-flash-lite",           # default — GA (was preview, GA May 25 2026)
             "gemini-2.5-flash",               # 2nd  — quality bump
             "gemini-2.5-flash-lite",          # 3rd  — highest RPD quota
             "gemini-3-flash-preview",         # backup
@@ -231,25 +249,6 @@ _PROVIDER_META = {
             "minimax",
         ],
     },
-    "modal": {
-        "label":      "Modal.com (Serverless GPU)",
-        "key_format": "endpoint_url|token",
-        "key_hint":   "https://myorg--app.modal.run|ak-abc123:xyz456",
-        "signup_url": "https://modal.com",
-        "free":       True,
-        "setup_steps": [
-            "Sign up at modal.com ($30 free credits/month)",
-            "pip install modal && modal setup",
-            "modal token new  # creates ~/.modal/config.toml",
-            "Deploy an LLM app via Settings → Modal GPU tab",
-            "Endpoint is auto-registered after successful deploy",
-        ],
-        "models": [
-            "meta-llama/Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "mistralai/Mistral-7B-Instruct-v0.3",
-        ],
-    },
     "zai": {
         "label":      "Z.ai / Zhipu AI",
         "key_format": "API key",
@@ -258,18 +257,6 @@ _PROVIDER_META = {
         "free":       True,
         "models": [
             "glm-4.7-flash", "glm-4.5-flash", "glm-z1-flash",
-        ],
-    },
-    "lightning": {
-        "label":      "Lightning.ai (LitAI)",
-        "key_format": "API key",
-        "key_hint":   "your-lightning-api-key",
-        "signup_url": "https://lightning.ai",
-        "free":       False,
-        "models": [
-            "nvidia/nemotron-3-super", "lightning-ai/gpt-oss-120b",
-            "deepseek/deepseek-v3.1", "lightning-ai/gpt-oss-20b",
-            "meta/llama-3.3-70b",
         ],
     },
     "routeway": {
@@ -471,8 +458,6 @@ async def _reload_provider(name: str, request: Request) -> None:
     from app.providers.cerebras         import CerebrasProvider
     from app.providers.huggingface      import HuggingFaceProvider
     from app.providers.pollinations     import PollinationsProvider
-    from app.providers.modal_provider   import ModalProvider
-    from app.providers.lightning_provider import LightningProvider
     from app.providers.zai_provider     import ZaiProvider
     from app.providers.routeway         import RoutewayProvider
     from app.providers.nvidia_provider  import NvidiaProvider
@@ -482,7 +467,6 @@ async def _reload_provider(name: str, request: Request) -> None:
         "openrouter": OpenRouterProvider, "cohere": CohereProvider,
         "cloudflare": CloudflareProvider, "cerebras": CerebrasProvider,
         "huggingface": HuggingFaceProvider, "pollinations": PollinationsProvider,
-        "modal": ModalProvider, "lightning": LightningProvider,
         "zai": ZaiProvider, "routeway": RoutewayProvider,
         "nvidia": NvidiaProvider,
     }
@@ -595,15 +579,17 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
 
     existing = _read_env_keys(name)
     if k in existing:
-        if name == "modal":
-            raise HTTPException(409,
-                "This endpoint is already registered. It may have been added "
-                "automatically when you deployed via the Modal GPU tab.")
         raise HTTPException(409, "Key already exists")
 
     existing.append(k)
     _write_env_keys(name, existing)
     await _reload_provider(name, request)
+
+    await _audit(
+        request, action="provider.key.add", target=f"provider:{name}",
+        before={"key_count": len(existing) - 1},
+        after={"key_count": len(existing), "added_key": k, "masked": _mask(k)},
+    )
 
     return JSONResponse(
         status_code=201,
@@ -625,6 +611,11 @@ async def remove_key(name: str, key_hash: str, request: Request) -> JSONResponse
 
     _write_env_keys(name, new_list)
     await _reload_provider(name, request)
+    await _audit(
+        request, action="provider.key.remove", target=f"provider:{name}",
+        before={"key_count": len(existing), "key_hash": key_hash},
+        after={"key_count": len(new_list)},
+    )
     return JSONResponse(content={"success": True})
 
 
@@ -655,6 +646,10 @@ async def enable_provider(name: str, request: Request) -> JSONResponse:
 
     await redis.delete(f"{_REDIS_DISABLED_PFX}{name}")
     await _reload_provider(name, request)
+    await _audit(
+        request, action="provider.enable", target=f"provider:{name}",
+        before={"enabled": False}, after={"enabled": True},
+    )
     return JSONResponse(content={"success": True, "provider": name, "enabled": True})
 
 
@@ -667,6 +662,10 @@ async def disable_provider(name: str, request: Request) -> JSONResponse:
     await redis.set(f"{_REDIS_DISABLED_PFX}{name}", "1")
     request.app.state.providers.pop(name, None)
     request.app.state.key_pools.pop(name, None)
+    await _audit(
+        request, action="provider.disable", target=f"provider:{name}",
+        before={"enabled": True}, after={"enabled": False},
+    )
     return JSONResponse(content={"success": True, "provider": name, "enabled": False})
 
 

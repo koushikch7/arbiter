@@ -49,7 +49,7 @@ _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,30}$")
 # Reserve the namespace used by built-in providers
 _RESERVED_NAMES = {
     "gemini", "groq", "openrouter", "cohere", "cloudflare", "cerebras",
-    "huggingface", "pollinations", "modal", "lightning", "zai", "routeway",
+    "huggingface", "pollinations", "zai", "routeway", "ollama", "nvidia",
 }
 
 

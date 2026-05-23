@@ -20,13 +20,6 @@ _NO_CACHE_HEADERS = {
 }
 
 
-@router.get("/api-docs", response_class=HTMLResponse, summary="Interactive API documentation")
-async def api_docs():
-    """Legacy route — redirects to /developer."""
-    from starlette.responses import RedirectResponse
-    return RedirectResponse("/developer")
-
-
 @router.get("/dashboard", response_class=HTMLResponse, summary="Web dashboard")
 async def dashboard(request: Request) -> HTMLResponse:
     """Serve the HTML dashboard."""

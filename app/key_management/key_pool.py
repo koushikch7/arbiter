@@ -16,6 +16,8 @@ Algorithm — "Weighted Availability Score":
 
 import hashlib
 import logging
+import asyncio
+import time
 from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -94,19 +96,6 @@ PROVIDER_LIMITS = {
         "daily": 1_000,       # no published daily limit; conservative sentinel
         # ↑ Update these after checking z.ai/manage-apikey/rate-limits in your dashboard
     },
-    "modal": {
-        "rpm":   60,          # serverless — no hard RPM limit; conservative sentinel
-        "tpm":   500_000,     # no TPM limit; sentinel
-        "daily": 100_000,     # ~$30/month free tier estimate on typical usage
-    },
-    "lightning": {
-        # Lightning.ai LitAI — pay-per-token, no documented RPM limit
-        # ~37M token welcome credit on signup
-        # Pricing: $0.09–$0.52 per million tokens
-        "rpm":   20,          # no published limit; conservative sentinel matching OpenRouter
-        "tpm":   500_000,     # no published TPM limit; sentinel
-        "daily": 1_000,       # no published daily limit; conservative sentinel
-    },
     "routeway": {
         # Routeway — unified gateway. Limits are not publicly documented in
         # the provider docs; conservative sentinel values. Update after
@@ -139,6 +128,13 @@ _W_HEALTH = 0.20   # success-rate / error-history bonus
 
 # Health factor decay
 _HEALTH_TTL = 1800     # 30 min sliding window for success/error counters
+
+# Predictive rate-limit threshold: skip a key once it has consumed this
+# fraction of its RPM or daily quota. Prevents 429s by routing earlier.
+# Tuned from 0.95 → 0.85 (audit finding #1) so the final 15% of capacity
+# is reserved as a safety margin for sliding-window drift and concurrent
+# requests, without thrashing the key pool when reset is imminent.
+_PREDICTIVE_THRESHOLD = 0.85
 
 
 def _hash_key(api_key: str) -> str:
@@ -183,6 +179,7 @@ class KeyPool:
         self,
         exclude: Optional[Set[str]] = None,
         required_tier: Optional[str] = None,
+        estimated_request_tokens: Optional[int] = None,
     ) -> Optional[str]:
         """
         Return the key with the highest weighted availability score,
@@ -191,28 +188,56 @@ class KeyPool:
         When *required_tier* is set (e.g. "paid"), only keys tagged with that
         tier are eligible.  Untagged keys default to "free".
 
+        When *estimated_request_tokens* is provided, keys whose remaining
+        TPM budget cannot serve a request of that size are deprioritised
+        (TPM-aware scoring — audit fix #9). This avoids picking a key that
+        would immediately 429 on a large prompt while another key with a
+        fresher TPM window is available.
+
+        Gap B (wait-for-reset): if every candidate is predictively
+        throttled on RPM and the next minute boundary is < 10 s away,
+        sleep until the window resets and reselect once.
+
         Returns None when every key is exhausted or on cooldown.
         """
         exclude = exclude or set()
-        best_key   : Optional[str] = None
-        best_score : float         = -1.0
 
-        for key in self.keys:
-            if key in exclude:
-                continue
-            if required_tier:
-                tier = self.key_tiers.get(key, "free")
-                # "paid" keys may also serve free models, but free keys may
-                # NOT serve paid models.
-                if required_tier == "paid" and tier != "paid":
+        async def _pick_once() -> tuple[Optional[str], float]:
+            best_key   : Optional[str] = None
+            best_score : float         = -1.0
+            for key in self.keys:
+                if key in exclude:
                     continue
-            score = await self._score_key(key)
-            logger.debug(
-                f"[{self.provider}] key={_hash_key(key)} score={score:.3f}"
-            )
-            if score > best_score:
-                best_score = score
-                best_key   = key
+                if required_tier:
+                    tier = self.key_tiers.get(key, "free")
+                    if required_tier == "paid" and tier != "paid":
+                        continue
+                score = await self._score_key(
+                    key, estimated_request_tokens=estimated_request_tokens
+                )
+                logger.debug(
+                    f"[{self.provider}] key={_hash_key(key)} score={score:.3f}"
+                )
+                if score > best_score:
+                    best_score = score
+                    best_key   = key
+            return best_key, best_score
+
+        best_key, best_score = await _pick_once()
+
+        # Gap B — if every key is RPM-throttled but the window is about to
+        # reset, briefly wait instead of falling through to the next
+        # provider. This prevents a needless cross-provider hop when the
+        # primary will be available within a fraction of a second.
+        if (best_key is None or best_score <= 0):
+            seconds_to_reset = 60 - (time.time() % 60)
+            if seconds_to_reset < 10 and await self._any_rpm_throttled(exclude, required_tier):
+                logger.info(
+                    "[%s] All keys RPM-throttled; waiting %.1fs for window reset (Gap B)",
+                    self.provider, seconds_to_reset,
+                )
+                await asyncio.sleep(seconds_to_reset + 0.1)
+                best_key, best_score = await _pick_once()
 
         if best_key is None or best_score <= 0:
             logger.warning(
@@ -330,7 +355,28 @@ class KeyPool:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _score_key(self, key: str) -> float:
+    async def _any_rpm_throttled(self, exclude: Set[str], required_tier: Optional[str]) -> bool:
+        """True if at least one eligible key is at/above its RPM threshold."""
+        for key in self.keys:
+            if key in exclude:
+                continue
+            if required_tier:
+                tier = self.key_tiers.get(key, "free")
+                if required_tier == "paid" and tier != "paid":
+                    continue
+            try:
+                h = _hash_key(key)
+                prefix = f"{self.provider}:{h}"
+                if await self.redis.get(f"{prefix}:failed"):
+                    continue
+                rpm_used = int(await self.redis.get(f"{prefix}:rpm") or 0)
+                if rpm_used >= self.rpm_limit * _PREDICTIVE_THRESHOLD:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _score_key(self, key: str, *, estimated_request_tokens: Optional[int] = None) -> float:
         """
         Compute the weighted availability score for *key*.
 
@@ -341,6 +387,11 @@ class KeyPool:
               + health_factor * 0.20
         where health_factor = (successes + 1) / (successes + errors + 2) over a
         30-min sliding window (Laplace-smoothed; defaults to 0.5 with no data).
+
+        When ``estimated_request_tokens`` is provided, the TPM availability
+        is recomputed against the *remaining* budget after the projected
+        request: a key whose remaining TPM cannot serve the request is
+        treated as TPM-saturated (avail=0) so a fresher key wins (#9).
         """
         h      = _hash_key(key)
         prefix = f"{self.provider}:{h}"
@@ -359,10 +410,41 @@ class KeyPool:
         if daily_used >= self.daily_limit:
             return -1.0
 
+        # ── Predictive throttle (v1.17.0) ───────────────────────────────
+        # Skip keys that are very close to their provider-published RPM or
+        # daily limit so the router picks the next candidate BEFORE we get
+        # a 429 from upstream. This eliminates the wait→429→backoff cycle.
+        # A 95% threshold leaves a small safety margin for sliding-window
+        # drift and concurrent requests.
+        if (
+            rpm_used   >= self.rpm_limit   * _PREDICTIVE_THRESHOLD
+            or daily_used >= self.daily_limit * _PREDICTIVE_THRESHOLD
+        ):
+            logger.debug(
+                f"[{self.provider}] key={h} predictively throttled "
+                f"(rpm {rpm_used}/{self.rpm_limit}, daily {daily_used}/{self.daily_limit})"
+            )
+            return -1.0
+
         # Compute availability ratios (clipped to [0, 1])
         rpm_avail   = max(0.0, 1.0 - rpm_used   / self.rpm_limit)
         tpm_avail   = max(0.0, 1.0 - tpm_used   / self.tpm_limit)
         daily_avail = max(0.0, 1.0 - daily_used / self.daily_limit)
+
+        # TPM-aware adjustment (#9): if the projected request size would
+        # blow through the remaining TPM budget, treat this key as
+        # TPM-saturated so the router picks a fresher one. We add a small
+        # safety margin (1.1×) so requests that just-barely fit aren't
+        # chosen if a less-loaded key is available.
+        if estimated_request_tokens and estimated_request_tokens > 0:
+            remaining_tpm = max(0, self.tpm_limit - tpm_used)
+            needed = int(estimated_request_tokens * 1.1)
+            if needed > remaining_tpm:
+                tpm_avail = 0.0
+            else:
+                # Scale TPM availability by how much headroom remains
+                # AFTER the request would be served.
+                tpm_avail = max(0.0, (remaining_tpm - needed) / self.tpm_limit)
 
         # Health factor: Laplace-smoothed success rate (defaults to 0.5 when no data).
         health = (ok_count + 1) / (ok_count + err_count + 2)

@@ -16,12 +16,18 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 8. [Managing API Keys via UI](#managing-api-keys-via-ui)
 9. [Image Generation](#image-generation)
 10. [Settings Dashboard](#settings-dashboard)
-11. [Modal GPU Deployment](#tab-modal-gpu-deploy)
-12. [Chat Playground](#chat-playground)
-13. [Log Viewer](#log-viewer)
-14. [CF Workers & Modal in the Gateway](#cf-workers--modal-in-the-gateway)
-15. [Best Practices](#best-practices)
-16. [Troubleshooting](#troubleshooting)
+11. [Chat Playground](#chat-playground)
+12. [Log Viewer](#log-viewer)
+13. [CF Workers in the Gateway](#cf-workers-in-the-gateway)
+14. [Best Practices](#best-practices)
+15. [Troubleshooting](#troubleshooting)
+16. [Persistent Logs (180-day)](#persistent-logs-180-day)
+17. [Admin Activity Audit](#admin-activity-audit)
+18. [Major-Change Dashboard Banners](#major-change-dashboard-banners)
+19. [Per-Token Rate Limiting](#per-token-rate-limiting)
+20. [Weekly AI Analysis Email](#weekly-ai-analysis-email)
+21. [Adaptive Routing (v1.18)](#adaptive-routing-v118)
+22. [Complexity-Aware Routing (v1.19)](#complexity-aware-routing-v119)
 
 ---
 
@@ -52,8 +58,7 @@ Each provider card shows:
 | Cerebras | API key | `csk-...` |
 | HuggingFace | Access Token | `hf_...` |
 | Z.ai / Zhipu AI | API key | `your-zai-key` |
-| Lightning.ai LitAI | API key | `your-lightning-key` |
-| **Modal.com** | `endpoint_url\|token` | `https://org--app.modal.run\|ak-abc:xyz` |
+| NVIDIA NIM | API key | `nvapi-...` |
 | Pollinations | API key (`sk_...` or `pk_...`) | [enter.pollinations.ai](https://enter.pollinations.ai/) |
 
 ### Cloudflare Workers AI Setup
@@ -190,27 +195,6 @@ Deploy and manage Cloudflare Workers that expose an OpenAI-compatible endpoint b
 - **Create new worker** — pick a model from the Cloudflare model list
 - **Delete workers** — optimistic UI (row dims immediately); reverts if deletion fails
 
-### Tab: Modal GPU Deploy
-Deploy open-weight models (LLaMA, Mistral, etc.) to Modal.com GPU instances directly from the UI.
-
-**Prerequisites:**
-1. Install the Modal CLI: `pip install modal`
-2. Authenticate: `modal setup` (opens browser for OAuth)
-3. Return to Settings → Modal GPU tab — the gateway shows a warning banner if CLI or token is missing
-
-**Deployment steps:**
-1. Go to **Settings → Modal GPU** tab
-2. Enter your Modal API token in the account section
-3. Select a model (e.g., `meta-llama/Llama-3.1-8B-Instruct`)
-4. Choose GPU type (A10G for smaller models, A100/H100 for larger)
-5. Click **Deploy** — logs stream in real time
-6. Once deployed, the endpoint is registered as a gateway provider
-
-**Cost tips:**
-- Containers auto-shutdown after idle (`scaledown_window = 300s`)
-- Model weights are cached in a `modal.Volume` — subsequent cold starts are faster
-- Use A10G for models up to ~13B; A100 for 70B+ models
-
 ### Tab: Cache
 - View hit rate, total hits/misses, and cached entry count
 - **Clear All Cache** — deletes all `arbiter:cache:*` keys from Redis (irreversible)
@@ -229,8 +213,6 @@ The dropdown is grouped into four categories that auto-populate at load time:
 |---|---|---|
 | **Gateway Providers** | `/v1/models` (standard providers) | `POST /v1/chat/completions?vendor={name}` |
 | **Cloudflare Workers** | Active workers from CF registry | `POST /v1/chat/completions` with `model: cfworker/{name}` |
-| **Modal Deployments** | Active deployments from Redis | Direct `POST {endpoint_url}/v1/chat/completions` |
-| **Modal Endpoints** | Registered Modal endpoints | Direct call to stored URL |
 
 ### Config panel
 
@@ -392,9 +374,9 @@ One card per configured provider showing **live quota usage** for each API key:
 
 ---
 
-## CF Workers & Modal in the Gateway
+## CF Workers in the Gateway
 
-Deployed CF Workers and Modal endpoints are automatically available as models in the gateway — no extra configuration needed.
+Deployed CF Workers are automatically available as models in the gateway — no extra configuration needed.
 
 ### Using a CF Worker via `/v1/chat/completions`
 
@@ -409,25 +391,10 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 The gateway looks up `my-worker-name` in the CF worker registry, finds its `workers.dev` URL, and proxies the request directly.
 
-### Using a Modal deployment via `/v1/chat/completions`
-
-Modal deployments also appear in `/v1/models` as `modal/{name}`. You can route to them the same way:
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "modal/my-llama",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-> For Modal, the Playground routes directly to the endpoint URL for lower latency. Routing via the gateway uses the registered URL stored in Redis.
-
 ### Discovering available models
 
 ```bash
-curl http://localhost:8000/v1/models | jq '.data[] | select(.owned_by | test("cloudflare-worker|modal"))'
+curl http://localhost:8000/v1/models | jq '.data[] | select(.owned_by == "cloudflare-worker")'
 ```
 
 ---
@@ -506,7 +473,7 @@ GEMINI_API_KEYS=paid-key#paid,free-key-1,free-key-2
   on a 429.
 
 **Free-tier models** (verified May 2026, priority order):
-- `gemini-3.1-flash-lite-preview` — ⭐ **Newest, fastest, default** ✅ **Recommended**
+- `gemini-3.1-flash-lite` — ⭐ **Newest, fastest, default** ✅ **Recommended**
 - `gemini-2.5-flash` — Quality bump, 10 RPM, 250 requests/day
 - `gemini-2.5-flash-lite` — Highest free RPD: 15 RPM, 1,000 requests/day
 - `gemini-3-flash-preview` — Frontier-class flash backup
@@ -832,7 +799,7 @@ Expected response:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-3.1-flash-lite-preview",
+    "model": "gemini-3.1-flash-lite",
     "messages": [
       {"role": "user", "content": "Hello! Who are you?"}
     ],
@@ -885,7 +852,7 @@ Expected response (all providers):
   "id": "chatcmpl-abc123",
   "object": "chat.completion",
   "created": 1709040000,
-  "model": "gemini-3.1-flash-lite-preview",
+  "model": "gemini-3.1-flash-lite",
   "choices": [
     {
       "index": 0,
@@ -1055,15 +1022,24 @@ Authorization: Bearer {gateway_api_key}  # Only if GATEWAY_API_KEY set
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `model` | string | (required) | Model ID (e.g., `gemini-2.5-flash-lite`) |
+| `model` | string | (required) | Model ID (e.g., `gemini-2.5-flash-lite`) or `"auto"` for smart routing |
 | `messages` | array | (required) | Array of message objects |
 | `messages[].role` | string | (required) | `user`, `assistant`, or `system` |
-| `messages[].content` | string | (required) | Message text |
-| `temperature` | float | 0.7 | Sampling temperature (0–2) — higher = more creative |
+| `messages[].content` | string \| array | (required) | Message text, or an array of content blocks for multimodal input |
+| `temperature` | float | 0.7 | Sampling temperature (0–2) — higher = more creative. Values ≤ 0.3 are cached. |
 | `top_p` | float | 1.0 | Nucleus sampling (0–1) — controls diversity |
 | `max_tokens` | integer | — | Max tokens to generate (optional) |
 | `stop` | array | — | Stop sequences (optional) |
-| `stream` | boolean | false | Streaming responses (not yet supported) |
+| `stream` | boolean | false | Enable SSE streaming — see [Streaming](#streaming) section |
+| `fallback` | string | — | `none` (strict pin) \| `same_provider` \| `chain`. Only applies when `model` is a specific model, not `"auto"`. |
+| `metadata` | object | — | Routing hints: `arbiter_intent`, `priority`, `prefer_provider` — see below |
+
+**Query parameters:**
+
+| Param | Description |
+|---|---|
+| `?vendor=<name>` | Pin a specific provider (e.g. `?vendor=groq`). Tried first; falls back normally on failure. |
+| `?force_model=<id>` | Override the `model` body field — bypasses automatic model selection entirely. |
 
 **Response (200 OK):**
 ```json
@@ -1098,6 +1074,98 @@ Authorization: Bearer {gateway_api_key}  # Only if GATEWAY_API_KEY set
 | 401 | `authentication_error` | Invalid gateway API key (if `GATEWAY_API_KEY` set) |
 | 429 | `rate_limit_error` | All accounts/models exhausted |
 | 500 | `server_error` | Gateway or provider error (check logs) |
+
+---
+
+## Streaming
+
+Arbiter fully supports **Server-Sent Events (SSE)** streaming for all 12 providers. Set `"stream": true` in any `/v1/chat/completions` request to receive the response as a real-time token stream. The format is identical to the OpenAI streaming API.
+
+> **Note:** `cfworker/*` proxy models do **not** support streaming and will return HTTP 400 if `stream: true` is requested.
+
+### Quick start — curl
+
+```bash
+curl -sS -N \
+  -H "Authorization: Bearer YOUR_GATEWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}],"stream":true}' \
+  http://localhost:8000/v1/chat/completions
+```
+
+### Python (openai SDK)
+
+```python
+import openai
+
+client = openai.OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="your-gateway-token",
+)
+
+with client.chat.completions.stream(
+    model="auto",
+    messages=[{"role": "user", "content": "Write a haiku about the sea."}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+print()
+```
+
+### JavaScript (openai SDK)
+
+```typescript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:8000/v1",
+  apiKey: "your-gateway-token",
+});
+
+const stream = await client.chat.completions.stream({
+  model: "auto",
+  messages: [{ role: "user", content: "Write a haiku about the sea." }],
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}
+console.log();
+```
+
+### SSE event format
+
+```
+: arbiter-model-used: gemini/gemini-2.5-flash-lite
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}
+
+data: [DONE]
+```
+
+| Event | Meaning |
+|---|---|
+| `: arbiter-model-used: <provider/model>` | SSE comment identifying the serving provider. `cache/<model>` = Redis cache hit. |
+| `: thinking / evaluating / generating / almost there` | Keepalive heartbeat every ~5 s. Invisible to OpenAI SDKs; prevents proxy idle-timeouts. |
+| `data: {...,"delta":{"content":"..."}}` | Text delta — append to your buffer. |
+| `data: {...,"finish_reason":"stop","usage":{...}}` | Final chunk — includes token usage when the provider reports it. |
+| `data: [DONE]` | Stream end marker. |
+| `data: {"error":{...}}` | Mid-stream error (rare — only if provider fails after first chunk sent). |
+
+### Caching with streaming
+
+Requests with `temperature ≤ 0.3` are cached in Redis. Cache reads replay instantly as a synthetic stream. Cache writes happen after `[DONE]`. A non-streaming request that populates the cache makes the next streaming request instant, and vice versa.
+
+### Fallback behaviour
+
+- **Pre-first-chunk failure** → Arbiter falls back transparently to the next provider (no stream emitted yet).
+- **Post-first-chunk failure** → A `data: {"error":{...}}` event is emitted and the stream ends. Arbiter cannot redirect after bytes have been sent.
+
+---
 
 ### Endpoint: GET `/v1/models`
 
@@ -1735,6 +1803,254 @@ Longer windows use progressively coarser granularity to maintain performance.
 - **Set DEBUG**: `LOG_LEVEL=DEBUG` in `.env`
 - **Test providers** directly before filing issues
 - **Check CHANGELOG.md** for known issues/workarounds
+
+---
+
+## Persistent Logs (180-day)
+
+*(Added in v1.18.0)*
+
+Arbiter writes three append-only JSONL log streams to `/app/data/logs/` (Docker-mounted volume). These persist across container restarts and are retained for **180 days** automatically.
+
+### Log streams
+
+| Stream | Path | Contents |
+|--------|------|----------|
+| API calls | `data/logs/api/YYYY-MM-DD.jsonl` | Every gateway request: token_id, provider, model, latency_ms, status_code, prompt/completion tokens, cached, client_ip |
+| Activity | `data/logs/activity/YYYY-MM-DD.jsonl` | Every admin mutation (HMAC-tagged, before/after diffs, secret-redacted) |
+| Errors | `data/logs/errors/YYYY-MM-DD.jsonl` | Structured upstream and internal errors by category |
+
+### Query via API (admin only)
+
+```bash
+# 7-day summary
+curl /api/logs/persistent/summary?days=7
+
+# Last 50 API call records (paginated)
+curl "/api/logs/persistent/api?days=1&limit=50&offset=0"
+
+# Admin activity audit trail (30 days)
+curl "/api/logs/persistent/activity?days=30"
+
+# Error records
+curl "/api/logs/persistent/errors?days=7"
+
+# Force retention prune
+curl -X POST /api/logs/persistent/prune
+```
+
+### Retention
+
+A background janitor runs daily at **03:00 UTC** and deletes files older than 180 days. You can trigger manual pruning via `POST /api/logs/persistent/prune`.
+
+### Security
+
+- Bearer tokens, API keys, and password-shaped values are **auto-redacted** before write using a `head4…tail4 + sha256[:12]` fingerprint.
+- All writes are best-effort — if disk is full the gateway continues serving traffic.
+
+---
+
+## Admin Activity Audit
+
+*(Added in v1.18.0)*
+
+Every admin mutation is recorded with an HMAC-SHA256 tamper-detection tag signed by `SESSION_SECRET_KEY`.
+
+### Audited actions
+
+| Endpoint | Actions logged |
+|----------|---------------|
+| `/api/providers/{name}/keys` | Key add, key remove |
+| `/api/providers/{name}/enable\|disable` | Provider enable/disable |
+| `/api/gateway/tokens` | Token create, delete, update, regenerate |
+| `/settings/routing` | Routing update, reset |
+| `/settings/cache` | Cache clear |
+| `/cloudflare/workers` | Worker create, delete |
+| `/api/announcements` | Banner create, delete |
+
+### Record format
+
+Each activity record includes:
+- `ts` — ISO 8601 timestamp
+- `actor_email` — Google SSO email or gateway token label
+- `actor_role` — admin / gateway
+- `action` — e.g. `provider.key.add`, `gateway_token.regenerate`
+- `target` — what was changed (provider name, token ID, etc.)
+- `before` / `after` — state diffs (secrets redacted)
+- `client_ip` — request origin
+- `hmac` — SHA-256 tag for tamper detection
+
+### Verifying integrity
+
+```python
+import hmac, hashlib, json
+SECRET = b"your-SESSION_SECRET_KEY"
+with open("data/logs/activity/2026-05-12.jsonl") as f:
+    for line in f:
+        rec = json.loads(line)
+        tag = rec.pop("hmac")
+        expected = hmac.new(SECRET, json.dumps(rec, sort_keys=True).encode(), hashlib.sha256).hexdigest()
+        assert hmac.compare_digest(tag, expected), f"TAMPERED: {rec['action']}"
+```
+
+---
+
+## Major-Change Dashboard Banners
+
+*(Added in v1.18.0)*
+
+Publish a banner notification visible to all dashboard users when a major upstream change occurs (e.g., model deprecation, API migration).
+
+### Create a banner (admin)
+
+```bash
+curl -X POST /api/announcements \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Gemini 3.1 Flash Lite GA",
+    "body": "Preview model discontinued May 25. Update to gemini-3.1-flash-lite.",
+    "severity": "warning",
+    "impacted_providers": ["gemini"],
+    "action_required": "Change model string to gemini-3.1-flash-lite",
+    "ttl_days": 3
+  }'
+```
+
+### Properties
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `title` | yes | Banner headline (3–200 chars) |
+| `body` | yes | Details (3–2000 chars) |
+| `severity` | no | `info` (blue), `warning` (yellow), `critical` (red). Default: `warning` |
+| `impacted_providers` | no | Provider names — Arbiter resolves which gateway tokens use them |
+| `action_required` | no | What the user should do |
+| `docs_url` | no | Link to documentation |
+| `ttl_days` | no | How long to display (1–30, default 3) |
+
+### Behaviour
+
+- Banners auto-expire after `ttl_days`.
+- Per-browser dismissal via localStorage (reappears on other browsers).
+- `GET /api/announcements/active` returns current banners with impacted token resolution.
+- `DELETE /api/announcements/{id}` retracts immediately.
+
+---
+
+## Per-Token Rate Limiting
+
+*(Added in v1.18.0)*
+
+Every `/v1/*` request is checked against a sliding-minute-window rate limit after Bearer validation.
+
+### Configuration
+
+| Setting | Default | How to change |
+|---------|---------|---------------|
+| Global default | 100 req/min | `GATEWAY_TOKEN_RATE_LIMIT_PER_MIN` in `.env` |
+| Per-token override | — | Set `request_limit_per_minute` via `PATCH /api/gateway/tokens/{id}` |
+| Disable for a token | — | Set `request_limit_per_minute: 0` |
+
+### Response headers on 429
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+```
+
+### Fail-open
+
+If Redis is unavailable, rate limiting is bypassed (fail-open) to avoid blocking legitimate traffic.
+
+---
+
+## Weekly AI Analysis Email
+
+*(Added in v1.18.0)*
+
+The existing daily report (22:00 IST / 16:30 UTC) is extended on **Mondays** with a weekly section. No separate weekly email is sent.
+
+### Weekly section includes
+
+- 7-day API call totals and error rate
+- p50 / p95 latency
+- Calls-by-provider breakdown
+- Errors-by-category breakdown
+- Admin activity change count
+- **AI-generated SRE insights** (4–6 bullet points routed through Arbiter's own router)
+
+### Configuration
+
+No extra configuration required. The weekly section is automatically appended to the Monday daily report. The AI analysis uses `model=auto, max_tokens=600, temperature=0.2`.
+
+---
+
+## Adaptive Routing (v1.18)
+
+*(Added in v1.18.0)*
+
+### Gap A — Unhealthy provider demotion
+
+Providers with a lifetime error rate ≥ 20% (minimum 100 requests sampled) are automatically moved to the **tail** of the routing chain. The demotion is cached for 60 seconds and re-evaluated continuously. This prevents cascading failures when a provider is experiencing sustained issues.
+
+### Gap B — Wait-for-RPM-reset
+
+When all keys for a provider are near their RPM cap and the minute boundary is within **10 seconds**, the gateway waits for reset instead of falling through to the next provider. This prevents unnecessary cross-provider fallbacks when the primary will be available imminently.
+
+### TPM-aware key scoring
+
+The key picker now considers each key's **tokens-per-minute** budget. If the estimated request size exceeds a key's remaining TPM headroom, that key is deprioritised regardless of its RPM score. The router passes its token estimate for every call.
+
+### Updated scoring formula
+
+```
+score = (rpm_avail × 0.25) + (tpm_avail × 0.15) + (daily_avail × 0.40) + (health × 0.20)
+```
+
+Where `tpm_avail` is now computed as:
+```
+remaining_tpm = max(0, tpm_limit - tpm_used)
+tpm_avail = max(0, (remaining_tpm - estimated_request_tokens × 1.1) / tpm_limit)
+```
+
+---
+
+## Complexity-Aware Routing (v1.19)
+
+*(Added in v1.19.0)*
+
+### How It Works
+
+Every incoming request is automatically analyzed for complexity before routing. The system scores 13 factors (message length, conversation depth, code complexity, expert-level indicators, etc.) and classifies the request into one of five tiers:
+
+| Tier | Example | Routed To |
+|------|---------|-----------|
+| **TRIVIAL** | "hi", "thanks" | Fastest 7-8B models (Cerebras, Groq) |
+| **SIMPLE** | "what's the capital of France?" | Fast models with decent quality |
+| **MODERATE** | "explain async/await in Python with examples" | Balanced 32B-70B models |
+| **COMPLEX** | "design a microservices architecture for..." | High-quality 70B-120B models |
+| **EXPERT** | Multi-requirement system design with constraints | Flagship 120B-671B models |
+
+### Smart Model Upgrade
+
+If your client (e.g., an agent framework) hardcodes a small model name like `llama-3.1-8b` but the request is actually complex, Arbiter **automatically upgrades** to a capable model while keeping the original as a fallback. You don't need to change your client code.
+
+### Provider Diversity
+
+The router guarantees that at least 4 different providers appear in the top candidates. This prevents traffic concentration on a single provider and improves resilience.
+
+### Load Distribution
+
+A deterministic per-minute jitter rotates traffic across providers, ensuring no single provider accumulates disproportionate load over time — even for identical request patterns.
+
+### What You Need to Do
+
+**Nothing.** Complexity-aware routing is fully automatic. Continue sending requests as before — the gateway handles the intelligence behind the scenes.
+
+If you want to force a specific model without upgrade, use the `@provider/model` syntax (e.g., `@cerebras/llama-3.1-8b`) which bypasses the smart upgrade.
 
 ---
 

@@ -1,10 +1,16 @@
 # Arbiter – Intelligent LLM Router & Gateway
 
-A self-hosted, production-ready gateway that aggregates **13+ LLM providers** (plus unlimited custom OpenAI-compatible endpoints) behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **weighted scoring, model hierarchies, and automatic fallback**.
+A self-hosted, production-ready gateway that aggregates **12+ LLM providers** (plus unlimited custom OpenAI-compatible endpoints) behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **complexity-aware scoring, model hierarchies, predictive rate limiting, and automatic fallback**.
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.
 
-> **v1.15.0 highlights (2026-05-03):** 🏗️ **SSOT Provider Registry** — Single source of truth dataclass registry for all 13 providers with limits, models, and metadata. 📧 **Daily Analytics Email** — Automated SMTP (Zoho) daily report at 06:00 UTC with KPIs, top models, provider health, and AI-classified error analysis. 🔐 **Gateway Routing Policies** — Per-token model routing: `auto` (default), `restricted` (only allowed models), `preferred` (priority models with auto fallback), plus per-token blocked models. Enterprise UI with model picker in Settings. 📝 **Developer Docs** — New `/developer` page replacing `/api-docs` with 6 tabs: Quick Start, Authentication, Endpoints, Routing, SDK Examples, Gateway Tokens. 👥 **User Invite via Email** — Admin can invite users via SMTP email from the Users page. 🕐 **5-Day Session TTL** — PWA sessions extended from 24h to 5 days to prevent mobile logout. 💾 **Backup Pagination** — Fixed infinite-row bug with 20-item paginated view.
+> **v1.19.0 (2026-05-23):** 🧠 **Intelligent Complexity-Aware Routing** — New request complexity analyzer (TRIVIAL→EXPERT) that matches request difficulty to model capability. Expert requests → 120B-671B flagship models; trivial → fast 7B models. **Smart Model Upgrade** — clients hardcoding weak models automatically get upgraded for complex requests. **Provider Diversity** — 7+ providers used across varied requests (was 2). **Load Distribution Jitter** — deterministic rotation prevents traffic concentration. **Fixed Gap A** — rate limits no longer count as errors; thresholds raised to prevent false-positive provider demotion. **Fixed Perf Sort** — no longer overrides quality-based ordering.
+>
+> **v1.18.0 highlights (2026-05-20):** 📁 **180-day persistent file logs** — API calls, admin activity (HMAC-tagged), and errors stored as daily-rotated JSONL with automatic 180-day retention janitor. 🔒 **Admin activity audit** — every key/token/settings mutation recorded with before/after diffs and SHA-256 HMAC tamper detection. 📢 **Dashboard banners** — `POST /api/announcements` publishes severity-coloured notices (3-day TTL) that identify impacted gateways. ⚡ **Adaptive routing** — unhealthy providers (≥20% error rate) auto-demoted; TPM-aware key scoring; wait-for-RPM-reset instead of cross-provider fallback. 🚦 **Per-token rate limiting** — sliding-minute window (default 100 rpm) with Retry-After headers. 📊 **Consolidated weekly email + AI analysis** — Monday report includes 7-day summary, p50/p95 latency, and an AI-generated SRE insights paragraph. 🗜️ **Cache gzip compression** — responses ≥512B compressed before Redis write. 📈 **Sorted-set error log** — O(log N) writes replacing old O(N) list.
+>
+> **v1.17.0 highlights (2026-05-12):** 🚀 **NVIDIA-first routing** — NVIDIA NIM promoted to the top of the default provider chain. 🛡️ **Predictive rate limiting** — keys are skipped at 95% of RPM/daily quota so the router routes around exhaustion *before* a 429 ever reaches the user. 🩺 **Weekly model health check** — Monday 22:30 IST cron probes every model and feeds results into the daily report. 📊 **Daily report enhancements** — high-error-rate provider alerts (≥25%) and weekly model-health summary in the email. 🌊 **Native streaming for custom providers** — `GenericOpenAIProvider.complete_stream()` removes the faux-stream fallback. 🔥 **Modal + Lightning removed** — provider count 14 → 12 after deprecating unreliable / paid-only providers.
+>
+> **v1.15.0 highlights (2026-05-03):** 🏗️ **SSOT Provider Registry** — Single source of truth dataclass registry for all providers with limits, models, and metadata. 📧 **Daily Analytics Email** — Automated SMTP (Zoho) daily report at 22:00 IST (16:30 UTC) with KPIs, top models, provider health, and AI-classified error analysis. 🔐 **Gateway Routing Policies** — Per-token model routing: `auto` (default), `restricted` (only allowed models), `preferred` (priority models with auto fallback), plus per-token blocked models. Enterprise UI with model picker in Settings. 📝 **Developer Docs** — New `/developer` page replacing `/api-docs` with 6 tabs: Quick Start, Authentication, Endpoints, Routing, SDK Examples, Gateway Tokens. 👥 **User Invite via Email** — Admin can invite users via SMTP email from the Users page. 🕐 **5-Day Session TTL** — PWA sessions extended from 24h to 5 days to prevent mobile logout. 💾 **Backup Pagination** — Fixed infinite-row bug with 20-item paginated view.
 >
 > **v1.14.3 highlights (2026-05-03):** 🟢 **NVIDIA NIM provider** — 13th provider added via build.nvidia.com. 5 verified free-tier models (Nemotron-3-Super 120B, Llama-3.3-70B, Mistral-Medium-3.5-128B, Mistral-Small-4-119B, Gemma-3-27B). 40 RPM, 1000 RPD, 131K context. Auto-discovery of 140+ upstream models. Playground SSO fix (session-based auth for `/v1/*` routes). Improved error handling for non-JSON upstream responses (Cloudflare HTML 502 pages). Provider timeout reduced 60→45s.
 >
@@ -14,7 +20,7 @@ Designed for **multi-agent frameworks** like OpenClaw that generate concurrent b
 >
 > **v1.14.0 highlights:** 📱 **Installable PWA** — Arbiter now installs to your phone's home-screen / desktop dock with its own icon, splash, and offline page (Android Chrome / iOS Safari / Edge / Samsung Internet).  Service worker with 3-tier strategy (network-only for APIs, stale-while-revalidate for static, network-first for HTML).  • 🛡️ **Tiered Cloudflare cache strategy**: sensitive routes (incl. all HTML pages) emit `no-store + Cloudflare-CDN-Cache-Control: no-store + Vary: Cookie`; static assets get `public, max-age=86400` at the edge — fixes the "logged-in email leaks to incognito visitors" bug while restoring CDN performance for CSS/JS/icons.  • 🎨 **Settings UI overhaul** — Models tab gets ranked priority pills + provider colour dots, Image Gen pulls model/size catalog live from `/v1/images/models`, Cache tab redesigned with KPI strip + effectiveness donut + config card.  • 📐 Full responsive layout for mobile + safe-area support for iOS notched devices.
 >
-> **v1.13.3 highlights:** 🆕 **Per-key tier tagging** (`#paid` / `#free` suffix in env vars) — Gemini paid keys reserved for frontier models (3.1-pro-preview), free keys for everyday traffic. Catalog reordered to prioritize gemini-3.1-flash-lite-preview as the top free model.
+> **v1.13.3 highlights:** 🆕 **Per-key tier tagging** (`#paid` / `#free` suffix in env vars) — Gemini paid keys reserved for frontier models (3.1-pro-preview), free keys for everyday traffic. Catalog reordered to prioritize gemini-3.1-flash-lite as the top free model.
 >
 > **v1.11.2 highlights:** ✨ **Ollama Cloud added** as an 11th provider (6 free :cloud-tagged MoE models — gpt-oss, deepseek-v3.1, glm-4.6, qwen3-coder, minimax-m2) · explicit model selection now pins exactly (was silently falling back to default) · HuggingFace no-longer-silent model rewrite · Pollinations User-Agent fix (Cloudflare was returning 502 to bare `httpx`) · Routeway 503 no longer cooldown-cascades the whole key · model-hierarchy cleanup: removed ~12 consistently-broken models across Gemini/Groq/OpenRouter/Cloudflare/Cerebras/HuggingFace/Pollinations/Routeway (see CHANGELOG for the pruning table).
 >
@@ -79,7 +85,7 @@ When a request is made:
 Example flow for a 50K-token prompt:
 ```
 Try Gemini (large context required):
-  ├─ Try gemini-3.1-flash-lite-preview with account 1 ✓ Success → return
+  ├─ Try gemini-3.1-flash-lite with account 1 ✓ Success → return
   │
   └─ (if account 1 hits 429): Try account 2, account 3, etc.
        └─ (if all accounts hit TPM): Try gemini-3-flash-preview
@@ -109,7 +115,7 @@ Try Gemini (large context required):
   - **Key Health Matrix**: live RPM/TPM/Daily quota gauges per API key with color thresholds
   - **Provider & model tables**: success rates, latency, tokens/req, error analysis
   - **Reset button** — clear all stats counters
-- **Interactive API Docs** (`/api-docs`) — Full playground with live request tester, provider table, authentication guide
+- **Developer Docs** (`/developer`) — Full developer reference with Quick Start, API endpoints, SDK examples, gateway token guide, and routing explanation
 - **Swagger UI** (`/docs`) — Standard OpenAPI documentation
 - **JSON Stats** (`/dashboard/stats`) — Programmatic access to metrics
 
@@ -146,7 +152,7 @@ Try Gemini (large context required):
 - **Light / dark mode** — system preference detection + manual toggle, persisted in `localStorage`
 - **Dashboard** — KPI cards, Chart.js line + doughnut charts, provider status table, key details accordion
 - **Analytics** (`/analytics`) — 6 KPI cards, 5 charts, key health matrix, provider/model tables
-- **API Docs** (`/api-docs`) — 5-tab layout with live playground, provider table, endpoint reference
+- **Developer Docs** (`/developer`) — 6-tab layout: Quick Start, Authentication, Endpoints, Routing, SDK Examples, Gateway Tokens
 - **Settings** (`/settings`) — API Keys, routing, model overrides, image gen, Cloudflare Workers, cache, **Gateway Keys**
 - **Image Generation** (`/images`) — dedicated page with prompt, model selector, count, size, and seed controls
 - **Playground** (`/playground`) — vendor + model drill-down with free/paid badges and rate limit display
@@ -158,27 +164,15 @@ Try Gemini (large context required):
 - **Permission validation** — `POST /cloudflare/validate` returns a full permission matrix showing which of Scripts Read / Workers AI Execute / Subdomain access your token has
 - **Admin endpoints** — `/cloudflare/workers/*` routes
 
-### ✅ Modal.com One-Click vLLM Deploy
-- **Deploy open-weight models** on Modal GPU infrastructure (T4, L4, A10G, A100, H100) directly from the Settings UI
-- **Modal 1.0 compatible** — uses `@app.function` + `@modal.concurrent` + `@modal.web_server` + subprocess vLLM (fixed from deprecated `@app.cls` + `allow_concurrent_inputs`)
-- **vLLM's built-in OpenAI server** — serves `/v1/chat/completions` natively; no custom FastAPI wrapper needed
-- **Live log streaming** — deploy logs streamed from the `modal deploy` subprocess in real time
-- **Cost-efficient** — uses `scaledown_window` so containers shut down when idle; `modal.Volume` caches model weights across cold starts
-- **GPU catalog**: T4 ($0.59/hr), L4 ($0.80/hr), A10G ($1.10/hr), A100-40GB ($2.10/hr), A100-80GB ($2.50/hr), H100 ($3.95/hr)
-- **Model catalog**: Llama 3.1/3.2/3.3, Mistral 7B, Qwen 2.5 7B/14B/72B, Gemma 2 9B, DeepSeek R1 Distill, and more
-- **Pre-flight check** — `GET /modal/deploy/check` verifies CLI installation and token before attempting a deploy
-- **Gateway integration** — deployed endpoints are registered as a provider and usable via `/v1/chat/completions`
-- **Admin endpoints** — `/modal/deploy/*` routes
-
 ### ✅ Chat Playground (`/playground`)
-- **Interactive chat UI** for testing every endpoint — CF workers, Modal deployments, and all gateway providers
+- **Interactive chat UI** for testing every endpoint — CF workers and all gateway providers
 - **Two-level model selection** — choose vendor, then pick a specific model with full metadata:
   - **Free / paid badges** per model
   - **Rate limit display** — RPM, TPM, RPD shown on selection
   - **Context window** size per model
   - Models loaded live from `/api/models/info` (only configured vendors shown)
-- **Endpoint selector** grouped by type: Gateway Providers, Cloudflare Workers, Modal Deployments
-- **Per-endpoint routing**: CF workers route through the gateway (`cfworker/{name}`), Modal deployments hit the endpoint directly, providers go through `/v1/chat/completions`
+- **Endpoint selector** grouped by type: Gateway Providers, Cloudflare Workers
+- **Per-endpoint routing**: CF workers route through the gateway (`cfworker/{name}`), providers go through `/v1/chat/completions`
 - **Config panel** — system prompt, temperature, max tokens; latency badge on each response
 - **Markdown rendering** — assistant replies rendered as full GFM markdown (headers, code blocks, tables, lists, links)
 
@@ -189,9 +183,9 @@ Try Gemini (large context required):
 - **Expansion state preserved on refresh** — expanded log rows stay expanded even as new records load
 - **API**: `GET /logs/records`, `GET /logs/loggers`, `DELETE /logs/clear`
 
-### ✅ CF Workers & Modal — Gateway Routing
+### ✅ CF Workers — Gateway Routing
 - **`cfworker/{name}` model prefix** — send `model: cfworker/my-worker` to `/v1/chat/completions` to proxy directly to that worker's `workers.dev` URL
-- **Virtual models in `/v1/models`** — active CF workers (`cfworker/{name}`) and Modal deployments (`modal/{name}`) appear in the model list for easy selection
+- **Virtual models in `/v1/models`** — active CF workers (`cfworker/{name}`) appear in the model list for easy selection
 - **Stale-delete fix** — Redis deletion marker (120 s TTL) suppresses workers during Cloudflare API propagation delay after deletion
 
 ### ✅ API Key Validation (all providers)
@@ -237,11 +231,10 @@ Gateway starts successfully **even without Redis**:
                   │        FastAPI Gateway              │
                   │  /v1/chat/completions               │
                   │  /v1/images/generations             │
-                  │  /dashboard · /api-docs · /settings │
+                  │  /dashboard · /developer · /settings  │
                   │  /playground · /logs                │
                   │  /api/providers/* (key mgmt)        │
                   │  /cloudflare/workers/* (mgr)        │
-                  │  /modal/deploy/* (GPU deploy)       │
                   └─────────────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
@@ -254,14 +247,14 @@ Gateway starts successfully **even without Redis**:
     ┌───┴──────────────────┼──────────────────────┬┴───┐
     ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼
 ┌──────────────────────────────────────────────────────────┐
-│  Gemini │ Groq │ Cloudflare │ Cerebras │ OpenRouter    │
-│  Provider  Adapter  Workers AI  Inference  Cohere │ Z.ai │
-│      HuggingFace  │  Pollinations  │  Modal vLLM        │
+│  NVIDIA │ Gemini │ Groq │ Cerebras │ Z.ai │ Cloudflare │
+│  OpenRouter │ Cohere │ HuggingFace │ Pollinations │     │
+│  Ollama │ Routeway │ + Custom OpenAI-compatible          │
 └──────────────────────────────────────────────────────────┘
     │
     ▼
 ┌──────────────────────────────────────────────────────────┐
-│  External Provider APIs (8 vendors, 40+ models)         │
+│  External Provider APIs (12 vendors, 60+ models)         │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -429,9 +422,6 @@ open http://localhost:8000/dashboard
 | `ZAI_API_KEYS` | (empty) | Comma-separated Z.ai / Zhipu API keys |
 | `HUGGINGFACE_API_KEYS` | (empty) | Comma-separated HuggingFace tokens |
 | `POLLINATIONS_API_KEYS` | (empty) | Leave empty (free, no key needed) |
-| **Modal** | | |
-| `MODAL_TOKEN_ID` | (empty) | Modal token ID (from `modal token new`) — auto-loaded at startup |
-| `MODAL_TOKEN_SECRET` | (empty) | Modal token secret — auto-loaded at startup |
 
 ### Rate Limits
 
@@ -483,7 +473,9 @@ OpenAI-compatible chat completion endpoint.
   "top_p": 1.0,
   "max_tokens": 1024,
   "stop": ["END"],
-  "stream": false
+  "stream": false,
+  "fallback": "chain",
+  "metadata": {"priority": "quality"}
 }
 ```
 
@@ -513,13 +505,17 @@ OpenAI-compatible chat completion endpoint.
 ```
 
 **Parameters:**
-- `model` (string, required) — Model ID (e.g., `gemini-2.5-flash`, `llama-3.3-70b-versatile:free`)
-- `messages` (array, required) — Message objects with `role` and `content`
-- `temperature` (float, default 0.7) — Sampling temperature (0.0–2.0)
+- `model` (string, required) — Model ID (e.g., `gemini-2.5-flash`, `llama-3.3-70b-versatile:free`) or `"auto"`
+- `messages` (array, required) — Message objects with `role` and `content` (`content` may be a string or a multimodal content array)
+- `temperature` (float, default 0.7) — Sampling temperature (0.0–2.0). Values ≤ 0.3 are cached.
 - `top_p` (float, default 1.0) — Nucleus sampling (0.0–1.0)
 - `max_tokens` (integer, optional) — Max tokens to generate
 - `stop` (array, optional) — Stop sequences
-- `stream` (boolean, default false) — **Not yet supported**
+- `stream` (boolean, default false) — Enable SSE streaming (see [Streaming](#streaming) below)
+- `fallback` (string, optional) — `none` | `same_provider` | `chain` — cross-provider fallback policy when pinning a specific model
+- `metadata` (object, optional) — Routing hints: `arbiter_intent` (code|reasoning|creative|fast|balanced), `priority` (speed|quality|balanced), `prefer_provider` (provider name)
+
+**Query parameters:** `?vendor=<name>` pins a provider; `?force_model=<id>` overrides model selection.
 
 **Errors:**
 
@@ -529,6 +525,30 @@ OpenAI-compatible chat completion endpoint.
 | 401 | `authentication_error` | Missing/invalid API key (if `GATEWAY_API_KEY` set) |
 | 429 | `rate_limit_error` | All providers/accounts exhausted |
 | 500 | `server_error` | Internal gateway error |
+
+---
+
+## Streaming
+
+Arbiter supports **Server-Sent Events (SSE)** streaming for all 12 providers. Set `"stream": true` in any `/v1/chat/completions` request.
+
+```bash
+curl -sS -N \
+  -H "Authorization: Bearer YOUR_GATEWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}],"stream":true}' \
+  http://localhost:8000/v1/chat/completions
+```
+
+The OpenAI Python/JS SDKs work without any changes — pass `stream=True` to `.create()` or use `.stream()`. LangChain `streaming=True` also works.
+
+Each `data:` line carries a standard `chat.completion.chunk` object. The stream ends with `data: [DONE]`. An SSE comment ``: arbiter-model-used: provider/model`` identifies the serving provider.
+
+> `cfworker/*` models do **not** support streaming and return HTTP 400 if `stream: true`.
+
+See [USERGUIDE.md](USERGUIDE.md#streaming) for full documentation, including fallback behaviour, caching semantics, and JS/Python streaming examples.
+
+---
 
 ### GET `/v1/models`
 
@@ -541,13 +561,12 @@ List available models. Includes standard provider models **plus** virtual models
   "data": [
     {"id": "gemini-2.5-flash-lite", "object": "model", "created": 1700000000, "owned_by": "gemini"},
     {"id": "llama-3.3-70b-instruct:free", "object": "model", "created": 1700000000, "owned_by": "openrouter"},
-    {"id": "cfworker/my-worker", "object": "model", "created": 1700000000, "owned_by": "cloudflare-worker"},
-    {"id": "modal/my-llama", "object": "model", "created": 1700000000, "owned_by": "modal"}
+    {"id": "cfworker/my-worker", "object": "model", "created": 1700000000, "owned_by": "cloudflare-worker"}
   ]
 }
 ```
 
-Use `model: cfworker/<name>` to route a request directly to a deployed CF Worker. Use `model: modal/<name>` for a Modal deployment registered in the gateway.
+Use `model: cfworker/<name>` to route a request directly to a deployed CF Worker.
 
 ### GET `/health`
 

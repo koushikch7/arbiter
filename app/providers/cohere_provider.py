@@ -21,7 +21,7 @@ Source: https://docs.cohere.com/docs/models
 import logging
 import time
 import uuid
-from typing import List
+from typing import List, Optional
 
 import httpx
 
@@ -158,3 +158,127 @@ class CohereProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    # ------------------------------------------------------------------
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for Cohere v2 chat.
+
+        Translates Cohere's typed event stream (``message-start``,
+        ``content-delta``, ``message-end``) into OpenAI ``chat.completion.chunk``
+        envelopes.
+        """
+        import json as _json
+        import httpx as _httpx
+
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        cohere_msgs = self._build_cohere_messages(request.messages)
+
+        payload: dict = {
+            "model":       model,
+            "messages":    cohere_msgs,
+            "temperature": request.temperature,
+            "p":           request.top_p,
+            "stream":      True,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type":  "application/json",
+            "Accept":        "application/json",
+        }
+
+        chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        created  = int(time.time())
+        role_emitted = False
+        last_finish: Optional[str] = None
+        last_usage: Optional[dict] = None
+
+        try:
+            async with _httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream("POST", COHERE_CHAT_URL, json=payload, headers=headers) as resp:
+                    if resp.status_code == 429:
+                        body = await resp.aread()
+                        raise RateLimitError(f"Cohere 429: {body[:300].decode('utf-8','replace')}")
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        raise ProviderError(
+                            f"Cohere {resp.status_code}: {body[:500].decode('utf-8','replace')}"
+                        )
+
+                    async for raw in resp.aiter_lines():
+                        if not raw:
+                            continue
+                        # Cohere emits both bare JSON lines and SSE-style "data: ..." lines
+                        if raw.startswith(":"):
+                            continue
+                        data_str = raw[5:].strip() if raw.startswith("data:") else raw.strip()
+                        if not data_str or data_str == "[DONE]":
+                            continue
+                        try:
+                            ev = _json.loads(data_str)
+                        except _json.JSONDecodeError:
+                            continue
+
+                        ev_type = ev.get("type", "")
+                        if ev_type == "message-start":
+                            if not role_emitted:
+                                yield {
+                                    "id":      chunk_id,
+                                    "object":  "chat.completion.chunk",
+                                    "created": created,
+                                    "model":   model,
+                                    "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                                }
+                                role_emitted = True
+                        elif ev_type == "content-delta":
+                            try:
+                                text_piece = ev["delta"]["message"]["content"]["text"]
+                            except (KeyError, TypeError):
+                                text_piece = ""
+                            if text_piece:
+                                if not role_emitted:
+                                    yield {
+                                        "id":      chunk_id,
+                                        "object":  "chat.completion.chunk",
+                                        "created": created,
+                                        "model":   model,
+                                        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                                    }
+                                    role_emitted = True
+                                yield {
+                                    "id":      chunk_id,
+                                    "object":  "chat.completion.chunk",
+                                    "created": created,
+                                    "model":   model,
+                                    "choices": [{"index": 0, "delta": {"content": text_piece}, "finish_reason": None}],
+                                }
+                        elif ev_type == "message-end":
+                            delta = ev.get("delta") or {}
+                            finish_raw = delta.get("finish_reason") or ev.get("finish_reason") or "COMPLETE"
+                            last_finish = "stop" if finish_raw in ("COMPLETE", "MAX_TOKENS") else str(finish_raw).lower()
+                            usage_raw = delta.get("usage") or {}
+                            billed    = usage_raw.get("billed_units") or {}
+                            if billed:
+                                pt = int(billed.get("input_tokens",  0) or 0)
+                                ct = int(billed.get("output_tokens", 0) or 0)
+                                last_usage = {
+                                    "prompt_tokens":     pt,
+                                    "completion_tokens": ct,
+                                    "total_tokens":      pt + ct,
+                                }
+        except _httpx.RequestError as exc:
+            raise ProviderError(f"Cohere stream network error: {exc}") from exc
+
+        final_chunk = {
+            "id":      chunk_id,
+            "object":  "chat.completion.chunk",
+            "created": created,
+            "model":   model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": last_finish or "stop"}],
+        }
+        if last_usage:
+            final_chunk["usage"] = last_usage
+        yield final_chunk

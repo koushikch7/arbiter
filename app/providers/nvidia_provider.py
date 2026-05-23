@@ -160,3 +160,41 @@ class NvidiaProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for NVIDIA NIM."""
+        from app.streaming.openai_stream import stream_openai_chat
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        for src, dst in zip(request.messages, messages):
+            try:
+                src_extra = src.model_dump(exclude_unset=True)
+            except Exception:
+                src_extra = {}
+            for k in ("tool_calls", "tool_call_id", "name", "function_call", "refusal"):
+                if k in src_extra and src_extra[k] is not None:
+                    dst[k] = src_extra[k]
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature, "top_p": request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+        try:
+            extras = request.model_dump(exclude_unset=True)
+        except Exception:
+            extras = {}
+        for k in ("tools", "tool_choice", "parallel_tool_calls", "response_format",
+                  "seed", "logprobs", "top_logprobs", "user", "n", "presence_penalty",
+                  "frequency_penalty", "logit_bias"):
+            if k in extras and extras[k] is not None:
+                payload[k] = extras[k]
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        async for chunk in stream_openai_chat(
+            url=NVIDIA_API_BASE, headers=headers, payload=payload,
+            provider_name="NVIDIA", timeout=120.0,
+        ):
+            yield chunk

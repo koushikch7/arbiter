@@ -33,6 +33,31 @@ class BaseProvider(ABC):
         """Send a chat completion request to the provider and return an OpenAI-compatible response."""
         ...
 
+    # ------------------------------------------------------------------
+    # Optional: native SSE streaming
+    # ------------------------------------------------------------------
+    async def complete_stream(
+        self, request: "ChatCompletionRequest", api_key: str
+    ):
+        """
+        Optional — yield ``chat.completion.chunk`` dicts as they arrive
+        from the upstream provider over SSE.
+
+        Subclasses that wrap an OpenAI-compatible upstream should override
+        this to call ``app.streaming.openai_stream.stream_openai_chat()``.
+        Providers that do not implement this raise ``NotImplementedError``
+        and the router automatically falls back to "faux streaming" — i.e.
+        await ``complete()`` and replay the result as SSE chunks.
+
+        Implementation note: the unreachable ``yield`` makes this an async
+        generator so callers can safely do ``aiter = provider.complete_stream(...)``;
+        the ``NotImplementedError`` then surfaces on the first ``__anext__()``.
+        """
+        raise NotImplementedError(
+            f"{self.name!r} does not implement native SSE streaming"
+        )
+        yield  # pragma: no cover  — makes this an async generator
+
     def supports_model(self, model: str) -> bool:
         """Return True if this provider supports the given model ID."""
         return model in self.models

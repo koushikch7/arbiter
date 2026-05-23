@@ -5,6 +5,25 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from app.routing.router import VENDOR_MODEL_HIERARCHY, _DEFAULT_PROVIDER_ORDER
 from app.api.users_api import require_admin
+from app.observability.persistent_log import (
+    log_activity as _log_activity,
+    resolve_actor as _resolve_actor,
+    client_ip_of as _client_ip_of,
+)
+
+
+async def _audit(request: Request, action: str, target: str,
+                 before=None, after=None, note: str | None = None) -> None:
+    try:
+        email, role = _resolve_actor(request)
+        await _log_activity(
+            actor_email=email, actor_role=role,
+            action=action, target=target,
+            before=before, after=after,
+            request_ip=_client_ip_of(request), note=note,
+        )
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -45,10 +64,20 @@ async def get_routing(request: Request) -> JSONResponse:
 async def save_routing(request: Request) -> JSONResponse:
     redis = request.app.state.redis
     body = await request.json()
+    _before_order_raw = await redis.get(_KEY_ORDER)
+    _before_order = json.loads(_before_order_raw) if _before_order_raw else list(_DEFAULT_PROVIDER_ORDER)
     if "provider_order" in body:
         await redis.set(_KEY_ORDER, json.dumps(body["provider_order"]))
     for p, models in body.get("model_overrides", {}).items():
         await redis.set(f"{_KEY_MODELS}{p}", json.dumps(models))
+    await _audit(
+        request, action="settings.routing.update", target="settings:routing",
+        before={"provider_order": _before_order},
+        after={
+            "provider_order": body.get("provider_order"),
+            "model_overrides": body.get("model_overrides"),
+        },
+    )
     return JSONResponse({"status": "saved"})
 
 
@@ -64,6 +93,10 @@ async def reset_routing(request: Request) -> JSONResponse:
             await redis.delete(f"{_KEY_MODELS}{p}")
         except Exception:
             pass
+    await _audit(
+        request, action="settings.routing.reset", target="settings:routing",
+        after={"provider_order": list(_DEFAULT_PROVIDER_ORDER)},
+    )
     return JSONResponse({"status": "reset", "provider_order": list(_DEFAULT_PROVIDER_ORDER)})
 
 
@@ -77,6 +110,10 @@ async def clear_cache(request: Request) -> JSONResponse:
             count += 1
         except Exception:
             pass
+    await _audit(
+        request, action="settings.cache.clear", target="settings:cache",
+        after={"entries_deleted": count},
+    )
     return JSONResponse({"status": "cleared", "entries_deleted": count})
 
 

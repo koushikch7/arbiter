@@ -618,8 +618,6 @@ const PC = {
   cerebras:   '#e66a2c',
   huggingface:'#ffcc4d',
   zai:        '#22d3ee',
-  lightning:  '#fbbf24',
-  modal:      '#7c3aed',
   pollinations:'#34d399',
   qwen:       '#a78bfa',
   unknown:    '#6b7280',
@@ -982,33 +980,61 @@ function render(data) {
 }
 
 // ── Filter logic ─────────────────────────────────────────────────────────
-let _filtersPopulated = false;
+// Repopulate the dropdowns whenever the data refreshes — but preserve any
+// existing user selection so auto-refresh doesn't reset their filter choice.
+function _syncSelect(sel, options, allLabel) {
+  if (!sel) return;
+  const current = sel.value;
+  // Build a map of {value: textContent} for new options
+  const wanted = new Map();
+  wanted.set('', allLabel);
+  options.forEach(function(o) { wanted.set(o.value, o.label); });
+
+  // Remove options that are no longer present
+  Array.from(sel.options).forEach(function(opt) {
+    if (!wanted.has(opt.value)) sel.removeChild(opt);
+  });
+  // Update existing + append new (preserve order: All first, then alphabetical)
+  const existing = new Set(Array.from(sel.options).map(function(o) { return o.value; }));
+  Array.from(wanted.entries()).forEach(function(entry) {
+    const value = entry[0];
+    const label = entry[1];
+    let opt = sel.querySelector('option[value="' + CSS.escape(value) + '"]');
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = value;
+      sel.appendChild(opt);
+    }
+    opt.textContent = label;
+  });
+  // Restore previous selection if still valid
+  if (wanted.has(current)) sel.value = current;
+}
+
 function populateFilterOptions(data) {
-  if (_filtersPopulated) return;
-  const tokSel = document.getElementById('filter-token');
+  const tokSel  = document.getElementById('filter-token');
   const provSel = document.getElementById('filter-provider');
-  const modSel = document.getElementById('filter-model');
+  const modSel  = document.getElementById('filter-model');
   if (!tokSel || !provSel || !modSel) return;
 
-  (data.tokens || []).forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = (t.name || t.id) + ' (' + (t.requests||0) + ' req)';
-    tokSel.appendChild(opt);
-  });
-  (data.providers || []).forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.name;
-    opt.textContent = p.name;
-    provSel.appendChild(opt);
-  });
-  (data.models || []).slice(0, 80).forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.model_id;
-    opt.textContent = m.model_id;
-    modSel.appendChild(opt);
-  });
-  _filtersPopulated = (data.tokens||[]).length + (data.providers||[]).length > 0;
+  _syncSelect(tokSel,
+    (data.tokens || []).map(function(t) {
+      return { value: t.id, label: (t.name || t.id) + ' (' + (t.requests || 0) + ' req)' };
+    }),
+    'All tokens'
+  );
+  _syncSelect(provSel,
+    (data.providers || []).map(function(p) {
+      return { value: p.name, label: p.name };
+    }),
+    'All providers'
+  );
+  _syncSelect(modSel,
+    (data.models || []).slice(0, 80).map(function(m) {
+      return { value: m.model_id, label: m.model_id };
+    }),
+    'All models'
+  );
 }
 
 function applyFilters() {

@@ -149,11 +149,15 @@ def classify(request) -> Intent:
     if scores[0][1] > 0:
         return scores[0][0]  # type: ignore[return-value]
 
-    # 5. Very short prompts → quick chat (only if no other signal fired).
-    #    Use a strict char threshold so genuine questions stay "balanced".
-    if fast_hits > 0 or len(last.strip()) < 30:
+    # 5. Very short prompts → quick chat ONLY if the message is truly trivial.
+    #    Don't aggressively classify as "fast" — many good questions are short.
+    #    Only classify as "fast" if explicit speed keywords matched OR the
+    #    message is extremely short AND looks like a greeting/filler.
+    if fast_hits > 0:
         return "fast"
 
+    # Short messages that don't match any keyword → "balanced" (not "fast")
+    # This allows the complexity analyzer to route them appropriately.
     return "balanced"
 
 

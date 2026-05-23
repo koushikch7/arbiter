@@ -6,6 +6,335 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.19.0] – 2026-05-23 — Intelligent Complexity-Aware Routing
+
+### Added — Complexity Analyzer (`app/routing/complexity_analyzer.py`)
+
+- New module that analyses request content to determine complexity tier:
+  - **TRIVIAL** — greetings, yes/no, one-word answers (→ fast/small models)
+  - **SIMPLE** — short factual Q&A, quick translations
+  - **MODERATE** — multi-step instructions, moderate code, explanations
+  - **COMPLEX** — deep reasoning, large code generation, creative long-form
+  - **EXPERT** — multi-domain expert analysis, research-level problems, advanced architectures
+- Scoring based on 13 factors: message length, conversation depth, system prompt sophistication, task complexity markers, expert-level indicators, code complexity, multi-component signals, reasoning depth, quality signals, code blocks, list items, intent classification, and numbered requirements.
+
+### Changed — Smart Auto-Router (`app/routing/auto_router.py`)
+
+- **Complexity-aware scoring**: Models are now scored based on how well their quality matches the request complexity. Expert requests strongly prefer quality-5 models; trivial requests prefer fast models.
+- **Dynamic quality/speed weights**: Controlled by complexity tier instead of static values. TRIVIAL: speed_w=30/quality_w=8. EXPERT: quality_w=45/speed_w=5.
+- **Quota-capacity bonus** (max 12): Models with generous RPD/RPM limits get a scoring boost (e.g., Cloudflare 300 RPM, Groq 14400 RPD → full bonus; Cohere 33 RPD → minimal bonus). Naturally steers traffic to high-capacity providers, preserving scarce quota for unique capabilities.
+- **Provider diversity guarantee**: `_ensure_provider_diversity()` ensures top-8 candidates include 5+ different providers by interleaving under-represented providers.
+- **Model-level load jitter**: Deterministic per-minute jitter (±6 points) now uses `provider:model:minute` hash, enabling both inter-provider and intra-provider rotation of same-quality models.
+- **Complexity-triggered priority override**: COMPLEX/EXPERT requests with priority="balanced" auto-escalate to priority="quality".
+- **Expanded INTENT_TAGS**: "creative" now includes "reasoning" fallback; "balanced" includes "reasoning" and "creative".
+
+### Changed — Complexity Analyzer Improvements
+
+- Added "design a ..." pattern to complex task markers (catches "design a distributed cache", "design a database schema", etc.)
+- Added distributed systems terminology to expert markers: consistent hashing, replication, sharding, fault tolerance, circuit breaker, load balancing, CAP theorem, eventual/strong consistency, Raft, Paxos, CRDT, vector clocks.
+
+### Changed — Smart Model Upgrade (Router)
+
+- **Automatic model upgrade for explicit requests**: When a client explicitly requests a weak model (quality ≤ 2) but the request is MODERATE or higher complexity, the router transparently upgrades to capability-matched models while keeping the original as a fallback.
+- This ensures clients with hardcoded model names (e.g., `llama3.1-8b`) still get high-quality responses for complex queries.
+
+### Changed — Intent Classifier (`app/routing/intent_classifier.py`)
+
+- Removed aggressive "fast" classification for short messages (< 30 chars no longer auto-classified as "fast"). Only explicit speed keywords trigger "fast" intent. This prevents real questions from being routed to the smallest models.
+
+### Fixed — Performance Sort (`router.py::_sort_candidates_by_perf`)
+
+- **Replaced disruptive full re-sort with demote-only logic**: The previous implementation grouped candidates by provider and re-sorted within groups by historical success rate, which completely overrode the auto-router's quality-based ordering. Now it only demotes models with ≥30% error rate to the tail, preserving the complexity-aware ordering for everything else.
+
+### Fixed — Gap A Health Check (`router.py::_get_unhealthy_providers`)
+
+- **Rate-limited responses no longer count as errors**: Previously, 429 rate-limit responses were included in the error count, causing providers with normal free-tier rate limiting (Cloudflare, Groq, HuggingFace, Pollinations) to be permanently marked unhealthy.
+- **Raised thresholds**: 200 requests minimum (was 100), 30% error rate (was 20%).
+- **Uses pipeline**: Single Redis round-trip for all provider stats.
+
+### Performance Results (measured)
+
+- **Provider distribution**: 9 different providers in top-8 routing chains (was 2)
+- **Model diversity**: 21 unique models in routing candidates (was 2)
+- **Expert requests**: 120B-671B models selected, 8K-40K char responses (was: 8B model, ~500 char responses)
+- **Trivial requests**: 7-20B models, < 50 chars, < 500ms (efficient resource use)
+- **Quota preservation**: High-capacity providers (Cloudflare 300 RPM, Cerebras, Groq 14.4K RPD) absorb bulk traffic; scarce-quota providers (Cohere, OpenRouter) reserved for unique capabilities
+- **Zero compromise on quality**: Complex requests → flagship models (gpt-oss-120b, qwen-3-235b, deepseek-v3.1-671b, nemotron-3-super-120b)
+
+---
+
+## [1.18.1] – 2026-05-12 — Gemini 3.1 Flash Lite GA migration
+
+### Breaking upstream change
+
+- Google discontinued `gemini-3.1-flash-lite-preview` effective **May 25, 2026** (email notification received May 12, 2026).
+- Renamed model identifier to `gemini-3.1-flash-lite` (GA) across all runtime code:
+  - `app/providers/gemini.py` — `default_model`, `models` list, module docstring.
+  - `app/providers/_free_tier_catalog.py` — `ModelSpec.id` updated.
+  - `app/api/keys_api.py` — Gemini provider model list.
+- Old preview identifier added to the "Deprecated / shut-down" section in `gemini.py`.
+- No prompt or logic changes required (identical underlying model per Google's notice).
+
+---
+
+## [1.18.0] – 2026-05-20 — Persistent logs, activity audit, dashboard banners, adaptive routing
+
+### 📁 Persistent 180-day file logs
+
+- New module `app/observability/persistent_log.py` writes three JSONL streams under `/app/data/logs/` (mounted volume):
+  - `api/YYYY-MM-DD.jsonl` — every gateway request (token, provider, latency, status, prompt/completion tokens, cached, client IP).
+  - `activity/YYYY-MM-DD.jsonl` — every admin mutation (HMAC-tagged, secret-redacted, before/after snapshots).
+  - `errors/YYYY-MM-DD.jsonl` — structured error records for trend analysis.
+- 180-day retention enforced by a daily janitor task (03:00 UTC).
+- Secret-shaped strings (`sk-…`, `AIza…`, `cfut_…`, etc.) are auto-redacted with a `head4…tail4 + sha256[:12]` fingerprint.
+- `summarise(days=7)` aggregates by provider/token/error category for the weekly email.
+
+### 🔒 Admin activity audit log
+
+- All mutation endpoints now write an HMAC-tagged audit record:
+  - `keys_api.py` — add/remove key, enable/disable provider.
+  - `gateway_tokens_api.py` — create/delete/update/regenerate token.
+  - `settings_api.py` — routing update/reset, cache clear.
+  - `cloudflare_manager.py` — worker create/delete.
+  - `announcements_api.py` — banner create/delete.
+- Records include actor email (from SSO), role, action, target, before/after, request IP, and a SHA-256 HMAC tag keyed by `SESSION_SECRET_KEY`.
+
+### 📢 Major-change dashboard banner
+
+- New service `app/services/announcements.py` + API `app/api/announcements_api.py`.
+- `POST /api/announcements` (admin only) — publishes a banner that stays live for 3 days (configurable 1–30).
+- `GET /api/announcements/active` — read endpoint consumed by the dashboard component `static/components/announcements.js`.
+- Banner lists *impacted gateways* — resolved on read from `arbiter:stats:token:*:provider:*:requests` so the data is always current.
+- Severities: `info` / `warning` / `critical` with matching styling.
+- Per-browser dismissal via localStorage; entries reappear on other browsers so notices aren't silently lost.
+
+### ⚡ Adaptive routing (Gap A & B)
+
+- **Gap A** — `app/routing/router.py` now demotes providers with lifetime error rate ≥ 20 % (≥100 requests) to the tail of the candidate chain. Computed once per minute, cached on the router instance.
+- **Gap B** — `app/key_management/key_pool.py` now waits up to 10 s for the next minute boundary when *all* keys for a provider are predictively RPM-throttled, instead of hopping to the next provider. Prevents needless cross-provider fallbacks when the primary will be available imminently.
+- **#9 TPM-aware scoring** — `get_best_key()` now accepts `estimated_request_tokens` so a key whose remaining TPM budget cannot serve the request is deprioritised. The router passes its existing token estimate for every call.
+
+### 🚦 Per-token rate limiting (#12)
+
+- `app/middleware/auth.py` enforces a sliding-minute-window rate limit on every `/v1/*` request after Bearer validation.
+- Configurable globally via `GATEWAY_TOKEN_RATE_LIMIT_PER_MIN` (default 100). Per-token override via `request_limit_per_minute` on the token record; set to `0` to disable for an individual token.
+- Returns 429 with `Retry-After` + `X-RateLimit-Limit` / `X-RateLimit-Remaining` headers.
+
+### 📊 Consolidated weekly email + AI analysis
+
+- The daily report (`app/services/daily_report.py`) now generates the *weekly* recap as an **additional section in the existing 22:00 IST email** on Mondays — no separate weekly email is sent.
+- Weekly section includes 7-day API totals, p50/p95 latency, calls-by-provider, errors-by-category, admin-change count, and an AI-generated insights paragraph routed through Arbiter's own router.
+- Error-rate alerts refined (#8): minimum sample size raised from 20 → 100 requests; rate-limited responses now excluded from the error count so 429 bursts don't trigger outage alerts.
+- Rate-limit saturation alerts (#14): the report now flags providers where >50 % of weekly health probes were rate-limited.
+- Secret-shaped strings (#11) are stripped from outbound HTML before send.
+
+### 🩺 Health probe tagging (#14)
+
+- `app/services/model_health.py` now records `rate_limited: true` as a separate field on probe results instead of folding it into the error message. Summary tracks `rate_limited` and `rate_limited_by_provider`.
+
+### 🛠 Performance & hygiene (#15, #16)
+
+- **Cache compression** — `app/cache/cache.py` now gzip+base64-compresses values ≥ 512 bytes (magic prefix `GZ1:`); legacy plain-JSON entries still read transparently.
+- **Sorted-set error log** — `app/observability/stats.py::record_error_detail()` migrated from LPUSH+LTRIM (O(N) per write) to ZADD + ZREMRANGEBYSCORE (O(log N), score-based 48 h eviction). Reads fall back to the legacy list until those entries roll off.
+
+### 📦 New files
+- `app/observability/persistent_log.py`
+- `app/services/announcements.py`
+- `app/api/announcements_api.py`
+- `static/components/announcements.js`
+
+### ✏️ Modified files
+- `app/main.py` (janitor lifecycle, announcements router, version bump)
+- `app/config.py` (`GATEWAY_TOKEN_RATE_LIMIT_PER_MIN`)
+- `app/middleware/auth.py` (rate limiter + 429 helper)
+- `app/api/chat.py` (per-request `log_api_call` instrumentation, streaming + CF Worker paths)
+- `app/api/keys_api.py`, `app/api/settings_api.py`, `app/api/gateway_tokens_api.py`, `app/api/cloudflare_manager.py` (activity audit)
+- `app/routing/router.py` (Gap A unhealthy-provider demotion, TPM-aware key-picker call)
+- `app/key_management/key_pool.py` (Gap B wait-for-reset, TPM-aware scoring)
+- `app/cache/cache.py` (gzip compression)
+- `app/observability/stats.py` (sorted-set error log)
+- `app/services/daily_report.py` (refined alerts, rate-limit alerts, weekly summary, AI analysis, sanitiser)
+- `app/services/model_health.py` (rate-limited flag in probe records)
+- `static/dashboard.html`, `static/arbiter.css`, `static/components/sidebar.js`
+
+---
+
+## [1.17.0] – 2026-05-13 — NVIDIA-first routing, predictive rate limiting, weekly model health
+
+### 🔥 Provider Cleanup — Modal & Lightning removed
+
+- Removed the **Modal.com** and **Lightning.ai LitAI** providers from the platform. Both were unreliable / no longer aligned with the gateway's free-tier philosophy.
+- Deleted files: `app/providers/modal_provider.py`, `app/providers/lightning_provider.py`, `app/api/modal_deploy.py`, `app/api/modal_manager.py`.
+- Stripped from `app/main.py` (registration), `app/config.py` (settings), `app/providers/provider_registry.py`, `app/routing/router.py` (`_DEFAULT_PROVIDER_ORDER`), `app/api/keys_api.py`, `app/api/models_api.py`, `app/middleware/auth.py`, `app/api/custom_providers_api.py`, `app/streaming/openai_stream.py`, `app/providers/_free_tier_catalog.py`, `app/key_management/key_pool.py`.
+- Frontend: removed the entire **Modal GPU** tab from `static/settings.html` (~550 lines DOM+JS), Modal endpoint type from `static/playground.html`, `lightning`/`modal` colours from `static/analytics.html`, and `/modal/` from the service worker cache list.
+- `.env` `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` commented out (preserved for forensics).
+- Provider count: **14 → 12**.
+
+### 🚀 NVIDIA prioritisation
+
+- NVIDIA NIM moved to the **top** of `_DEFAULT_PROVIDER_ORDER` in `app/routing/router.py`:
+
+  ```
+  nvidia → gemini → groq → cerebras → zai → cloudflare → openrouter
+         → cohere → huggingface → pollinations → ollama → routeway
+  ```
+
+  Highest-quality free-tier models (Llama 3.3 70B, Nemotron, DeepSeek R1) are now first-choice when their NVIDIA-hosted variant exists.
+
+### 🛡️ Predictive rate limiting (avoids 429 backoff cycles)
+
+- `app/key_management/key_pool.py::_score_key()` now treats any key whose **RPM or daily usage ≥ 95% of the provider limit** as ineligible (score = −1.0).
+- The router transparently picks the next candidate **before** the upstream returns a 429 — eliminating the wait → 429 → backoff round-trip and reducing average request latency on saturated providers.
+- New constant `_PREDICTIVE_THRESHOLD = 0.95` (tunable).
+
+### 🩺 Weekly model health check
+
+- New module **`app/services/model_health.py`** runs every **Monday 17:00 UTC (22:30 IST)** and probes every model on every configured provider with a 1-token `"Hi"` completion.
+- Results stored at `arbiter:health:model:{provider}:{model}` (14-day TTL) with `{status, last_checked, error, latency_ms}`.
+- Rate-limited probes are treated as healthy (not flagged).
+- Scheduler wired into the app lifespan in `app/main.py` alongside the daily report.
+
+### 📊 Daily report enhancements
+
+- New **"High Error-Rate Providers"** banner — any provider with lifetime error rate ≥ 25% (min 20 requests) is surfaced in red so you can decide whether to keep or retire it.
+- New **"Weekly Model Health Check"** section — lists every model that failed the latest probe with the upstream error message; summary count of working vs. failing.
+- Both sections appear above the existing failure-analysis block in the daily email.
+
+### 🌊 Native streaming for custom providers (Bug 3 fix)
+
+- `app/providers/generic_openai.py::complete_stream()` added — user-added custom OpenAI-compatible providers now use the shared `stream_openai_chat()` helper instead of falling back to the router's faux-stream path.
+- Anthropic-auth-scheme custom providers still fall back (their SSE format differs).
+
+### 🧹 Misc
+
+- `APP_VERSION` → `1.17.0` (`app/main.py`, `static/components/sidebar.js`).
+- HuggingFace catalogue trimmed earlier in this session (3 stale models removed) is now considered part of the v1.17.0 cycle.
+
+### 🔍 Post-release re-audit fixes (same cycle)
+
+- **Predictive throttle tuned** — threshold lowered from 0.95 → **0.85** in `app/key_management/key_pool.py` so the gateway stops thrashing through the last 15% of every key's RPM/daily window when reset is imminent.
+- **Weekly health check bounded concurrency** — `app/services/model_health.py` now uses `asyncio.Semaphore(4)` and `asyncio.gather()` so Monday's probe pass doesn't saturate every provider's RPM and trigger a 429 cascade on real user traffic.
+- **SSRF guard on custom providers** — `_validate_base_url()` in `app/providers/generic_openai.py` rejects non-http(s) schemes, GCP/AWS metadata hostnames, and any host that resolves to a loopback/private/link-local IP. Stops admin-side social-engineering attacks that pivot through the gateway into internal networks.
+- **Pooled httpx client for custom providers** — module-level `_HTTPX_CLIENT` with `Limits(max_connections=100, max_keepalive_connections=40)` reused across all `GenericOpenAIProvider` instances; closed cleanly on shutdown via `aclose_http_client()` registered in `app/main.py`. Eliminates per-request TCP-pool churn that previously could exhaust ephemeral ports under load.
+- **Redis pipelining in router hot path** — `_get_disabled_providers()` and `_get_custom_config()` in `app/routing/router.py` now batch their `GET`s into a single `pipeline().execute()`, saving ~24 sequential round-trips per uncached lookup.
+
+
+
+### 📝 Documentation
+
+- **`static/developer.html`** — Endpoints tab now includes full SSE documentation:
+  - Request parameters table (all fields including `stream`)
+  - SSE event format with annotated example (`arbiter-model-used` comment, heartbeat keepalives, delta chunks, final chunk with usage, `[DONE]`)
+  - Streaming caveats (caching semantics, fallback behaviour, `cfworker/*` exclusion)
+  - SDK streaming examples added to the SDKs tab: Python `openai`, JS `openai`, raw `curl`, LangChain `streaming=True`
+
+- **`USERGUIDE.md`**:
+  - `stream` parameter row updated: was "not yet supported", now "Enable SSE streaming — see Streaming section"
+  - New **Streaming** section added after the `/v1/chat/completions` endpoint docs — covers curl, Python SDK, JS SDK, SSE event format table, caching, and fallback semantics
+
+- **`README.md`**:
+  - `stream` parameter bullet updated: was "**Not yet supported**", now links to Streaming section
+  - New **Streaming** section added with curl quick-start, SDK note, and link to full USERGUIDE docs
+
+### ✨ Playground
+
+- **Stream toggle** added to the Parameters card (`stream-toggle` checkbox)
+  - When checked, gateway requests (`/v1/chat/completions`) are sent with `stream: true`
+  - Response is consumed via `ReadableStream` / `getReader()` — text tokens appear progressively in the chat bubble as they arrive
+  - `cfworker/*` endpoints: toggle is silently ignored (non-streaming always used, matching API behaviour)
+  - Modal direct-endpoint calls: non-streaming (Modal endpoints may not expose SSE)
+  - Duplicate message prevention: streamed messages are pushed to `_messages` inline; the outer handler skips the push on return (`_streamed` flag)
+
+---
+
+## [1.16.2] – 2026-05-12 — SSE Phase 3: native streaming for all 14 providers
+
+### ✨ New features
+
+- **Native SSE streaming for the remaining 6 OpenAI-compatible providers** via the shared `stream_openai_chat()` helper:
+  - `pollinations`, `routeway`, `ollama_provider`, `zai_provider`, `lightning_provider`, `modal_provider`
+  - Each provider's `complete_stream()` mirrors its `complete()` payload exactly (model resolution, headers, auth split for Modal `endpoint_url|token`, optional `Bearer` for Pollinations free tier, etc).
+  - Routeway adds `stream_options.include_usage` for real token counts in the final chunk.
+
+- **Format translators for the 2 non-OpenAI providers** (true native SSE, not faux):
+  - **`GeminiProvider.complete_stream()`** — calls `streamGenerateContent?alt=sse`, parses Google's JSON chunks (`candidates[0].content.parts[*].text`, `finishReason`, `usageMetadata`), and emits OpenAI-shape `chat.completion.chunk` events with `delta.role` → `delta.content` → final `finish_reason` + `usage`.
+  - **`CohereProvider.complete_stream()`** — calls Cohere v2 `/chat` with `stream: true`, handles the typed event stream (`message-start`, `content-delta`, `message-end`) and translates `delta.message.content.text` → OpenAI `delta.content`, plus `usage.billed_units.{input,output}_tokens` → OpenAI `usage.{prompt,completion}_tokens`.
+
+### 📊 Coverage matrix (now complete)
+
+| Provider | Native SSE | Strategy |
+|---|---|---|
+| cerebras, cloudflare, groq, huggingface, nvidia, openrouter | ✅ (Phase 2) | OpenAI passthrough via `stream_openai_chat()` |
+| pollinations, routeway, ollama, zai, lightning, modal | ✅ (Phase 3) | OpenAI passthrough via `stream_openai_chat()` |
+| gemini | ✅ (Phase 3) | Google `streamGenerateContent` → OpenAI translator |
+| cohere | ✅ (Phase 3) | Cohere v2 typed events → OpenAI translator |
+
+**14 / 14 providers** now stream natively with true low TTFT. The v1.16.0 faux-stream fallback path is retained as a safety net for any provider that raises pre-first-chunk (network errors, future provider additions, etc).
+
+### 🔧 Internal
+
+- `BaseProvider.complete_stream()` is no longer reachable for the shipped providers — every provider in production overrides it.
+- Verified live: `✓ [stream-native] gemini/gemini-2.5-flash-lite tokens=19 latency=4589ms` and `✓ [stream-native] cohere/command-r-plus-08-2024 tokens=7 latency=1015ms`.
+- **APP_VERSION** bumped to `1.16.2`. Sidebar version label updated.
+
+---
+
+## [1.16.1] – 2026-05-12 — SSE Phase 2: native per-provider streaming
+
+### ✨ New features
+
+- **Native SSE streaming** for 6 OpenAI-compatible providers (true low-TTFT, no chunked replay):
+  - `cerebras`, `cloudflare`, `groq_provider`, `huggingface`, `nvidia_provider`, `openrouter`
+  - Each provider now exposes `complete_stream()` that POSTs with `"stream": true` and yields chunks as the upstream emits them via the new shared helper `app/streaming/openai_stream.py::stream_openai_chat()` (`httpx.AsyncClient.stream()` + `aiter_lines()` SSE parser).
+  - Groq + OpenRouter add `stream_options.include_usage` so the final chunk carries real token counts (no estimation needed for stats / cache).
+  - **Backward compatible**: providers without `complete_stream()` (Gemini, Cohere, Pollinations, Routeway, Ollama, Z.ai, Lightning, Modal) cleanly raise `NotImplementedError` and the router transparently falls back to v1.16.0's faux-stream path.
+
+### 🔀 Router changes
+
+- `Router.route_stream()` now tries native streaming first per (provider, model) attempt. Behavior:
+  - **First chunk reached** → commit to native; emit each chunk as `data: {...}` immediately, accumulate text+usage on the side for cache + stats, finish with `data: [DONE]`.
+  - **Pre-first-chunk failure** (`NotImplementedError`, `RateLimitError`, `ProviderError`, network) → fall back to faux-stream via `complete()` (existing v1.16.0 behavior — same fallback semantics, same heartbeats).
+  - **Mid-stream failure** (after first chunk sent) → emit OpenAI-style `data: {"error":...}` event + `[DONE]` and stop. Cannot fall back transparently because bytes already left the gateway (matches OpenAI's own SSE behavior).
+- Native success path **reconstructs a synthetic `ChatCompletionResponse`** from accumulated text + final usage chunk and writes it to the cache (only for `temperature ≤ 0.3`), so a subsequent identical call still gets an instant cached replay.
+- Heartbeats (`: thinking / evaluating / generating / almost there`) still emit while waiting for the first native chunk, keeping nginx/Cloudflare connections warm.
+
+### 🔧 Internal
+
+- New `app/streaming/openai_stream.py` (~135 LOC) — shared SSE parser + chunk extractor utilities (`extract_delta_content`, `extract_finish_reason`, `extract_usage`).
+- `BaseProvider.complete_stream()` is now an async generator stub that raises `NotImplementedError` on first iteration (cleaner than a coroutine that raises before iteration).
+- **APP_VERSION** bumped to `1.16.1`. Sidebar version label updated.
+
+### 📝 Notes
+- Verified live with NVIDIA: `✓ [stream-native] nvidia/nemotron-3-super-120b-a12b tokens=70 latency=1015ms` — chunks arrived incrementally with real per-token deltas, including NVIDIA-specific `reasoning` field (forwarded verbatim).
+- Phase 3 (future, optional): add native streaming to Pollinations / Routeway / Ollama / Z.ai / Lightning / Modal (mechanical — same shared helper). Gemini + Cohere need format translators since they don't speak OpenAI SSE natively.
+
+---
+
+## [1.16.0] – 2026-05-10 — SSE Streaming + Phase 7 audit fixes
+
+### ✨ New features
+
+- **OpenAI-compatible SSE streaming** (`stream: true`) — `POST /v1/chat/completions` now supports Server-Sent Events for **all 14 providers**.
+  - **Architecture**: new `app/streaming/sse.py` module with chunk envelopes, heartbeat helpers, and a faux-stream replayer; new `Router.route_stream()` async generator mirroring `Router.route()` (same routing/fallback/key-rotation/caching logic).
+  - **"Graceful streaming" Phase 1 strategy**: every provider works immediately because `route_stream()` calls the existing `provider.complete()`, emits `: thinking / evaluating / generating / almost there` SSE comment heartbeats every 5 s while waiting (keeps nginx/Cloudflare from idle-killing the connection), then replays the response as `chat.completion.chunk` deltas in word-bursts terminated by `data: [DONE]`. TTFT is unchanged from non-streaming, but the UX, OpenAI-SDK compatibility, and infra-friendliness are full. Native per-provider SSE for true low TTFT will land in Phase 2.
+  - **Cache hits replay as a stream** (in milliseconds) using the same chunk path. The `_arbiter_provider/_arbiter_model` is surfaced via an SSE comment (`: arbiter-model-used: gemini/gemini-2.5-flash-lite`).
+  - **Provider failures fall back transparently** as long as no chunks have been sent yet (matches OpenAI's own SSE behavior). Mid-stream failures emit an OpenAI-style error event and `[DONE]`.
+  - **Refactor**: extracted `Router._prepare_route()` shared helper used by both `route()` and `route_stream()` — eliminates ~90 LOC of duplication.
+  - **Headers set**: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` (nginx/CF will not buffer chunks).
+  - **`cfworker/*` direct-proxy routes** explicitly reject `stream=true` with HTTP 400 (proxied workers are not SSE-aware in this build).
+
+### 🐛 Fixed (Phase 7 audit)
+
+- **Cloudflare endpoints 500 errors** — `app/api/cloudflare_manager.py` was importing the removed helper `_merged_keys` from `keys_api`. Replaced both call sites with the current `_read_env_keys("cloudflare")` (sync, no redis arg). `GET /cloudflare/workers` now returns 401 (auth) instead of 500 (ImportError).
+- **Dashboard accordion collapses on auto-refresh** — `static/dashboard.html` rebuilt the key-details accordion from scratch every 10 s, wiping any provider the user had expanded. Now snapshots the open `data-provider` set before re-render and re-applies `.open` to body + arrow afterwards. Also skips refresh when the tab is hidden (`document.hidden`).
+- **Analytics filters single-shot population** — `static/analytics.html` only populated the token / provider / model dropdowns once via a `_filtersPopulated` flag, so newly-seen entries never appeared and switching pages mid-session left the dropdowns stale. Replaced with a `_syncSelect()` helper that adds/removes options on every refresh **while preserving the user's current selection**.
+
+### 📝 Notes
+- **Cache** — `app/cache/cache.py` is correctly used: it caches only deterministic requests (`temperature ≤ 0.3`) keyed by `(model, messages, max_tokens, stop, top_p)` with a default 1-hour TTL. Low cache-hit ratios in production are expected because most chat traffic uses higher temperatures. With streaming, cache hits now replay as SSE chunks too.
+- **APP_VERSION** bumped to `1.16.0`. Sidebar version label updated.
+
+---
+
 ## [1.15.0] – 2026-05-03 — SSOT Registry, Daily Reports, Gateway Routing Policies
 
 ### ✨ New features

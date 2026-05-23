@@ -30,6 +30,25 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.users_api import require_admin
+from app.observability.persistent_log import (
+    log_activity as _log_activity,
+    resolve_actor as _resolve_actor,
+    client_ip_of as _client_ip_of,
+)
+
+
+async def _audit(request, action: str, target: str,
+                 before=None, after=None, note: str | None = None) -> None:
+    try:
+        email, role = _resolve_actor(request)
+        await _log_activity(
+            actor_email=email, actor_role=role,
+            action=action, target=target,
+            before=before, after=after,
+            request_ip=_client_ip_of(request), note=note,
+        )
+    except Exception:
+        pass
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -107,9 +126,8 @@ class ValidateKeyBody(BaseModel):
 
 async def _get_credentials(request: Request) -> tuple[str, str]:
     """Return (account_id, api_token) from env var OR runtime Redis keys."""
-    from app.api.keys_api import _merged_keys
-    redis = request.app.state.redis
-    keys  = await _merged_keys(redis, "cloudflare")
+    from app.api.keys_api import _read_env_keys
+    keys  = _read_env_keys("cloudflare")
     if not keys:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -420,6 +438,16 @@ async def create_worker(body: CreateWorkerRequest, request: Request) -> JSONResp
     except Exception as exc:
         logger.warning("Could not reload cloudflare provider: %s", exc)
 
+    await _audit(
+        request, action="cloudflare.worker.create",
+        target=f"cf_worker:{script_name}",
+        after={
+            "model": model_id,
+            "worker_url": worker_url,
+            "subdomain_enabled": subdomain_ok,
+        },
+    )
+
     return JSONResponse(
         status_code=201,
         content={
@@ -482,6 +510,12 @@ async def delete_worker(script_name: str, request: Request) -> JSONResponse:
     await _save_worker_registry(redis, registry)
     # Mark as deleting so list_workers skips it during CF propagation delay (up to 2 min)
     await redis.set(f"{_REDIS_DELETING_PFX}{script_name}", "1", ex=120)
+
+    await _audit(
+        request, action="cloudflare.worker.delete",
+        target=f"cf_worker:{script_name}",
+        before={"existed": True}, after={"existed": False},
+    )
 
     return JSONResponse(content={"success": True, "deleted": script_name})
 
@@ -655,8 +689,8 @@ async def worker_analytics(script_name: str, request: Request) -> JSONResponse:
 
     # Count requests tracked by our gateway (cloudflare provider RPM/daily counters)
     import hashlib
-    from app.api.keys_api import _merged_keys
-    cf_keys    = await _merged_keys(redis, "cloudflare")
+    from app.api.keys_api import _read_env_keys
+    cf_keys    = _read_env_keys("cloudflare")
     first_key  = cf_keys[0] if cf_keys else ""
     h          = hashlib.md5(first_key.encode()).hexdigest()[:10] if first_key else ""
     daily_used = int(await redis.get(f"cloudflare:{h}:daily") or 0)

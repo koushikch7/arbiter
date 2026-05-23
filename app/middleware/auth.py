@@ -63,6 +63,9 @@ _ALWAYS_OPEN: frozenset = frozenset([
     "/api-docs",  # redirects to /developer
     "/login",
     "/favicon.ico",
+    # SEO / crawler discovery files — publicly accessible, no auth required
+    "/robots.txt",
+    "/sitemap.xml",
     # PWA assets — must be reachable without auth so installable browsers
     # can fetch the manifest + service worker on the public origin.
     "/manifest.webmanifest",
@@ -100,6 +103,82 @@ def _error_403(message: str = "Access denied") -> JSONResponse:
     )
 
 
+def _error_429(message: str, retry_after: int = 30, limit: int | None = None) -> JSONResponse:
+    headers = {"Retry-After": str(max(1, retry_after))}
+    if limit is not None:
+        headers["X-RateLimit-Limit"] = str(limit)
+        headers["X-RateLimit-Remaining"] = "0"
+    return JSONResponse(
+        status_code=429,
+        content={"error": {"message": message, "type": "rate_limit_error", "code": 429}},
+        headers=headers,
+    )
+
+
+async def _check_token_rate_limit(request: Request):
+    """
+    Sliding-minute-window rate limit per gateway token, scoped to /v1/* calls.
+
+    Returns ``None`` when the request is within the limit, or a 429
+    JSONResponse when the limit has been exceeded. The counter key is
+    bucketed per token-id + clock-minute so it self-evicts after 60 seconds
+    via Redis ``EX``.
+
+    Limit resolution priority:
+      1) token meta ``request_limit_per_minute`` (per-token override)
+      2) ``settings.GATEWAY_TOKEN_RATE_LIMIT_PER_MIN``
+    A value of ``0`` disables the limiter for that token/system.
+    """
+    import time as _t
+    from app.config import settings as _settings
+
+    tid = getattr(request.state, "gateway_token_id", None)
+    if not tid:
+        return None
+
+    # Per-token override via token meta
+    limit = _settings.GATEWAY_TOKEN_RATE_LIMIT_PER_MIN
+    try:
+        meta = getattr(request.app.state, "gateway_token_meta", {}) or {}
+        # token meta is keyed by plaintext key, not by id — look up by id
+        for _k, info in meta.items():
+            if info and info.get("id") == tid:
+                override = info.get("request_limit_per_minute")
+                if isinstance(override, (int, float)) and override >= 0:
+                    limit = int(override)
+                break
+    except Exception:
+        pass
+
+    if not limit or limit <= 0:
+        return None  # disabled
+
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        return None
+
+    bucket = int(_t.time() // 60)
+    key = f"arbiter:ratelimit:token:{tid}:{bucket}"
+    try:
+        current = await redis.incr(key)
+        if current == 1:
+            # First hit in this bucket — set TTL so the key self-evicts
+            await redis.expire(key, 65)
+    except Exception:
+        # Fail-open on Redis errors — better to serve than to drop traffic
+        return None
+
+    if current > limit:
+        seconds_to_next_bucket = 60 - int(_t.time()) % 60
+        return _error_429(
+            f"Rate limit exceeded: {limit} requests/min for this gateway token. "
+            f"Retry after the current minute window resets.",
+            retry_after=seconds_to_next_bucket,
+            limit=limit,
+        )
+    return None
+
+
 def _wants_json(request: Request) -> bool:
     """Heuristic: does the caller want a JSON response or an HTML redirect?"""
     accept = (request.headers.get("accept") or "").lower().strip()
@@ -109,7 +188,7 @@ def _wants_json(request: Request) -> bool:
         return True
     # API paths always get JSON
     if request.url.path.startswith(("/api/", "/v1/", "/auth/", "/logs/",
-                                    "/settings/", "/modal/",
+                                    "/settings/",
                                     "/cloudflare/", "/dashboard/stats")):
         return True
     return False
@@ -160,11 +239,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         sensitive_prefixes = (
             "/api/", "/auth/", "/v1/", "/logs/", "/settings/",
-            "/modal/", "/cloudflare/", "/dashboard/stats",
+            "/cloudflare/", "/dashboard/stats",
         )
         sensitive_paths = {"/login", "/users", "/dashboard", "/settings",
                            "/playground", "/analytics", "/logs", "/images",
-                           "/api-docs"}
+                           "/backup", "/developer"}
 
         cacheable_static_prefixes = ("/static/",)
         cacheable_static_suffixes = (
@@ -183,9 +262,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         if is_service_worker:
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["CDN-Cache-Control"] = "no-store"
-            response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
-            response.headers["Service-Worker-Allowed"] = "/"
         elif (path.startswith(sensitive_prefixes)
                 or path in sensitive_paths
                 or (is_html and path != "/")):
@@ -201,6 +277,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "Cache-Control", "public, max-age=3600, must-revalidate"
             )
             response.headers.setdefault("CDN-Cache-Control", "public, max-age=86400")
+
+        # ─── X-Robots-Tag — unconditional, independent of cache tier ─────────
+        # robots.txt already disallows all crawlers from non-public paths.
+        # X-Robots-Tag is belt-and-suspenders: even if a crawler ignores
+        # robots.txt it will see noindex on every authenticated page.
+        # Only /login and the SEO files themselves get a clean (no) header.
+        _seo_public = {"/login", "/robots.txt", "/sitemap.xml"}
+        if not (
+            path in _seo_public
+            or path.startswith("/static/")
+            or path.endswith((".ico", ".webmanifest", ".json"))
+        ):
+            response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
         # Content Security Policy — allow our CDNs + inline (the UI uses a
         # lot of onclick handlers and inline styles).
         response.headers.setdefault(
@@ -332,6 +421,10 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
                 # Legacy permissive mode (REQUIRE_AUTH=false)
                 return await call_next(request)
             if self._check_bearer(request, effective_keys):
+                # Per-token rate limit (v1.18.0)
+                _rl_resp = await _check_token_rate_limit(request)
+                if _rl_resp is not None:
+                    return _rl_resp
                 return await call_next(request)
             # Fallback: accept a valid SSO session for /v1/* routes so the
             # built-in Playground (same-origin, session-authenticated) can

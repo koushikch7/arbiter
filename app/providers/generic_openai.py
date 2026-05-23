@@ -14,10 +14,13 @@ Supports two auth schemes:
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -31,6 +34,93 @@ from app.models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Module-level pooled httpx client (audit fix #6).
+# Reused across all GenericOpenAIProvider instances so we don't open a new
+# TCP connection pool on every request. Lazily initialised on first use so
+# import-order doesn't matter, and a getter is provided to ease testing.
+_HTTPX_CLIENT: httpx.AsyncClient | None = None
+_HTTPX_LIMITS = httpx.Limits(
+    max_connections=100,
+    max_keepalive_connections=40,
+    keepalive_expiry=30.0,
+)
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Lazy singleton httpx client with pooled connections."""
+    global _HTTPX_CLIENT
+    if _HTTPX_CLIENT is None or _HTTPX_CLIENT.is_closed:
+        _HTTPX_CLIENT = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=90.0, write=15.0, pool=5.0),
+            limits=_HTTPX_LIMITS,
+            follow_redirects=False,
+        )
+    return _HTTPX_CLIENT
+
+
+async def aclose_http_client() -> None:
+    """Close the shared pooled client on app shutdown."""
+    global _HTTPX_CLIENT
+    if _HTTPX_CLIENT is not None and not _HTTPX_CLIENT.is_closed:
+        try:
+            await _HTTPX_CLIENT.aclose()
+        finally:
+            _HTTPX_CLIENT = None
+
+
+def _validate_base_url(base_url: str) -> None:
+    """
+    SSRF guard for user-supplied custom provider URLs (audit fix #3).
+
+    Rejects:
+      - non-http(s) schemes (file://, gopher://, ftp://, etc.)
+      - hostnames that resolve to private / loopback / link-local addresses
+        (RFC 1918, 127.0.0.0/8, 169.254.0.0/16, ::1, fc00::/7, fe80::/10)
+      - the AWS / GCP instance-metadata endpoints (169.254.169.254, metadata.google.internal)
+
+    DNS rebinding is partially mitigated by resolving *now* and rejecting if
+    any address in the result is private — the actual httpx call will resolve
+    again, but for hostile inputs the resolved-at-config-time check catches
+    the common case where an attacker just types in 127.0.0.1.
+    """
+    try:
+        parsed = urlparse(base_url)
+    except Exception as exc:
+        raise ValueError(f"invalid base_url: {exc}") from exc
+
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"base_url scheme must be http or https, got {parsed.scheme!r}"
+        )
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("base_url has no hostname")
+    if host in ("metadata.google.internal", "metadata", "metadata.goog"):
+        raise ValueError("metadata service hostnames are not allowed")
+
+    # Resolve to addresses and reject private/loopback/link-local
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        # DNS resolution failed — let the actual request fail later with a
+        # clear network error; don't block here (could be a transient DNS).
+        return
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if (
+            ip.is_loopback or ip.is_private or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+        ):
+            raise ValueError(
+                f"base_url hostname {host!r} resolves to non-public address {addr} "
+                "(SSRF guard)"
+            )
 
 
 class GenericOpenAIProvider(BaseProvider):
@@ -57,6 +147,7 @@ class GenericOpenAIProvider(BaseProvider):
             raise ValueError(
                 f"Custom provider name must be alphanumeric (with _/-): {name!r}"
             )
+        _validate_base_url(base_url)
         self.name = name
         self.label = label
         self.base_url = base_url.rstrip("/")
@@ -87,6 +178,49 @@ class GenericOpenAIProvider(BaseProvider):
             return await self._complete_anthropic(request, api_key)
         return await self._complete_openai(request, api_key)
 
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """
+        Native SSE streaming for OpenAI-compatible custom providers.
+
+        Anthropic-style providers don't expose the OpenAI ``stream: true`` SSE
+        protocol, so we fall back to the router's faux-stream path via
+        ``NotImplementedError``.
+        """
+        if self.auth_scheme == "anthropic":
+            # Let the router fall back to non-streaming + chunk-wrap.
+            raise NotImplementedError(
+                f"[custom:{self.name}] native streaming not supported for anthropic auth scheme"
+            )
+        from app.streaming.openai_stream import stream_openai_chat
+
+        model = request.model or self.default_model
+        if not model:
+            raise ProviderError(f"Custom provider {self.name!r} has no default model")
+
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        payload: dict[str, Any] = {
+            "model":       model,
+            "messages":    messages,
+            "temperature": request.temperature,
+            "top_p":       request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+
+        url = f"{self.base_url}/chat/completions"
+        headers = self._build_headers(api_key)
+
+        async for chunk in stream_openai_chat(
+            url=url,
+            headers=headers,
+            payload=payload,
+            provider_name=f"custom:{self.name}",
+            timeout=120.0,
+        ):
+            yield chunk
+
     # -- OpenAI-compatible path ----------------------------------------
     async def _complete_openai(
         self, request: ChatCompletionRequest, api_key: str
@@ -112,13 +246,13 @@ class GenericOpenAIProvider(BaseProvider):
 
         logger.debug("[custom:%s] POST %s model=%s", self.name, url, model)
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-            except httpx.RequestError as exc:
-                raise ProviderError(
-                    f"[custom:{self.name}] network error: {exc}"
-                ) from exc
+        client = _get_http_client()
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            raise ProviderError(
+                f"[custom:{self.name}] network error: {exc}"
+            ) from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}")
@@ -201,13 +335,13 @@ class GenericOpenAIProvider(BaseProvider):
         url = f"{self.base_url}/messages"
         headers = self._build_headers(api_key)
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-            except httpx.RequestError as exc:
-                raise ProviderError(
-                    f"[custom:{self.name}] anthropic network error: {exc}"
-                ) from exc
+        client = _get_http_client()
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            raise ProviderError(
+                f"[custom:{self.name}] anthropic network error: {exc}"
+            ) from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}")
@@ -266,13 +400,13 @@ class GenericOpenAIProvider(BaseProvider):
         url = f"{self.base_url}/models"
         headers = self._build_headers(api_key)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                resp = await client.get(url, headers=headers)
-            except httpx.RequestError as exc:
-                raise ProviderError(
-                    f"[custom:{self.name}] models fetch network error: {exc}"
-                ) from exc
+        client = _get_http_client()
+        try:
+            resp = await client.get(url, headers=headers, timeout=30.0)
+        except httpx.RequestError as exc:
+            raise ProviderError(
+                f"[custom:{self.name}] models fetch network error: {exc}"
+            ) from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"[custom:{self.name}] models fetch 429")

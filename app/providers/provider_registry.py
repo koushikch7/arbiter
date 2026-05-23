@@ -341,27 +341,6 @@ PROVIDERS: Dict[str, ProviderSpec] = {
             ModelSpec(id="google/gemma-3-27b-it:free", context=128_000, tags={"balanced"}, rpm=60, rpd=10_000, quality=3, speed=4, notes="Gemma 3 27B :free"),
         ],
     ),
-
-    # ── Lightning ─────────────────────────────────────────────────────────────
-    "lightning": ProviderSpec(
-        name="lightning",
-        label="Lightning.ai LitAI",
-        color="#7c3aed",
-        description="Lightning.ai — Nemotron, DeepSeek, GPT-OSS (paid with credits)",
-        is_free=False,
-        signup_url="https://lightning.ai",
-        key_hint="(Lightning API key)",
-        key_env_var="LIGHTNING_API_KEYS",
-        limits=ProviderLimits(rpm=20, tpm=500_000, daily=1_000),
-        setup_steps=[
-            "Go to https://lightning.ai",
-            "Sign up — ~37M token welcome credit",
-            "$0.09–$0.52/M tokens after credits",
-        ],
-        models=[
-            ModelSpec(id="nvidia/nemotron-3-super", context=256_000, tags={"reasoning", "large"}, rpm=20, rpd=1_000, quality=5, speed=3, notes="Nemotron 3 Super 256K"),
-        ],
-    ),
 }
 
 

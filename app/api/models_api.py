@@ -30,12 +30,21 @@ _PAID_ONLY_MODELS = {
     "gemini-2.5-pro", "gemini-3.1-pro", "command-r-plus", "gpt-4", "claude-3-opus",
 }
 
-# Static mapping of provider to owner label
+# Canonical owner-org labels per provider (used in /v1/models owned_by field).
+# All 14 providers explicitly listed so new additions are obvious omissions.
 PROVIDER_OWNERS = {
-    "gemini": "google",
-    "groq": "groq",
-    "openrouter": "openrouter",
-    "cohere": "cohere-ai",
+    "gemini":      "google",
+    "groq":        "groq",
+    "cerebras":    "cerebras",
+    "nvidia":      "nvidia",
+    "zai":         "zhipu-ai",
+    "cloudflare":  "cloudflare",
+    "openrouter":  "openrouter",
+    "cohere":      "cohere-ai",
+    "huggingface": "huggingface",
+    "pollinations": "pollinations",
+    "ollama":      "ollama",
+    "routeway":    "routeway",
 }
 
 
@@ -45,7 +54,7 @@ PROVIDER_OWNERS = {
     summary="List available models",
 )
 async def list_models(request: Request) -> ModelsResponse:
-    """Return all models available across all configured providers, plus active CF workers and Modal deployments."""
+    """Return all models available across all configured providers, plus active CF workers."""
     import json as _json
     providers  = request.app.state.providers
     redis      = request.app.state.redis
@@ -90,26 +99,6 @@ async def list_models(request: Request) -> ModelsResponse:
                         ))
     except Exception as exc:
         logger.debug("Could not load CF workers for models list: %s", exc)
-
-    # Modal deployments (active only)
-    try:
-        raw = await redis.get("arbiter:modal:deployments")
-        if raw:
-            deployments = _json.loads(raw)
-            for dep in deployments.values() if isinstance(deployments, dict) else []:
-                if dep.get("status") == "active":
-                    model_id = dep.get("model_id", "")
-                    dep_name = dep.get("name", "")
-                    # Expose both the raw model ID and a tagged version
-                    tagged_id = f"modal/{dep_name}" if dep_name else model_id
-                    if tagged_id and tagged_id not in seen:
-                        seen.add(tagged_id)
-                        model_list.append(ModelInfo(
-                            id=tagged_id, object="model",
-                            created=created_ts, owned_by="modal",
-                        ))
-    except Exception as exc:
-        logger.debug("Could not load Modal deployments for models list: %s", exc)
 
     logger.debug(f"Returning {len(model_list)} models")
     return ModelsResponse(object="list", data=model_list)
@@ -197,8 +186,6 @@ _VENDOR_LABELS = {
     "huggingface": "HuggingFace",
     "pollinations":"Pollinations.ai",
     "zai":         "Z.ai / Zhipu AI",
-    "modal":       "Modal.com",
-    "lightning":   "Lightning.ai (LitAI)",
     "routeway":    "Routeway",
     "nvidia":      "NVIDIA NIM",
 }

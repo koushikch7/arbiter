@@ -8,7 +8,7 @@
  * Bumping CACHE_VERSION will evict every cache entry on next activate.
  */
 
-const CACHE_VERSION = 'arbiter-v1';
+const CACHE_VERSION = 'arbiter-v1.15';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -51,7 +51,6 @@ function isApiRequest(url) {
     p.startsWith('/logs/') ||
     p.startsWith('/settings/') ||
     p.startsWith('/cloudflare/') ||
-    p.startsWith('/modal/') ||
     p === '/dashboard/stats'
   );
 }

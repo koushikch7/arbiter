@@ -20,9 +20,7 @@ from app.providers.cloudflare import CloudflareProvider
 from app.providers.cerebras import CerebrasProvider
 from app.providers.huggingface import HuggingFaceProvider
 from app.providers.pollinations import PollinationsProvider
-from app.providers.modal_provider import ModalProvider
 from app.providers.zai_provider import ZaiProvider
-from app.providers.lightning_provider import LightningProvider
 from app.providers.routeway import RoutewayProvider
 from app.providers.ollama_provider import OllamaProvider
 from app.providers.nvidia_provider import NvidiaProvider
@@ -34,8 +32,6 @@ from app.api.settings_api import router as settings_router
 from app.api.preferences_api import router as preferences_router
 from app.api.keys_api import router as keys_router
 from app.api.image_api import router as image_router
-from app.api.modal_manager import router as modal_router
-from app.api.modal_deploy import router as modal_deploy_router
 from app.api.logs_api import router as logs_router, log_buffer
 from app.api.gateway_tokens_api import router as gateway_tokens_router
 from app.api.gateway_tokens_api import load_gateway_tokens_to_state
@@ -44,6 +40,8 @@ from app.api.custom_providers_api import load_custom_providers_to_app
 from app.api.users_api import router as users_router
 from app.api.analytics_api import router as analytics_router
 from app.api.backup_api import router as backup_router
+from app.api.announcements_api import router as announcements_router
+from app.api.persistent_logs_api import router as persistent_logs_router
 from app.auth.sso import router as auth_router, register_google_oauth, sso_enabled
 from app.middleware.auth import (
     GatewayAuthMiddleware,
@@ -51,10 +49,11 @@ from app.middleware.auth import (
     SecurityHeadersMiddleware,
     BearerRedactFilter,
 )
+from app.middleware.bot_protection import BotProtectionMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.19.0"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
@@ -88,6 +87,7 @@ async def lifespan(app: FastAPI):
     # Initialize providers
     providers = {}
     provider_classes = {
+        "nvidia":       NvidiaProvider,     # prioritized — powerful free-tier models, 40 RPM, 1000 RPD
         "gemini":       GeminiProvider,
         "groq":         GroqProvider,
         "openrouter":   OpenRouterProvider,
@@ -97,11 +97,8 @@ async def lifespan(app: FastAPI):
         "huggingface":  HuggingFaceProvider,
         "pollinations": PollinationsProvider,
         "zai":          ZaiProvider,
-        "lightning":    LightningProvider,
         "routeway":     RoutewayProvider,
         "ollama":       OllamaProvider,
-        "modal":        ModalProvider,
-        "nvidia":       NvidiaProvider,
     }
 
     for name, cls in provider_classes.items():
@@ -110,9 +107,6 @@ async def lifespan(app: FastAPI):
         # Pollinations is free/anonymous — inject a dummy key so the pool works
         if name == "pollinations" and not keys:
             keys = ["free"]
-        # Modal keys come from Redis (registered via UI); skip until at least one is added
-        if name == "modal" and not keys:
-            continue
 
         if keys:
             providers[name] = cls()
@@ -141,31 +135,6 @@ async def lifespan(app: FastAPI):
         )
 
     app.state.key_pools = key_pools
-
-    # Restore Modal provider from Redis if it has registered endpoints but no env keys.
-    # Modal endpoints are runtime-registered (via deploy or manual), so they live only in
-    # Redis and would be lost on every restart without this restoration step.
-    if "modal" not in providers:
-        try:
-            _modal_redis_raw = await redis_client.get("arbiter:runtime:keys:modal")
-            _modal_redis_keys = []
-            if _modal_redis_raw:
-                import json as _json
-                _modal_redis_keys = [k for k in _json.loads(_modal_redis_raw) if k.strip()]
-            if _modal_redis_keys:
-                providers["modal"] = ModalProvider()
-                _modal_limits = PROVIDER_LIMITS.get("modal", {"rpm": 20, "tpm": 100_000, "daily": 1000})
-                key_pools["modal"] = KeyPool(
-                    provider="modal",
-                    keys=_modal_redis_keys,
-                    redis_client=redis_client,
-                    rpm_limit=_modal_limits["rpm"],
-                    tpm_limit=_modal_limits["tpm"],
-                    daily_limit=_modal_limits["daily"],
-                )
-                logger.info(f"Restored Modal provider from Redis with {len(_modal_redis_keys)} endpoint(s)")
-        except Exception as _e:
-            logger.warning(f"Could not restore Modal provider from Redis: {_e}")
 
     # Initialize cache
     cache = CacheLayer(redis_client=redis_client, default_ttl=settings.CACHE_TTL)
@@ -221,6 +190,14 @@ async def lifespan(app: FastAPI):
     from app.services.daily_report import start_scheduler as start_report_scheduler
     start_report_scheduler(app)
 
+    # Weekly model health check scheduler (Mondays 17:00 UTC / 22:30 IST)
+    from app.services.model_health import start_scheduler as start_health_scheduler
+    start_health_scheduler(app)
+
+    # Persistent log janitor (180-day file retention)
+    from app.observability.persistent_log import start_janitor as start_log_janitor
+    start_log_janitor()
+
     yield
 
     # Cleanup
@@ -229,6 +206,18 @@ async def lifespan(app: FastAPI):
     backup_task.cancel()
     from app.services.daily_report import stop_scheduler as stop_report_scheduler
     stop_report_scheduler()
+    from app.services.model_health import stop_scheduler as stop_health_scheduler
+    stop_health_scheduler()
+    try:
+        from app.observability.persistent_log import stop_janitor as stop_log_janitor
+        stop_log_janitor()
+    except Exception:
+        pass
+    try:
+        from app.providers.generic_openai import aclose_http_client
+        await aclose_http_client()
+    except Exception:
+        pass
     try:
         await sync_task
     except (asyncio.CancelledError, Exception):
@@ -369,13 +358,27 @@ _STATIC_DIR = Path(__file__).parent.parent / "static"
 app = FastAPI(
     title="Arbiter",
     description=(
-        "Arbiter \u2013 Intelligent LLM Router & Gateway. "
+        "**Arbiter** — Intelligent LLM Router & Gateway (v1.18.x)\n\n"
         "Single OpenAI-compatible endpoint aggregating 12+ providers "
-        "(Gemini, Groq, Cerebras, Cloudflare Workers AI, OpenRouter, Cohere, "
-        "HuggingFace, Pollinations, Z.ai, Lightning.ai, Routeway, Ollama Cloud, Modal) plus "
-        "user-added custom OpenAI-compatible providers. Features weighted "
-        "key rotation, rate-limit tracking, response caching, dynamic model "
-        "discovery, and Google SSO with admin-approval workflow."
+        "(NVIDIA NIM, Gemini, Groq, Cerebras, Cloudflare Workers AI, OpenRouter, Cohere, "
+        "HuggingFace, Pollinations, Z.ai, Routeway, Ollama Cloud) plus "
+        "user-added custom OpenAI-compatible providers.\n\n"
+        "### Authentication\n"
+        "All `/v1/*` endpoints require a Bearer token: "
+        "`Authorization: Bearer <gateway-token>`. "
+        "Admin endpoints (`/api/*`, `/settings/*`, `/cloudflare/*`) require a "
+        "Google-SSO admin session or a Bearer token with admin privileges.\n\n"
+        "### New in v1.18\n"
+        "- **Persistent 180-day logs** — `GET /api/logs/persistent/*`\n"
+        "- **Activity audit log** — HMAC-tagged admin mutation records\n"
+        "- **Dashboard banners** — `POST /api/announcements`\n"
+        "- **Per-token rate limiting** — 429 with Retry-After headers\n"
+        "- **Adaptive routing** — unhealthy providers auto-demoted; TPM-aware key scoring\n"
+        "- **Gemini 3.1 Flash Lite GA** — `gemini-3.1-flash-lite` (preview discontinued May 25 2026)\n\n"
+        "### Rate limits\n"
+        "Default: 100 requests/min per gateway token. Configurable per-token via "
+        "`PATCH /api/gateway/tokens/{id}` (`request_limit_per_minute` field).\n\n"
+        "Full docs: [/developer](/developer) · Swagger: [/docs](/docs) · ReDoc: [/redoc](/redoc)"
     ),
     version=APP_VERSION,
     lifespan=lifespan,
@@ -405,8 +408,14 @@ if _SSO_ON and not settings.SESSION_SECRET_KEY:
     )
     _SSO_ON = False
 
-# ── Security headers (outermost so they apply even to 4xx responses) ────────
-app.add_middleware(SecurityHeadersMiddleware)
+# ── Security headers — moved to after Session so they become outermost ────
+# Middleware stack in request-processing order (Starlette LIFO — last added = outermost):
+#   SecurityHeadersMiddleware (outermost — headers on ALL responses inc. 401/403)
+#   BotProtectionMiddleware   (2nd — blocks bad bots before any processing)
+#   SessionMiddleware         (3rd — populates scope["session"] before GatewayAuth)
+#   GatewayAuthMiddleware     (4th — auth check reads session)
+#   CORSMiddleware            (innermost)
+
 
 # ── Request body size limit — 4 MB max (guards against memory-bomb DoS) ─────
 # FastAPI/Starlette has no built-in limit; we enforce it in a thin middleware
@@ -513,6 +522,13 @@ if _SSO_ON:
         settings.SESSION_COOKIE_SECURE, settings.SESSION_MAX_AGE,
     )
 
+# ── Security headers + Bot protection (outermost — added last) ───────────────
+# These MUST be added after Session/GatewayAuth so they are truly outermost
+# and apply their headers/checks to ALL responses — including 401/403s from
+# inner middleware layers (auth rejects, CF Access blocks, etc.).
+app.add_middleware(BotProtectionMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
 
 # ── Request timing middleware ───────────────────────────────────────────────
 @app.middleware("http")
@@ -528,20 +544,20 @@ async def add_timing_header(request: Request, call_next):
 app.include_router(chat.router, tags=["Chat"])
 app.include_router(models_api.router, tags=["Models"])
 app.include_router(dashboard.router, tags=["Dashboard"])
-app.include_router(cloudflare_router, tags=["Cloudflare Workers AI"])
-app.include_router(settings_router, tags=["Settings"])
-app.include_router(preferences_router, tags=["Preferences"])
-app.include_router(keys_router, tags=["Provider Management"])
-app.include_router(image_router, tags=["Images"])
-app.include_router(modal_router, tags=["Modal"])
-app.include_router(modal_deploy_router, tags=["Modal Deploy"])
-app.include_router(logs_router, tags=["Logs"])
-app.include_router(gateway_tokens_router, tags=["Gateway Tokens"])
-app.include_router(custom_providers_router, tags=["Custom Providers"])
+app.include_router(cloudflare_router)
+app.include_router(settings_router)
+app.include_router(preferences_router)
+app.include_router(keys_router)
+app.include_router(image_router)
+app.include_router(logs_router)
+app.include_router(gateway_tokens_router)
+app.include_router(custom_providers_router)
 app.include_router(auth_router)
 app.include_router(users_router)
-app.include_router(analytics_router, tags=["Analytics"])
-app.include_router(backup_router, tags=["Backup"])
+app.include_router(analytics_router)
+app.include_router(backup_router)
+app.include_router(announcements_router)
+app.include_router(persistent_logs_router)
 
 
 @app.get("/health", summary="Health check")
@@ -676,6 +692,109 @@ async def favicon():
     if not fav.exists():
         return JSONResponse({"error": "favicon missing"}, status_code=404)
     return FileResponse(str(fav), media_type="image/x-icon")
+
+
+# ---------------------------------------------------------------------------
+# SEO — robots.txt + sitemap.xml
+# Both are public (no auth).  robots.txt disallows all crawlers from
+# authenticated pages; sitemap lists only the public /login entry.
+# ---------------------------------------------------------------------------
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    """Serve robots.txt — instructs crawlers to avoid the admin dashboard."""
+    from fastapi.responses import PlainTextResponse
+    from app.config import settings as _cfg
+    base = (_cfg.APP_BASE_URL or "").rstrip("/")
+    sitemap_line = f"Sitemap: {base}/sitemap.xml" if base else ""
+    content = f"""# Arbiter LLM Gateway — robots.txt
+# Only the sign-in page is publicly accessible.
+# All other routes require authentication and must not be indexed.
+
+User-agent: *
+Disallow: /dashboard
+Disallow: /analytics
+Disallow: /settings
+Disallow: /logs
+Disallow: /images
+Disallow: /playground
+Disallow: /backup
+Disallow: /users
+Disallow: /developer
+Disallow: /v1/
+Disallow: /api/
+Disallow: /docs
+Disallow: /redoc
+Disallow: /openapi.json
+Allow: /login
+Allow: /static/
+Allow: /sw.js
+Allow: /manifest.webmanifest
+Allow: /health
+
+# Block AI training crawlers explicitly
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+{chr(10) + sitemap_line if sitemap_line else ''}
+""".strip()
+    return PlainTextResponse(content, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    """Serve a minimal sitemap listing only the public login page."""
+    from fastapi.responses import Response as _R
+    from app.config import settings as _cfg
+    from datetime import date
+    base = (_cfg.APP_BASE_URL or "").rstrip("/")
+    if not base:
+        # Can't build a useful sitemap without a base URL
+        return _R(content="", status_code=204)
+    today = date.today().isoformat()
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{base}/login</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>"""
+    return _R(
+        content=xml,
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -279,6 +279,82 @@ async def record_cache_miss(redis) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Structured error log — stores recent failures with context for daily report
+# ---------------------------------------------------------------------------
+
+# Sorted-set key (v1.18.0+). The legacy list key is kept as a fallback
+# during the migration window so already-recorded errors are still visible
+# in the daily report until they roll out of the 48h retention window.
+_ERROR_LOG_KEY        = "arbiter:error_log_z"
+_ERROR_LOG_KEY_LEGACY = "arbiter:error_log"
+_ERROR_LOG_MAX = 50
+# Retention window for the sorted-set variant; sliding 48h.
+_ERROR_LOG_TTL_SECONDS = 48 * 3600
+
+
+async def record_error_detail(
+    redis,
+    *,
+    provider: str,
+    model: str,
+    error_type: str,
+    error_message: str,
+    rate_limited: bool = False,
+) -> None:
+    """Store a structured error record in a Redis sorted set for the daily report.
+
+    Uses ``ZADD`` with the event timestamp as score, plus ``ZREMRANGEBYSCORE``
+    to evict entries older than 48 hours. This is O(log N) per write versus
+    the previous O(N) ``LTRIM`` on the legacy list implementation, and the
+    score-based eviction means entries naturally age out instead of being
+    bounded purely by count.
+    """
+    if redis is None:
+        return
+    import json
+    now = time.time()
+    entry = json.dumps({
+        "ts": now,
+        "provider": provider,
+        "model": model,
+        "type": error_type,
+        "msg": error_message[:300],  # truncate long messages
+        "rate_limited": rate_limited,
+    })
+    try:
+        await redis.zadd(_ERROR_LOG_KEY, {entry: now})
+        # Evict entries older than the retention window.
+        await redis.zremrangebyscore(_ERROR_LOG_KEY, 0, now - _ERROR_LOG_TTL_SECONDS)
+        # Safety cap: trim to the most recent _ERROR_LOG_MAX * 4 entries
+        # (allows up to ~200 records in the 48h window without unbounded growth).
+        await redis.zremrangebyrank(_ERROR_LOG_KEY, 0, -(_ERROR_LOG_MAX * 4) - 1)
+        await redis.expire(_ERROR_LOG_KEY, _ERROR_LOG_TTL_SECONDS)
+    except Exception as exc:
+        logger.debug("record_error_detail failed: %s", exc)
+
+
+async def get_recent_errors(redis, limit: int = 30) -> list:
+    """Retrieve the most recent structured error records (newest first)."""
+    if redis is None:
+        return []
+    import json
+    try:
+        # ZREVRANGE returns highest-score (most recent) first.
+        raw_list = await redis.zrevrange(_ERROR_LOG_KEY, 0, max(0, limit - 1))
+        out = [json.loads(e) for e in raw_list if e]
+    except Exception:
+        out = []
+    # Backfill from the legacy list key while it still has unexpired entries.
+    if len(out) < limit:
+        try:
+            legacy = await redis.lrange(_ERROR_LOG_KEY_LEGACY, 0, limit - len(out) - 1)
+            out.extend(json.loads(e) for e in legacy if e)
+        except Exception:
+            pass
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Read helpers (used by analytics_api & gateway_tokens_api)
 # ---------------------------------------------------------------------------
 

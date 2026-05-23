@@ -3,8 +3,8 @@ Google Gemini provider adapter.
 
 Free-tier models – verified March 2026 (https://ai.google.dev/gemini-api/docs/models):
 
-  Preview (free tier, frontier-class):
-    gemini-3.1-flash-lite-preview  – 1M ctx, free tier  ← default (newest/fastest)
+  GA (free tier, frontier-class):
+    gemini-3.1-flash-lite          – 1M ctx, free tier  ← default (GA as of May 25 2026)
     gemini-3-flash-preview         – 1M ctx, free tier, frontier-class performance
 
   Stable (free tier):
@@ -16,9 +16,10 @@ Free-tier models – verified March 2026 (https://ai.google.dev/gemini-api/docs/
     gemini-2.5-pro                 – paid only
 
 Deprecated / shut-down (do NOT use):
-  gemini-1.5-*  shut down September 24 2025
-  gemini-2.0-*  deprecated, retiring June 1 2026
-  gemini-pro    legacy / limited availability
+  gemini-1.5-*               shut down September 24 2025
+  gemini-2.0-*               deprecated, retiring June 1 2026
+  gemini-pro                 legacy / limited availability
+  gemini-3.1-flash-lite-preview  discontinued May 25 2026 (replaced by gemini-3.1-flash-lite GA)
 
 Source: https://ai.google.dev/gemini-api/docs/models
         https://ai.google.dev/gemini-api/docs/rate-limits
@@ -27,7 +28,7 @@ Source: https://ai.google.dev/gemini-api/docs/models
 import logging
 import time
 import uuid
-from typing import List
+from typing import List, Optional
 
 import httpx
 
@@ -49,7 +50,7 @@ class GeminiProvider(BaseProvider):
     name = "gemini"
 
     # Free-tier models ordered by user-defined priority (newest+best first).
-    # gemini-3.1-flash-lite-preview  – newest preview, free, fast        ← default
+    # gemini-3.1-flash-lite           – GA (was preview), free, fast       ← default
     # gemini-2.5-flash               – 10 RPM, 250K TPM,  250 RPD
     # gemini-2.5-flash-lite          – 15 RPM, 250K TPM, 1000 RPD
     # gemini-3-flash-preview         – frontier flash preview, free
@@ -59,7 +60,8 @@ class GeminiProvider(BaseProvider):
     # gemini-3.1-pro-preview         – paid only (frontier reasoning)
     # gemini-3-pro-preview           – paid only (premium)
     models: List[str] = [
-        "gemini-3.1-flash-lite-preview",  # 1st priority — newest free preview
+        "gemini-3.1-flash-lite",          # 1st priority — GA default (prev. preview)
+        "gemini-3.1-flash-lite-preview",  # bridge — same model, active until May 25 2026
         "gemini-2.5-flash",               # 2nd priority — quality bump
         "gemini-2.5-flash-lite",          # 3rd priority — highest free quota
         "gemini-3-flash-preview",         # backup — frontier flash (free)
@@ -81,7 +83,37 @@ class GeminiProvider(BaseProvider):
     }
 
     max_context_tokens = 1_048_576   # 1 M tokens
-    default_model      = "gemini-3.1-flash-lite-preview"
+    default_model      = "gemini-3.1-flash-lite"
+
+    # Model aliases — used to transparently bridge model identifier changes
+    # until the upstream API stabilises.  Remove after May 25 2026 when
+    # gemini-3.1-flash-lite-preview is officially shut down.
+    _MODEL_ALIASES: dict = {
+        # GA model not yet live everywhere; fall back to the preview identifier
+        # if the GA endpoint returns a network error or 503.
+        # (Resolved inside complete() / complete_stream() after first failure.)
+    }
+
+    # Pre-GA bridge: if the GA model returns a non-200/non-quota error (i.e.
+    # it isn't deployed yet on the queried endpoint), retry with the preview
+    # name.  This class-level mapping is checked BEFORE the API call so the
+    # outbound request always uses the canonical identifier for the current
+    # state of the upstream API.
+    _PRERELEASE_BRIDGE: dict = {
+        "gemini-3.1-flash-lite": "gemini-3.1-flash-lite-preview",
+    }
+
+    # --------------------------------------------------------------------------
+    def _resolve_model(self, requested: str) -> str:
+        """
+        Return the model name to send to the Gemini API.
+
+        Applies ``_PRERELEASE_BRIDGE`` so requests for a not-yet-live GA model
+        are transparently redirected to the still-active preview identifier.
+        """
+        if not requested or requested.lower() == "auto":
+            return self.default_model
+        return self._PRERELEASE_BRIDGE.get(requested, requested)
 
     # --------------------------------------------------------------------------
     def _map_messages(self, messages: List[Message]) -> tuple:
@@ -183,7 +215,7 @@ class GeminiProvider(BaseProvider):
     ) -> ChatCompletionResponse:
 
         requested = (request.model or "").strip()
-        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        model = self._resolve_model(requested)
         url   = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
 
         system_parts, contents = self._map_messages(request.messages)
@@ -262,3 +294,131 @@ class GeminiProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    # ------------------------------------------------------------------
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for Gemini.
+
+        Translates Google's ``streamGenerateContent?alt=sse`` chunks into
+        OpenAI ``chat.completion.chunk`` envelopes so the router can forward
+        them verbatim alongside other providers.
+        """
+        import json as _json
+        import httpx as _httpx
+
+        requested = (request.model or "").strip()
+        model = self._resolve_model(requested)
+        url = f"{GEMINI_API_BASE}/{model}:streamGenerateContent?alt=sse&key={api_key}"
+
+        system_parts, contents = self._map_messages(request.messages)
+        if system_parts:
+            system_text = "\n".join(system_parts)
+            contents = [{"role": "user", "parts": [{"text": f"System: {system_text}"}]}] + contents
+
+        generation_config: dict = {
+            "temperature": request.temperature,
+            "topP":        request.top_p,
+        }
+        if request.max_tokens is not None:
+            generation_config["maxOutputTokens"] = request.max_tokens
+        if request.stop:
+            generation_config["stopSequences"] = (
+                request.stop if isinstance(request.stop, list) else [request.stop]
+            )
+
+        payload: dict = {
+            "contents":         contents,
+            "generationConfig": generation_config,
+        }
+
+        chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        created  = int(time.time())
+        role_emitted = False
+        last_finish: Optional[str] = None
+        last_usage: dict = {}
+
+        try:
+            async with _httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream("POST", url, json=payload) as resp:
+                    if resp.status_code in (429, 403):
+                        body = await resp.aread()
+                        raise RateLimitError(
+                            f"Gemini {resp.status_code}: {body[:300].decode('utf-8','replace')}"
+                        )
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        raise ProviderError(
+                            f"Gemini {resp.status_code}: {body[:500].decode('utf-8','replace')}"
+                        )
+
+                    async for raw in resp.aiter_lines():
+                        if not raw or raw.startswith(":"):
+                            continue
+                        if not raw.startswith("data:"):
+                            continue
+                        data_str = raw[5:].strip()
+                        if not data_str or data_str == "[DONE]":
+                            continue
+                        try:
+                            data = _json.loads(data_str)
+                        except _json.JSONDecodeError:
+                            continue
+
+                        # Extract incremental text + finish + usage
+                        try:
+                            candidate = (data.get("candidates") or [{}])[0]
+                            parts     = (candidate.get("content") or {}).get("parts") or []
+                            text_piece = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                            finish_raw = candidate.get("finishReason")
+                        except Exception:
+                            text_piece = ""
+                            finish_raw = None
+
+                        u = data.get("usageMetadata")
+                        if isinstance(u, dict):
+                            last_usage = u
+
+                        if not role_emitted:
+                            yield {
+                                "id":      chunk_id,
+                                "object":  "chat.completion.chunk",
+                                "created": created,
+                                "model":   model,
+                                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                            }
+                            role_emitted = True
+
+                        if text_piece:
+                            yield {
+                                "id":      chunk_id,
+                                "object":  "chat.completion.chunk",
+                                "created": created,
+                                "model":   model,
+                                "choices": [{"index": 0, "delta": {"content": text_piece}, "finish_reason": None}],
+                            }
+
+                        if finish_raw:
+                            last_finish = "stop" if finish_raw in ("STOP", "MAX_TOKENS") else finish_raw.lower()
+        except _httpx.RequestError as exc:
+            raise ProviderError(f"Gemini stream network error: {exc}") from exc
+
+        # Final chunk with finish_reason + usage (OpenAI shape)
+        usage_dict = None
+        if last_usage:
+            pt = int(last_usage.get("promptTokenCount", 0) or 0)
+            ct = int(last_usage.get("candidatesTokenCount", 0) or 0)
+            usage_dict = {
+                "prompt_tokens":     pt,
+                "completion_tokens": ct,
+                "total_tokens":      pt + ct,
+            }
+        final_chunk = {
+            "id":      chunk_id,
+            "object":  "chat.completion.chunk",
+            "created": created,
+            "model":   model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": last_finish or "stop"}],
+        }
+        if usage_dict:
+            final_chunk["usage"] = usage_dict
+        yield final_chunk

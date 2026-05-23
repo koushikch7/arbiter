@@ -166,3 +166,26 @@ class CloudflareProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for Cloudflare Workers AI."""
+        from app.streaming.openai_stream import stream_openai_chat
+        account_id, api_token = _split_key(api_key)
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        url = _CF_API_BASE.format(account_id=account_id)
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature, "top_p": request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        async for chunk in stream_openai_chat(
+            url=url, headers=headers, payload=payload,
+            provider_name="Cloudflare", timeout=60.0,
+        ):
+            yield chunk

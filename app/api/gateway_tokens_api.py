@@ -28,6 +28,25 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.api.users_api import require_admin
 from app.observability import stats as obs_stats
+from app.observability.persistent_log import (
+    log_activity as _log_activity,
+    resolve_actor as _resolve_actor,
+    client_ip_of as _client_ip_of,
+)
+
+
+async def _audit(request: Request, action: str, target: str,
+                 before=None, after=None, note: str | None = None) -> None:
+    try:
+        email, role = _resolve_actor(request)
+        await _log_activity(
+            actor_email=email, actor_role=role,
+            action=action, target=target,
+            before=before, after=after,
+            request_ip=_client_ip_of(request), note=note,
+        )
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +318,17 @@ async def create_token(body: CreateTokenBody, request: Request):
     await _sync_app_tokens(request, tokens)
 
     logger.info("Gateway token created: id=%s name=%r", token_id, body.name)
+    await _audit(
+        request, action="gateway_token.create",
+        target=f"gateway_token:{token_id}",
+        after={
+            "name": body.name,
+            "routing_policy": body.routing_policy,
+            "allowed_models": body.allowed_models,
+            "blocked_models": body.blocked_models,
+            "expires_at": body.expires_at,
+        },
+    )
 
     # Return full token including plaintext key (only time it is shown)
     return new_token
@@ -322,6 +352,11 @@ async def delete_token(token_id: str, request: Request):
     await _sync_app_tokens(request, tokens)
 
     logger.info("Gateway token deleted: id=%s", token_id)
+    await _audit(
+        request, action="gateway_token.delete",
+        target=f"gateway_token:{token_id}",
+        before={"existed": True}, after={"existed": False},
+    )
 
     return {"detail": f"Token '{token_id}' has been revoked and deleted."}
 
@@ -340,6 +375,15 @@ async def update_token(token_id: str, body: UpdateTokenBody, request: Request):
     token = next((t for t in tokens if t["id"] == token_id), None)
     if token is None:
         raise HTTPException(status_code=404, detail=f"Token '{token_id}' not found.")
+
+    _before = {
+        "name": token.get("name"),
+        "active": token.get("active"),
+        "routing_policy": token.get("routing_policy"),
+        "allowed_models": token.get("allowed_models"),
+        "blocked_models": token.get("blocked_models"),
+        "expires_at": token.get("expires_at"),
+    }
 
     if body.name is not None:
         token["name"] = body.name
@@ -363,6 +407,19 @@ async def update_token(token_id: str, body: UpdateTokenBody, request: Request):
         "Gateway token updated: id=%s updates=%r",
         token_id,
         body.model_dump(exclude_none=True),
+    )
+    await _audit(
+        request, action="gateway_token.update",
+        target=f"gateway_token:{token_id}",
+        before=_before,
+        after={
+            "name": token.get("name"),
+            "active": token.get("active"),
+            "routing_policy": token.get("routing_policy"),
+            "allowed_models": token.get("allowed_models"),
+            "blocked_models": token.get("blocked_models"),
+            "expires_at": token.get("expires_at"),
+        },
     )
 
     result = dict(token)
@@ -401,6 +458,11 @@ async def regenerate_token(token_id: str, request: Request):
     request.app.state.gateway_tokens = current_tokens
 
     logger.info("Gateway token key regenerated: id=%s", token_id)
+    await _audit(
+        request, action="gateway_token.regenerate",
+        target=f"gateway_token:{token_id}",
+        before={"key": old_key}, after={"key": new_key},
+    )
 
     return {
         "id": token_id,

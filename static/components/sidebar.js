@@ -14,7 +14,7 @@
   "use strict";
 
   // Single source of truth for the version label shown under the brand.
-  const VERSION = "v1.15.0";
+  const VERSION = "v1.19.0";
 
   // Each entry: { href, label, icon, target?, section, tip }
   // `tip` becomes the title="" attribute (native tooltip).

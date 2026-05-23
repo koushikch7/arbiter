@@ -1,11 +1,19 @@
 """
 HuggingFace Inference API provider adapter (OpenAI-compatible router endpoint).
 
-Free models that reliably support chat completions (April 2026):
-  Qwen/Qwen2.5-7B-Instruct           — most reliable free model  ← default
-  meta-llama/Llama-3.1-8B-Instruct   — Meta Llama 3.1 8B
-  meta-llama/Llama-3.2-1B-Instruct   — smallest, fastest
-  openai/gpt-oss-20b                 — OpenAI GPT-OSS 20B
+Verified chat-compatible models (May 2026) — via router.huggingface.co:
+  openai/gpt-oss-20b:fastest          — default, fast small model
+  openai/gpt-oss-120b:fastest         — large GPT-OSS reasoning
+  deepseek-ai/DeepSeek-V3.1:fastest   — DeepSeek V3.1
+  deepseek-ai/DeepSeek-R1:fastest     — DeepSeek R1 reasoning
+  meta-llama/Llama-3.3-70B-Instruct:fastest — Llama 3.3 70B
+  Qwen/Qwen3-32B:fastest              — Qwen 3 32B
+
+NOTE: The following models were removed (May 2026) — HF router returns
+  HTTP 400 "not a chat model" for these IDs:
+    mistralai/Mistral-7B-Instruct-v0.3
+    meta-llama/Llama-3.1-8B-Instruct
+    Qwen/Qwen2.5-7B-Instruct
 
 Endpoint:  https://router.huggingface.co/v1/chat/completions
 Auth:      Authorization: Bearer {HF_TOKEN}
@@ -38,9 +46,11 @@ class HuggingFaceProvider(BaseProvider):
     name = "huggingface"
     models_discovery_url = "https://router.huggingface.co/v1/models"
 
-    # HuggingFace Inference Providers (Apr 2026) — `:fastest` suffix routes
+    # HuggingFace Inference Providers (May 2026) — `:fastest` suffix routes
     # to whichever backend (Cerebras/Together/Sambanova/Groq/Novita/etc.) has
     # lowest latency.  No markup over partner pricing.
+    # NOTE: Mistral-7B-Instruct-v0.3, Llama-3.1-8B-Instruct, Qwen2.5-7B-Instruct
+    # removed — HF router returns HTTP 400 "not a chat model" as of May 2026.
     models: List[str] = [
         "openai/gpt-oss-20b:fastest",                # default — fast small
         "openai/gpt-oss-120b:fastest",               # large GPT-OSS reasoning
@@ -48,9 +58,6 @@ class HuggingFaceProvider(BaseProvider):
         "deepseek-ai/DeepSeek-R1:fastest",           # DeepSeek R1 reasoning
         "meta-llama/Llama-3.3-70B-Instruct:fastest", # Llama 3.3 70B
         "Qwen/Qwen3-32B:fastest",                    # Qwen 3 32B
-        "Qwen/Qwen2.5-7B-Instruct",                  # legacy fallback
-        "meta-llama/Llama-3.1-8B-Instruct",          # Meta Llama 3.1 8B
-        "mistralai/Mistral-7B-Instruct-v0.3",        # Mistral 7B
     ]
 
     max_context_tokens = 131_072
@@ -138,3 +145,24 @@ class HuggingFaceProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for HuggingFace Inference Router."""
+        from app.streaming.openai_stream import stream_openai_chat
+        requested = (request.model or "").strip()
+        model = requested if requested and requested.lower() != "auto" else self.default_model
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature, "top_p": request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        async for chunk in stream_openai_chat(
+            url=HF_API_BASE, headers=headers, payload=payload,
+            provider_name="HuggingFace", timeout=120.0,
+        ):
+            yield chunk

@@ -142,3 +142,31 @@ class OpenRouterProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for OpenRouter."""
+        from app.streaming.openai_stream import stream_openai_chat
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature, "top_p": request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.stop:
+            payload["stop"] = request.stop
+        # Ask OpenRouter to include usage in the final stream chunk
+        payload.setdefault("stream_options", {"include_usage": True})
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type":  "application/json",
+            "HTTP-Referer":  "https://github.com/arbiter-llm",
+            "X-Title":       "Arbiter",
+        }
+        async for chunk in stream_openai_chat(
+            url=OPENROUTER_API_BASE, headers=headers, payload=payload,
+            provider_name="OpenRouter", timeout=120.0,
+        ):
+            yield chunk

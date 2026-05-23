@@ -132,3 +132,29 @@ class ZaiProvider(BaseProvider):
                 total_tokens      = prompt_tokens + completion_tokens,
             ),
         )
+
+    async def complete_stream(self, request: ChatCompletionRequest, api_key: str):
+        """Native SSE streaming for Z.ai."""
+        from app.streaming.openai_stream import stream_openai_chat
+        requested = (request.model or "").strip()
+        model = self.default_model if (not requested or requested.lower() == "auto") else requested
+        messages = []
+        for msg in request.messages:
+            content = msg.content
+            if isinstance(content, list):
+                content = " ".join(
+                    p.get("text", "") for p in content if isinstance(p, dict)
+                )
+            messages.append({"role": msg.role, "content": content})
+        payload: dict = {
+            "model": model, "messages": messages,
+            "temperature": request.temperature, "top_p": request.top_p,
+        }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        async for chunk in stream_openai_chat(
+            url=ZAI_CHAT_URL, headers=headers, payload=payload,
+            provider_name="Z.ai", timeout=90.0,
+        ):
+            yield chunk

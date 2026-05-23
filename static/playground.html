@@ -45,7 +45,6 @@
     /* Endpoint info */
     .ep-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
     .ep-badge.cfworker  { background: rgba(244,129,32,.12); color: #f48120; }
-    .ep-badge.modal     { background: rgba(58,163,242,.12); color: #3aa3f2; }
     .ep-badge.gateway   { background: rgba(46,204,113,.12); color: #2ecc71; }
     .ep-badge.direct    { background: rgba(188,40,237,.12); color: #bc28ed; }
     .ep-url { font-size: 10px; font-family: 'JetBrains Mono'; color: var(--text-3); word-break: break-all; margin-top: 4px; }
@@ -205,6 +204,13 @@
               <label>Max tokens</label>
               <input type="number" id="max-tokens" value="512" min="1" max="8192" step="1">
             </div>
+            <div class="config-row" style="align-items:center;gap:8px">
+              <label style="margin-bottom:0">Stream (SSE)</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0">
+                <input type="checkbox" id="stream-toggle" style="width:15px;height:15px;cursor:pointer">
+                <span style="font-size:11px;color:var(--text-3)">Send <code>stream:true</code></span>
+              </label>
+            </div>
           </div>
 
           <div class="config-card" id="system-info-card" style="display:none">
@@ -220,7 +226,7 @@
             <div class="chat-empty" id="chat-empty">
               <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
               <p>Select an endpoint and start chatting</p>
-              <small>Supports CF Workers, Modal deployments, and all gateway providers</small>
+              <small>Supports CF Workers and all gateway providers</small>
             </div>
           </div>
           <div class="chat-input-bar">
@@ -327,63 +333,6 @@ async function loadEndpoints() {
       }
     } catch(e) {}
 
-    // 3. Modal deployments (active)
-    try {
-      var r3 = await fetch('/modal/deploy', {cache:'no-store'});
-      var mData = await r3.json();
-      var deps = (mData.deployments || []).filter(function(d) {
-        return d.status === 'active' && d.url;
-      });
-      if (deps.length) {
-        var og3 = document.createElement('optgroup');
-        og3.label = 'Modal Deployments';
-        deps.forEach(function(d) {
-          var id = 'modal:' + d.deploy_id;
-          _endpoints.push({
-            id: id, label: 'Modal: ' + d.name, type: 'modal',
-            url: d.url, model: d.model_id, vendor: 'modal',
-            note: d.gpu + ' | ' + d.model_id,
-          });
-          var opt = document.createElement('option');
-          opt.value = id; opt.textContent = 'Modal: ' + d.name + ' (' + d.model_id.split('/').pop() + ')';
-          og3.appendChild(opt);
-        });
-        sel.appendChild(og3);
-      }
-    } catch(e) {}
-
-    // 4. Registered Modal endpoints
-    try {
-      var r4 = await fetch('/modal/endpoints', {cache:'no-store'});
-      var epData = await r4.json();
-      var regEps = (Array.isArray(epData) ? epData : []).filter(function(e) { return e.url; });
-      if (regEps.length) {
-        var og4 = document.createElement('optgroup');
-        og4.label = 'Modal Endpoints (registered)';
-        regEps.forEach(function(e) {
-          var id = 'modalep:' + e.name;
-          _endpoints.push({
-            id: id, label: 'Modal EP: ' + e.name, type: 'modal',
-            url: e.url, model: (e.models||[])[0] || 'default',
-            note: e.url,
-          });
-          var opt = document.createElement('option');
-          opt.value = id; opt.textContent = 'Modal Endpoint: ' + e.name;
-          og4.appendChild(opt);
-        });
-        sel.appendChild(og4);
-      }
-    } catch(e) {}
-
-  } catch(e) {
-    sel.innerHTML = '<option value="">Error loading endpoints</option>';
-    return;
-  }
-
-  if (!sel.options.length) {
-    sel.innerHTML = '<option value="">No active endpoints found</option>';
-    return;
-  }
 
   // Restore last selection
   var last = localStorage.getItem('pg-endpoint');
@@ -419,7 +368,7 @@ function onEndpointChange() {
   }
   infoEl.style.display = 'block';
 
-  var typeLabel = {gateway:'Gateway', cfworker:'CF Worker', modal:'Modal', direct:'Direct'};
+  var typeLabel = {gateway:'Gateway', cfworker:'CF Worker', direct:'Direct'};
   badgeEl.innerHTML = '<span class="ep-badge ' + ep.type + '">' + (typeLabel[ep.type]||ep.type) + '</span>';
   urlEl.textContent = ep.url || ('Gateway /' + (ep.vendor||'') + ' provider');
 
@@ -534,6 +483,7 @@ async function sendMessage() {
   var systemPrompt = document.getElementById('system-prompt').value.trim();
   var temperature  = parseFloat(document.getElementById('temperature').value);
   var maxTokens    = parseInt(document.getElementById('max-tokens').value, 10);
+  var useStream    = document.getElementById('stream-toggle').checked && ep.type !== 'cfworker';
 
   var msgs = [];
   if (systemPrompt) msgs.push({role:'system', content:systemPrompt});
@@ -541,10 +491,12 @@ async function sendMessage() {
 
   var t0 = performance.now();
   try {
-    var result = await _callEndpoint(ep, msgs, temperature, maxTokens);
+    var result = await _callEndpoint(ep, msgs, temperature, maxTokens, useStream);
     var latency = Math.round(performance.now() - t0);
     removeThinking();
-    _messages.push({role:'assistant', content: result.text});
+    if (!result._streamed) {
+      _messages.push({role:'assistant', content: result.text});
+    }
     renderMessages(result.text, latency, result.model);
   } catch(err) {
     removeThinking();
@@ -559,7 +511,7 @@ async function sendMessage() {
   input.focus();
 }
 
-async function _callEndpoint(ep, messages, temperature, maxTokens) {
+async function _callEndpoint(ep, messages, temperature, maxTokens, useStream) {
   var payload = { messages: messages, temperature: temperature, max_tokens: maxTokens };
 
   function _parseError(errData, prefix, status, statusText) {
@@ -616,27 +568,74 @@ async function _callEndpoint(ep, messages, temperature, maxTokens) {
       model: data.model || ep.model,
     };
 
-  } else if (ep.type === 'modal' && ep.url) {
-    // Call Modal endpoint directly
-    var r = await fetch(ep.url.replace(/\/$/, '') + '/v1/chat/completions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(Object.assign({}, payload, {model: ep.model})),
-    });
-    if (!r.ok) {
-      var errData = await _readError(r);
-      throw new Error(_parseError(errData, 'Modal', r.status, r.statusText));
-    }
-    var data = await r.json();
-    return {
-      text:  _extractContent(data.choices[0].message),
-      model: data.model || ep.model,
-    };
 
   } else {
-    // Gateway routing (standard providers + modal via gateway)
+    // Gateway routing (standard providers)
     payload.model = ep.model || 'auto';
     var qs = ep.vendor ? '?vendor=' + encodeURIComponent(ep.vendor) : '';
+
+    if (useStream) {
+      payload.stream = true;
+      var r = await fetch('/v1/chat/completions' + qs, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        var errData = await _readError(r);
+        throw new Error(_parseError(errData, null, r.status, r.statusText));
+      }
+      // Stream SSE into the last assistant bubble progressively
+      var reader = r.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = '';
+      var accumulated = '';
+      var modelUsed = payload.model;
+      var usageData = null;
+      // Insert an empty assistant message now so renderMessages shows a bubble
+      _messages.push({role:'assistant', content:''});
+      var msgIdx = _messages.length - 1;
+      removeThinking();
+
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, {stream: true});
+        var lines = buf.split('\n');
+        buf = lines.pop(); // keep incomplete line
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li].trim();
+          if (!line) continue;
+          if (line.startsWith(':')) {
+            // SSE comment — check for model-used hint
+            var m = line.match(/^:\s*arbiter-model-used:\s*(.+)$/);
+            if (m) modelUsed = m[1].trim();
+            continue;
+          }
+          if (!line.startsWith('data:')) continue;
+          var payload_str = line.slice(5).trim();
+          if (payload_str === '[DONE]') break;
+          try {
+            var parsed = JSON.parse(payload_str);
+            // Error chunk
+            if (parsed.error) {
+              accumulated += '\n⚠️ ' + (parsed.error.message || 'Stream error');
+              break;
+            }
+            var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
+            if (delta && delta.content) {
+              accumulated += delta.content;
+              _messages[msgIdx].content = accumulated;
+              renderMessages(null, null, null);
+            }
+            if (parsed.usage) usageData = parsed.usage;
+          } catch(e) { /* ignore parse errors */ }
+        }
+      }
+      _messages[msgIdx].content = accumulated;
+      return { text: accumulated, model: modelUsed, _streamed: true };
+    }
+
     var r = await fetch('/v1/chat/completions' + qs, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},

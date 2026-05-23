@@ -1,3 +1,5 @@
+import base64
+import gzip
 import hashlib
 import json
 import logging
@@ -8,6 +10,42 @@ from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse
 logger = logging.getLogger(__name__)
 
 CACHE_KEY_PREFIX = "arbiter:cache:"
+
+# Magic prefix used to identify gzip-compressed cache payloads. The Redis
+# client runs with ``decode_responses=True`` so we cannot store raw binary —
+# we base64-encode the gzipped bytes to keep the value valid UTF-8. Entries
+# without this prefix are read as plain JSON for backward compatibility.
+_GZIP_MARKER = "GZ1:"
+# Only compress payloads that actually benefit from it. Below ~512 bytes the
+# gzip header + base64 overhead exceeds any savings.
+_MIN_COMPRESS_BYTES = 512
+
+
+def _maybe_compress(payload: str) -> str:
+    """Compress *payload* if it is large enough to benefit, else return as-is."""
+    raw = payload.encode("utf-8")
+    if len(raw) < _MIN_COMPRESS_BYTES:
+        return payload
+    try:
+        compressed = gzip.compress(raw, compresslevel=6)
+        if len(compressed) >= len(raw):
+            # Pathological — already incompressible
+            return payload
+        return _GZIP_MARKER + base64.b64encode(compressed).decode("ascii")
+    except Exception:
+        return payload
+
+
+def _maybe_decompress(raw: str) -> str:
+    """Inverse of :func:`_maybe_compress`. Tolerates legacy plain JSON values."""
+    if not isinstance(raw, str) or not raw.startswith(_GZIP_MARKER):
+        return raw
+    try:
+        b64 = raw[len(_GZIP_MARKER):]
+        return gzip.decompress(base64.b64decode(b64)).decode("utf-8")
+    except Exception as exc:
+        logger.warning("Failed to decompress cache payload: %s", exc)
+        raise
 
 
 class CacheLayer:
@@ -52,6 +90,7 @@ class CacheLayer:
             raw = await self.redis.get(key)
             if raw is None:
                 return None
+            raw = _maybe_decompress(raw)
             data = json.loads(raw)
             response = ChatCompletionResponse(**data)
             logger.debug(f"Cache HIT for key {key[-8:]}")
@@ -67,8 +106,12 @@ class CacheLayer:
         try:
             ttl = ttl if ttl is not None else self.default_ttl
             raw = response.model_dump_json()
-            await self.redis.set(key, raw, ex=ttl)
-            logger.debug(f"Cache SET for key {key[-8:]} TTL={ttl}s")
+            payload = _maybe_compress(raw)
+            await self.redis.set(key, payload, ex=ttl)
+            logger.debug(
+                "Cache SET for key %s TTL=%ss size=%d (compressed=%s)",
+                key[-8:], ttl, len(payload), payload.startswith(_GZIP_MARKER),
+            )
         except Exception as e:
             logger.warning(f"Cache set error for key {key[-8:]}: {e}")
 

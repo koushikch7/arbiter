@@ -709,3 +709,37 @@ img { image-rendering: -webkit-optimize-contrast; }
   body { background: #fff !important; color: #000 !important; }
   .card { box-shadow: none; border-color: #ccc; }
 }
+
+/* ─── Major-change announcement banners (v1.18.0) ───────────────── */
+.announcement-banners { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.announcement-banner {
+  position: relative;
+  border-radius: 8px;
+  padding: 12px 14px 12px 14px;
+  border: 1px solid;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.announcement-banner.severity-info     { background: #eaf4ff; border-color: #5da9e9; color: #103a64; }
+.announcement-banner.severity-warning  { background: #fff7e0; border-color: #d9a521; color: #5a3d04; }
+.announcement-banner.severity-critical { background: #fde3e3; border-color: #c83232; color: #5e0d0d; }
+.announcement-banner .ann-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.announcement-banner .ann-sev {
+  font-weight: 700; font-size: 10px; letter-spacing: 0.08em;
+  padding: 2px 6px; border-radius: 3px; background: rgba(0,0,0,0.07);
+}
+.announcement-banner .ann-title { font-weight: 600; flex: 1; }
+.announcement-banner .ann-dismiss {
+  background: transparent; border: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: inherit; opacity: .55; padding: 0 4px;
+}
+.announcement-banner .ann-dismiss:hover { opacity: 1; }
+.announcement-banner .ann-body { margin: 4px 0; }
+.announcement-banner .ann-action,
+.announcement-banner .ann-impacted,
+.announcement-banner .ann-docs { margin-top: 6px; font-size: 12px; }
+.announcement-banner .ann-meta { margin-top: 8px; font-size: 11px; opacity: .65; }
+.announcement-banner a { color: inherit; text-decoration: underline; }

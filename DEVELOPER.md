@@ -150,11 +150,13 @@ arbiter/
 │   │   ├── cerebras.py               # Cerebras Inference (4 models)
 │   │   ├── openrouter.py             # OpenRouter (7 free models)
 │   │   ├── cohere_provider.py        # Cohere (4 models)
-│   │   ├── huggingface.py            # HuggingFace (4 models)
+│   │   ├── huggingface.py            # HuggingFace (6 :fastest models)
 │   │   ├── pollinations.py           # Pollinations.ai (3 free models)
 │   │   ├── zai_provider.py           # Z.ai / Zhipu AI (3 free models)
-│   │   ├── lightning_provider.py     # Lightning.ai LitAI (5 models)
-│   │   └── modal_provider.py         # Modal.com vLLM GPU provider
+│   │   ├── nvidia_provider.py        # NVIDIA NIM (5+ models, build.nvidia.com)
+│   │   ├── ollama_provider.py        # Ollama (self-hosted)
+│   │   ├── routeway.py               # Routeway unified gateway
+│   │   └── generic_openai.py         # User-added custom OpenAI-compatible providers
 │   │
 │   ├── routing/                      # Routing logic
 │   │   ├── __init__.py
@@ -170,26 +172,43 @@ arbiter/
 │   │
 │   ├── middleware/                   # Request/response middleware
 │   │   ├── __init__.py
-│   │   └── auth.py                   # Gateway auth & Cloudflare Access JWT
+│   │   └── auth.py                   # Gateway auth, per-token rate limiter, Cloudflare Access JWT
+│   │
+│   ├── observability/               # Persistent logging (v1.18.0)
+│   │   ├── __init__.py
+│   │   ├── persistent_log.py         # 180-day JSONL log store (api/activity/errors) + janitor
+│   │   └── stats.py                  # Redis-backed real-time counters (sorted-set error log)
+│   │
+│   ├── services/                    # Background services
+│   │   ├── announcements.py          # Dashboard banner service (v1.18.0)
+│   │   ├── daily_report.py           # Daily + weekly email report with AI analysis
+│   │   └── model_health.py           # Weekly model probe scheduler
 │   │
 │   └── api/                          # FastAPI routers
 │       ├── __init__.py
-│       ├── chat.py                   # POST /v1/chat/completions
+│       ├── chat.py                   # POST /v1/chat/completions (+ persistent log instrumentation)
 │       ├── models_api.py             # GET /v1/models
 │       ├── dashboard.py              # Dashboard & stats HTML endpoints
 │       ├── settings_api.py           # GET/POST/DELETE /settings/routing, /settings/cache
 │       ├── keys_api.py               # GET/POST/DELETE /api/providers/* (runtime key mgmt)
 │       ├── image_api.py              # POST /v1/images/generations (Pollinations)
 │       ├── cloudflare_manager.py     # Workers AI management + validate endpoint
-│       ├── modal_manager.py          # Modal account/model info endpoints
-│       └── modal_deploy.py           # Modal vLLM one-click deploy endpoints
+│       ├── gateway_tokens_api.py     # Gateway token CRUD
+│       ├── announcements_api.py      # Dashboard banner API (v1.18.0)
+│       ├── persistent_logs_api.py    # Persistent log query API (v1.18.0)
+│       ├── analytics_api.py          # Analytics data endpoints
+│       ├── backup_api.py             # Backup & restore
+│       ├── users_api.py              # User management + SSO approval
+│       ├── preferences_api.py        # Auto-route preferences
+│       └── custom_providers_api.py   # User-added custom providers
 │
 ├── static/                            # Static assets (served at /static/)
 │   ├── arbiter.css                   # Shared design system (light/dark theme, components)
 │   ├── arbiter.js                    # Shared JS (theme toggle, sidebar, toast, helpers)
 │   ├── dashboard.html                # Web UI dashboard (/dashboard)
-│   ├── api-docs.html                 # Interactive API documentation (/api-docs)
-│   └── settings.html                 # Settings control panel (/settings)
+│   ├── developer.html               # Developer documentation (/developer)
+│   ├── backup.html                  # Backup & restore UI (/backup)
+│   ├── users.html                   # Users & access management (/users)
 │
 ├── Dockerfile                         # Docker image
 ├── docker-compose.yml                # Compose config
@@ -271,49 +290,13 @@ Omit body to validate the currently configured key. Response:
 }
 ```
 
-### Modal.com GPU Deployment
-
-| Method | Path | Description |
-|---|---|---|
-| `GET`    | `/modal/deploy/check` | Check Modal CLI availability and token configuration |
-| `POST`   | `/modal/deploy` | Start a vLLM deployment on Modal GPU |
-| `GET`    | `/modal/deploy/{deploy_id}` | Get deployment status and logs |
-| `GET`    | `/modal/deploy` | List all active deployments |
-| `DELETE` | `/modal/deploy/{deploy_id}` | Stop/delete a deployment |
-| `GET`    | `/modal/account` | Get Modal account info |
-| `GET`    | `/modal/models` | List available GPU models for deployment |
-
-**`GET /modal/deploy/check` response:**
-```json
-{
-  "cli_found": true,
-  "cli_path": "/usr/local/bin/modal",
-  "token_configured": true,
-  "token_id_masked": "ak-xxxx...****",
-  "ready": true,
-  "issues": []
-}
-```
-
-**`POST /modal/deploy` body:**
-```json
-{
-  "model_id": "meta-llama/Llama-3.1-8B-Instruct",
-  "gpu": "A10G",
-  "num_gpus": 1,
-  "max_model_len": 8192,
-  "deployment_name": "my-llm"
-}
-```
-Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2 seconds.
-
 ### UI & Monitoring
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/dashboard` | Web dashboard (HTML) |
 | `GET` | `/dashboard/stats` | Dashboard stats (JSON) |
-| `GET` | `/api-docs` | Interactive API documentation (HTML) |
+| `GET` | `/developer` | Developer documentation (HTML) |
 | `GET` | `/settings` | Settings control panel (HTML) |
 | `GET` | `/playground` | Chat playground — test any endpoint (HTML) |
 | `GET` | `/logs` | Real-time log viewer (HTML) |
@@ -323,6 +306,43 @@ Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2
 | `GET` | `/health` | Health check |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/redoc` | ReDoc |
+
+### Announcements / Banners (v1.18.0+)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/announcements/active` | Active dashboard banners (authenticated) |
+| `POST` | `/api/announcements` | Publish major-change banner (admin) |
+| `DELETE` | `/api/announcements/{id}` | Retract a banner (admin) |
+
+### Persistent Logs (v1.18.0+, admin)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/logs/persistent/summary` | Aggregated stats for N-day window |
+| `GET` | `/api/logs/persistent/api` | Paginated API request records |
+| `GET` | `/api/logs/persistent/activity` | Paginated admin activity audit records |
+| `GET` | `/api/logs/persistent/errors` | Paginated error records |
+| `POST` | `/api/logs/persistent/prune` | Force 180-day retention prune |
+
+**`GET /api/logs/persistent/*` query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `days` | int | 7 | History window in days (1–180) |
+| `limit` | int | 100 | Max records to return (1–1000) |
+| `offset` | int | 0 | Pagination offset |
+
+### Gateway Tokens (admin)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/gateway/tokens` | List all gateway tokens |
+| `POST` | `/api/gateway/tokens` | Create a token |
+| `PATCH` | `/api/gateway/tokens/{id}` | Update (policy, rate limit, labels) |
+| `DELETE` | `/api/gateway/tokens/{id}` | Delete a token |
+| `POST` | `/api/gateway/tokens/{id}/regenerate` | Rotate token secret |
+| `GET` | `/api/gateway/tokens/{id}/stats` | Usage statistics |
 
 **`GET /logs/records` query parameters:**
 
@@ -354,10 +374,9 @@ Returns `deploy_id`; logs stream to Redis and are polled by the frontend every 2
 | `arbiter:cf:workers:registry` | JSON | Cloudflare worker registry (provisioning state + metadata) |
 | `arbiter:cf:deleting:{name}` | String (120s TTL) | Deletion marker — suppresses worker from list during CF propagation delay |
 | `arbiter:cf:workers` | JSON | Active CF workers with URLs (used for gateway routing) |
-| `arbiter:modal:deploy:{id}:logs` | List | Streaming deploy log lines from `modal deploy` subprocess |
-| `arbiter:modal:deploy:{id}:status` | JSON | Deployment status: pending/running/failed/complete |
-| `arbiter:modal:deployments` | JSON | Active Modal deployments with endpoint URLs (used for gateway routing) |
-| `arbiter:modal:token` | String | Cached Modal token (id:secret) — loaded from env or set via UI |
+| `arbiter:health:model:{provider}:{model}` | JSON | Weekly model-health probe result `{status, last_checked, error, latency_ms}` (14-day TTL) |
+| `arbiter:health:model:last_run` | String | ISO timestamp of last weekly health check |
+| `arbiter:health:model:last_summary` | JSON | Summary of last run `{providers, models, ok, fail, elapsed_s}` |
 
 ---
 
@@ -746,6 +765,57 @@ The dashboard auto-discovers providers from `key_pools`, so no code changes need
 
 ## How to Extend the Router
 
+### Complexity-Aware Routing (v1.19.0)
+
+The routing pipeline now includes a **complexity analyzer** that scores every
+incoming request before model selection:
+
+```
+Request → complexity_analyzer.analyze_complexity(request)
+        → Complexity enum (TRIVIAL=1, SIMPLE=2, MODERATE=3, COMPLEX=4, EXPERT=5)
+        → auto_router adjusts quality/speed weight balance per tier
+        → Smart Model Upgrade intercepts weak model + complex request
+```
+
+**Key files:**
+- [`app/routing/complexity_analyzer.py`](app/routing/complexity_analyzer.py) — 13-factor scoring
+- [`app/routing/auto_router.py`](app/routing/auto_router.py) — complexity-aware candidate scoring
+- [`app/routing/router.py`](app/routing/router.py) — Smart Model Upgrade in `_build_candidate_chain()`
+
+**Scoring factors** (in `complexity_analyzer.py`):
+1. Message length (char count)
+2. Conversation depth (multi-turn)
+3. System prompt sophistication
+4. Task complexity markers (keywords)
+5. Expert-level indicators
+6. Code complexity signals
+7. Multi-component signals
+8. Reasoning depth markers
+9. Quality/precision signals
+10. Code blocks present
+11. List item count
+12. Intent classification boost
+13. Numbered requirements
+
+**Thresholds:** ≤1.5=TRIVIAL, ≤3.5=SIMPLE, ≤7=MODERATE, ≤12=COMPLEX, >12=EXPERT
+
+**Auto-router weight balance** per complexity tier:
+
+| Tier | quality_weight | speed_weight |
+|------|---------------|-------------|
+| TRIVIAL | 8 | 30 |
+| SIMPLE | 15 | 22 |
+| MODERATE | 25 | 15 |
+| COMPLEX | 38 | 8 |
+| EXPERT | 45 | 5 |
+
+**Smart Model Upgrade:** When a client explicitly requests a model with quality≤2
+AND the request complexity is ≥MODERATE, the router silently builds an auto-quality
+candidate chain instead (appending the original model as a fallback).
+
+**Provider Diversity:** `_ensure_provider_diversity()` guarantees 4+ unique providers
+appear in the top-8 candidates by interleaving under-represented providers.
+
 ### Change Routing Strategy
 
 Edit `_provider_order()` in `app/routing/router.py`:
@@ -879,7 +949,7 @@ class GatewayAuthMiddleware:
     EXEMPT_PATHS = {
         "/health",
         "/docs",
-        "/api-docs",
+        "/developer",
         "/dashboard",
         "/openapi.json",
     }
@@ -1671,6 +1741,102 @@ arbiter/backups/
   full/2026/05/arbiter-full-20260501T010000Z.tar.gz
   incremental/2026/05/arbiter-incr-20260501T020000Z.tar.gz
 ```
+
+---
+
+## Observability & Persistent Logging (v1.18.0)
+
+### Architecture
+
+```
+Request Flow (additions in v1.18.0 shown with ★)
+    │
+    ▼
+┌─ GatewayAuthMiddleware ─────────────────┐
+│  ★ Per-token rate limit check           │
+│    (sliding-minute window in Redis)     │
+│    429 with Retry-After if exceeded     │
+└─────────────────────────────────────────┘
+    │
+    ▼
+┌─ /v1/chat/completions ──────────────────┐
+│  ★ _req_start = time.monotonic()        │
+│  ★ _req_ip = client IP                  │
+│  ... (routing, provider call) ...       │
+│  ★ log_api_call() → JSONL file          │
+└─────────────────────────────────────────┘
+
+★ Admin mutation endpoints (keys, tokens, settings, workers, announcements):
+    → log_activity() → HMAC-tagged JSONL record
+```
+
+### File system layout
+
+```
+/app/data/logs/
+├── api/
+│   ├── 2026-05-12.jsonl       # gateway request records
+│   └── 2026-05-13.jsonl
+├── activity/
+│   ├── 2026-05-12.jsonl       # admin mutations (HMAC-tagged)
+│   └── 2026-05-13.jsonl
+└── errors/
+    └── 2026-05-12.jsonl       # structured errors
+```
+
+### Key module: `app/observability/persistent_log.py`
+
+| Function | Purpose |
+|----------|---------|
+| `log_api_call(...)` | Write an API request record (async, best-effort) |
+| `log_activity(...)` | Write an HMAC-tagged admin mutation record |
+| `log_error(...)` | Write a structured error record |
+| `iter_records(stream, days)` | Async generator yielding records from a stream |
+| `summarise(days)` | Aggregate stats for the email report |
+| `prune_now()` | Delete files older than 180 days |
+| `start_janitor()` / `stop_janitor()` | Lifecycle management (called from lifespan) |
+| `resolve_actor(request)` | Extract (email, role) from SSO session or Bearer |
+| `client_ip_of(request)` | Extract client IP (X-Forwarded-For aware) |
+
+### Redis keys added in v1.18.0
+
+| Key pattern | Type | Purpose |
+|-------------|------|---------|
+| `arbiter:ratelimit:token:{tid}:{minute}` | STRING (int) | Per-token sliding-minute counter |
+| `arbiter:announcement:{id}` | STRING (JSON) | Individual announcement record |
+| `arbiter:announcements:active` | ZSET | Active announcement IDs (score = created_at) |
+| `arbiter:error_log_z` | ZSET | Sorted-set error log (score = timestamp) |
+| `arbiter:health:model:last_summary` | STRING (JSON) | Latest weekly health summary |
+
+### Adaptive routing internals
+
+**Gap A** — `router.py::_get_unhealthy_providers()`:
+- Scans `arbiter:stats:provider:{p}:success/errors` for each provider
+- Marks unhealthy if total ≥ 100 AND error_rate ≥ 20%
+- 60-second cache on `self._unhealthy_cache`
+- `_apply_health_demote(candidates)` moves unhealthy providers to tail
+
+**Gap B** — `key_pool.py::get_best_key()`:
+- After first pick returns None, checks `_any_rpm_throttled()`
+- If all keys are at ≥ 85% RPM AND seconds_to_reset < 10: `await asyncio.sleep(seconds_to_reset + 0.1)` then re-pick
+- One retry only (prevents unbounded blocking)
+
+**TPM-aware scoring** — `key_pool.py::_score_key(estimated_request_tokens)`:
+```python
+remaining_tpm = max(0, tpm_limit - tpm_used)
+needed = int(estimated_request_tokens * 1.1)  # 10% safety margin
+if needed > remaining_tpm:
+    tpm_avail = 0.0
+else:
+    tpm_avail = max(0.0, (remaining_tpm - needed) / tpm_limit)
+```
+
+### Announcements service internals
+
+- Key: `arbiter:announcement:{id}` with TTL = ttl_days × 86400
+- Sorted set: `arbiter:announcements:active` (score = created_at)
+- `_resolve_impacted_tokens()` scans `arbiter:stats:token:*:provider:*:requests` to find which gateway tokens actually use the affected providers
+- Expired announcements are cleaned up on every read via `ZRANGEBYSCORE` vs key existence
 
 ---
 

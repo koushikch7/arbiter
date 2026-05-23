@@ -28,6 +28,7 @@
     .badge-post { background: #dcfce7; color: #166534; }
     .badge-delete { background: #fef2f2; color: #991b1b; }
     .badge-patch { background: #fef3c7; color: #92400e; }
+    .badge-put { background: #ede9fe; color: #5b21b6; }
     .info-callout { padding: 14px 18px; border-radius: 8px; border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); margin: 16px 0; font-size: 13px; color: var(--text-2); }
     .warn-callout { padding: 14px 18px; border-radius: 8px; border-left: 4px solid var(--yellow); background: var(--yellow-dim); margin: 16px 0; font-size: 13px; color: var(--text-2); }
   </style>
@@ -55,6 +56,8 @@
         <div class="doc-tab" data-tab="routing">Routing</div>
         <div class="doc-tab" data-tab="sdks">SDK Examples</div>
         <div class="doc-tab" data-tab="gateway">Gateway Tokens</div>
+        <div class="doc-tab" data-tab="observability">Observability</div>
+        <div class="doc-tab" data-tab="changelog">v1.18 Changes</div>
       </div>
 
       <!-- Quick Start -->
@@ -147,20 +150,96 @@ print(response.choices[0].message.content)</div>
       <div class="doc-section" id="tab-endpoints">
         <h2 class="doc-h2">API Endpoints</h2>
 
+        <h3 class="doc-h3">Inference (OpenAI-compatible)</h3>
         <table class="doc-table">
           <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/chat/completions</code></td><td>Create a chat completion (OpenAI-compatible)</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/models</code></td><td>List available models</td></tr>
-            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/images/generations</code></td><td>Generate images (DALL-E compatible)</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/providers/meta</code></td><td>Provider registry metadata (models, limits, colors)</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/gateway/tokens</code></td><td>List gateway tokens (admin)</td></tr>
-            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/gateway/tokens</code></td><td>Create gateway token (admin)</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/health</code></td><td>Health check</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/chat/completions</code></td><td>Chat completion — streaming and non-streaming</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/models</code></td><td>List all routable models</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/images/generations</code></td><td>Image generation via Pollinations.ai</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/images/models</code></td><td>List image generation models</td></tr>
           </tbody>
         </table>
 
-        <p class="doc-p">For the complete API schema with request/response types, use <a href="/docs" target="_blank">Swagger UI</a> or <a href="/redoc" target="_blank">ReDoc</a>.</p>
+        <h3 class="doc-h3">Provider &amp; Key Management (admin)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/providers</code></td><td>List providers with status and key info</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/providers/meta</code></td><td>Provider registry metadata (SSOT)</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/providers/{name}/keys</code></td><td>Add an API key to a provider</td></tr>
+            <tr><td><span class="badge-method badge-delete">DELETE</span></td><td><code>/api/providers/{name}/keys/{hash}</code></td><td>Remove a key by hash</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/providers/{name}/enable</code></td><td>Enable a provider</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/providers/{name}/disable</code></td><td>Disable a provider</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/providers/{name}/test</code></td><td>Test provider connectivity</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/providers/reload</code></td><td>Hot-reload keys from .env</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/models/info</code></td><td>Model info with rate limits and free/paid status</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Gateway Tokens (admin)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/gateway/tokens</code></td><td>List gateway tokens</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/gateway/tokens</code></td><td>Create a token</td></tr>
+            <tr><td><span class="badge-method badge-patch">PATCH</span></td><td><code>/api/gateway/tokens/{token_id}</code></td><td>Update token (policy, limits, labels)</td></tr>
+            <tr><td><span class="badge-method badge-delete">DELETE</span></td><td><code>/api/gateway/tokens/{token_id}</code></td><td>Delete a token</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/gateway/tokens/{token_id}/regenerate</code></td><td>Rotate token secret</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/gateway/tokens/{token_id}/stats</code></td><td>Usage stats for a token</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Announcements / Banners (v1.18.0+)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/announcements/active</code></td><td>Get active dashboard banners (authenticated)</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/announcements</code></td><td>Post a major-change banner (admin)</td></tr>
+            <tr><td><span class="badge-method badge-delete">DELETE</span></td><td><code>/api/announcements/{id}</code></td><td>Retract an announcement (admin)</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Persistent Logs (v1.18.0+, admin)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/logs/persistent/summary</code></td><td>Aggregated stats for N-day window (default 7d)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/logs/persistent/api</code></td><td>Gateway request records (newest first, paginated)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/logs/persistent/activity</code></td><td>Admin activity audit records (HMAC-tagged)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/logs/persistent/errors</code></td><td>Structured error records</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/api/logs/persistent/prune</code></td><td>Force janitor run (delete files &gt;180 days)</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Settings &amp; Cache (admin)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/settings/routing</code></td><td>Get provider routing order</td></tr>
+            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/settings/routing</code></td><td>Save routing order</td></tr>
+            <tr><td><span class="badge-method badge-delete">DELETE</span></td><td><code>/settings/routing</code></td><td>Reset to default</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/settings/cache</code></td><td>Cache info (key count, hit rate)</td></tr>
+            <tr><td><span class="badge-method badge-delete">DELETE</span></td><td><code>/settings/cache</code></td><td>Clear response cache</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/api/preferences/auto-route</code></td><td>Get auto-route model preferences</td></tr>
+            <tr><td><span class="badge-method badge-put">PUT</span></td><td><code>/api/preferences/auto-route</code></td><td>Update auto-route preferences</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">System</h3>
+        <table class="doc-table">
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/health</code></td><td>Health check (providers, Redis, version)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/docs</code></td><td>Swagger UI (interactive)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/redoc</code></td><td>ReDoc (read-only reference)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/openapi.json</code></td><td>Raw OpenAPI 3.x schema</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/analytics/data</code></td><td>Analytics JSON (provider/model/token breakdown)</td></tr>
+            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/dashboard/stats</code></td><td>Dashboard KPIs JSON</td></tr>
+          </tbody>
+        </table>
+
+        <p class="doc-p">For the complete schema with request/response models use <a href="/docs" target="_blank">Swagger UI</a> or <a href="/redoc" target="_blank">ReDoc</a>.</p>
 
         <h3 class="doc-h3">Chat Completion Request Body</h3>
         <div class="code-block"><span class="lang-tag">json</span>{
@@ -171,8 +250,90 @@ print(response.choices[0].message.content)</div>
   ],
   "temperature": 0.7,
   "max_tokens": 2048,
-  "fallback": "chain"
+  "stream": false,
+  "fallback": "chain",
+  "metadata": {
+    "arbiter_intent": "balanced",
+    "priority": "quality"
+  }
 }</div>
+
+        <h3 class="doc-h3">Request Parameters</h3>
+        <table class="doc-table">
+          <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>model</code></td><td>string</td><td><em>required</em></td><td>Model ID or <code>"auto"</code> for smart routing</td></tr>
+            <tr><td><code>messages</code></td><td>array</td><td><em>required</em></td><td>Array of <code>{role, content}</code> objects (<code>system</code> / <code>user</code> / <code>assistant</code>). <code>content</code> may be a string or an array of content blocks (multimodal).</td></tr>
+            <tr><td><code>temperature</code></td><td>float</td><td>0.7</td><td>Sampling temperature (0–2). Values ≤ 0.3 are cached in Redis.</td></tr>
+            <tr><td><code>top_p</code></td><td>float</td><td>1.0</td><td>Nucleus sampling (0–1)</td></tr>
+            <tr><td><code>max_tokens</code></td><td>integer</td><td>—</td><td>Max tokens to generate (optional)</td></tr>
+            <tr><td><code>stop</code></td><td>string | array</td><td>—</td><td>Stop sequences (optional)</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>false</td><td>Enable SSE streaming — see <em>Streaming</em> section below</td></tr>
+            <tr><td><code>fallback</code></td><td>string</td><td>—</td><td><code>none</code> (strict pin) | <code>same_provider</code> | <code>chain</code> (cross-provider auto-router). Only relevant when <code>model</code> is a specific model, not <code>"auto"</code>.</td></tr>
+            <tr><td><code>metadata</code></td><td>object</td><td>—</td><td>Arbiter routing hints. See <em>Routing Metadata</em> below.</td></tr>
+          </tbody>
+        </table>
+
+        <h4 class="doc-h3" style="font-size:13px">Query Parameters</h4>
+        <table class="doc-table">
+          <thead><tr><th>Param</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>vendor</code></td><td>string</td><td>Pin a specific provider (e.g. <code>?vendor=cerebras</code>). That provider is tried first before fallback to others.</td></tr>
+            <tr><td><code>force_model</code></td><td>string</td><td>Override the <code>model</code> body field — bypasses automatic model selection entirely (e.g. <code>?force_model=llama3.1-8b</code>).</td></tr>
+          </tbody>
+        </table>
+
+        <h4 class="doc-h3" style="font-size:13px">Routing Metadata (<code>metadata</code> object)</h4>
+        <table class="doc-table">
+          <thead><tr><th>Key</th><th>Values</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>arbiter_intent</code></td><td>code | reasoning | long-context | vision | creative | fast | balanced</td><td>Force intent classification for model selection. Bypasses auto-detection.</td></tr>
+            <tr><td><code>priority</code></td><td>speed | quality | balanced</td><td>Scoring bias in auto-routing. Equivalent to <code>X-Arbiter-Priority</code> header.</td></tr>
+            <tr><td><code>prefer_provider</code></td><td>any provider name</td><td>Boost a provider in auto routing. Equivalent to <code>X-Arbiter-Prefer-Provider</code> header.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Streaming (SSE)</h3>
+        <p class="doc-p">
+          Set <code>"stream": true</code> to receive the response as a <code>text/event-stream</code> (Server-Sent Events) sequence.
+          The format is identical to the OpenAI streaming API — every OpenAI SDK, LiteLLM, LangChain, and direct <code>EventSource</code> works out of the box.
+          All 14 providers are supported natively.
+        </p>
+        <div class="code-block"><span class="lang-tag">bash</span>curl -sS -N \
+  -H "Authorization: Bearer &lt;gateway-token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}],"stream":true}' \
+  https://arbiter.chkoushik.com/v1/chat/completions</div>
+        <p class="doc-p">Each <code>data:</code> line carries a <code>chat.completion.chunk</code> object:</p>
+        <div class="code-block"><span class="lang-tag">sse</span>: arbiter-model-used: gemini/gemini-2.5-flash-lite
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}
+
+data: [DONE]</div>
+        <table class="doc-table" style="margin-top:12px">
+          <thead><tr><th>SSE event</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>: arbiter-model-used: &lt;provider/model&gt;</code></td><td>SSE comment (ignored by OpenAI SDKs) — identifies which provider fulfilled the request. <code>cache/&lt;model&gt;</code> = served from Redis cache.</td></tr>
+            <tr><td><code>: thinking / evaluating / generating / almost there</code></td><td>Keepalive heartbeat emitted every ~5 s while the upstream is thinking (prevents nginx/Cloudflare idle-timeout). Invisible to OpenAI SDKs.</td></tr>
+            <tr><td><code>data: {"choices":[{"delta":{"content":"..."}}]}</code></td><td>Text delta — append to your buffer.</td></tr>
+            <tr><td><code>data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{...}}</code></td><td>Final chunk — includes real token usage for all providers that support it.</td></tr>
+            <tr><td><code>data: [DONE]</code></td><td>Stream end marker.</td></tr>
+            <tr><td><code>data: {"error":{"message":"...","type":"...","code":502}}</code></td><td>Mid-stream error (rare — only when upstream fails after the first chunk was already sent). Stream ends immediately after.</td></tr>
+          </tbody>
+        </table>
+        <p class="doc-p" style="margin-top:10px">
+          <strong>Caching with streaming:</strong> Cache reads replay as an instant stream (milliseconds). Cache writes happen after
+          <code>[DONE]</code> — a non-stream call that populates the cache will make the next stream call instant, and vice versa.
+          Only requests with <code>temperature ≤ 0.3</code> are cached.
+        </p>
+        <p class="doc-p">
+          <strong>Fallback during streaming:</strong> Pre-first-chunk failures fall back transparently to the next provider.
+          Post-first-chunk failures emit a <code>data: {"error":{...}}</code> event and end the stream (bytes already sent, cannot redirect).
+        </p>
 
         <h3 class="doc-h3">Response Headers</h3>
         <table class="doc-table">
@@ -212,7 +373,13 @@ print(response.choices[0].message.content)</div>
         <p class="doc-p">On rate limit → try next key. On provider error → try next model. All exhausted → 503.</p>
 
         <h3 class="doc-h3">Provider Priority (default)</h3>
-        <div class="code-block"><span class="lang-tag">text</span>gemini → groq → cerebras → nvidia → zai → cloudflare → openrouter → cohere → huggingface → pollinations → ollama → routeway → lightning</div>
+        <div class="code-block"><span class="lang-tag">text</span>nvidia → gemini → groq → cerebras → zai → cloudflare → openrouter → cohere → huggingface → pollinations → ollama → routeway</div>
+
+        <h3 class="doc-h3">Adaptive Provider Ordering (v1.18.0+)</h3>
+        <p class="doc-p">At runtime, providers with a lifetime error rate ≥ 20% (minimum 100 requests sampled) are automatically demoted to the tail of the candidate chain. The demotion is cached for 60 seconds and re-evaluated continuously. Override the static priority in <strong>Settings → Routing</strong>.</p>
+
+        <h3 class="doc-h3">TPM-aware Key Rotation (v1.18.0+)</h3>
+        <p class="doc-p">The key-picker now accounts for each key's <em>tokens-per-minute</em> budget. When the router estimates that the current request exceeds a key's remaining TPM headroom, that key is deprioritised regardless of its RPM score. If all keys are near their RPM cap and the minute boundary is within 10 seconds, the gateway waits for reset instead of falling through to the next provider.</p>
       </div>
 
       <!-- SDK Examples -->
@@ -260,6 +427,59 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}],
     extra_query={"vendor": "nvidia"},
 )</div>
+
+        <h3 class="doc-h3">Streaming — Python (openai SDK)</h3>
+        <div class="code-block"><span class="lang-tag">python</span>import openai
+
+client = openai.OpenAI(
+    base_url="https://arbiter.chkoushik.com/v1",
+    api_key="your-gateway-token",
+)
+
+with client.chat.completions.stream(
+    model="auto",
+    messages=[{"role": "user", "content": "Write a haiku about the sea."}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+print()  # newline after stream ends</div>
+
+        <h3 class="doc-h3">Streaming — JavaScript (openai SDK)</h3>
+        <div class="code-block"><span class="lang-tag">typescript</span>import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://arbiter.chkoushik.com/v1",
+  apiKey: "your-gateway-token",
+});
+
+const stream = await client.chat.completions.stream({
+  model: "auto",
+  messages: [{ role: "user", content: "Write a haiku about the sea." }],
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}
+console.log(); // newline after stream ends</div>
+
+        <h3 class="doc-h3">Streaming — curl (raw SSE)</h3>
+        <div class="code-block"><span class="lang-tag">bash</span>curl -sS -N \
+  -H "Authorization: Bearer your-gateway-token" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}],"stream":true}' \
+  https://arbiter.chkoushik.com/v1/chat/completions</div>
+
+        <h3 class="doc-h3">Streaming — LangChain (Python)</h3>
+        <div class="code-block"><span class="lang-tag">python</span>from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    base_url="https://arbiter.chkoushik.com/v1",
+    api_key="your-gateway-token",
+    model="auto",
+    streaming=True,
+)
+for chunk in llm.stream("Write a haiku about the sea."):
+    print(chunk.content, end="", flush=True)</div>
       </div>
 
       <!-- Gateway Tokens -->
@@ -297,6 +517,105 @@ curl -X PATCH https://arbiter.chkoushik.com/api/gateway/tokens/gwtk_abc123 \
   "blocked_models": ["gemini-2.5-pro", "gpt-4"]
 }</div>
         <p class="doc-p">Blocked models are never used regardless of routing policy. Useful for preventing accidental use of expensive paid models.</p>
+      </div>
+
+      <!-- Observability (v1.18.0) -->
+      <div class="doc-section" id="tab-observability">
+        <h2 class="doc-h2">Observability (v1.18.0+)</h2>
+
+        <h3 class="doc-h3">Persistent 180-day File Logs</h3>
+        <p class="doc-p">Three JSONL log streams are written to <code>/app/data/logs/</code> (Docker-mounted volume). Files are rotated daily and purged after 180 days by an automatic janitor (03:00 UTC).</p>
+        <table class="doc-table">
+          <thead><tr><th>Stream</th><th>Path</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr><td><code>api</code></td><td><code>data/logs/api/YYYY-MM-DD.jsonl</code></td><td>Every gateway request: token, provider, model, latency, status, token counts, cached, client IP</td></tr>
+            <tr><td><code>activity</code></td><td><code>data/logs/activity/YYYY-MM-DD.jsonl</code></td><td>Every admin mutation (HMAC-tagged, before/after snapshots, secret-redacted)</td></tr>
+            <tr><td><code>errors</code></td><td><code>data/logs/errors/YYYY-MM-DD.jsonl</code></td><td>Structured upstream and internal errors</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="doc-h3">Query via API</h3>
+        <div class="code-block"><span class="lang-tag">bash</span># 7-day summary
+curl https://arbiter.chkoushik.com/api/logs/persistent/summary?days=7 \
+  -H "Authorization: Bearer your-gateway-token"
+
+# Last 50 API call records
+curl "https://arbiter.chkoushik.com/api/logs/persistent/api?days=1&limit=50" \
+  -H "Authorization: Bearer your-gateway-token"
+
+# Admin activity audit trail
+curl "https://arbiter.chkoushik.com/api/logs/persistent/activity?days=30" \
+  -H "Authorization: Bearer your-gateway-token"</div>
+
+        <h3 class="doc-h3">Activity Audit Security</h3>
+        <p class="doc-p">Every activity record carries an HMAC-SHA256 tag keyed by <code>SESSION_SECRET_KEY</code>. Bearer tokens, API keys, and password-like values are auto-redacted with a <code>head4…tail4 + sha256[:12]</code> fingerprint before write. You can verify the HMAC in Python:</p>
+        <div class="code-block"><span class="lang-tag">python</span>import hmac, hashlib, json
+
+SECRET = b"your-SESSION_SECRET_KEY"
+
+with open("data/logs/activity/2026-05-12.jsonl") as f:
+    for line in f:
+        rec = json.loads(line)
+        tag = rec.pop("hmac", "")
+        expected = hmac.new(SECRET, json.dumps(rec, sort_keys=True).encode(), hashlib.sha256).hexdigest()
+        print("OK" if hmac.compare_digest(tag, expected) else "TAMPERED", rec["action"])</div>
+
+        <h3 class="doc-h3">Per-Token Rate Limiting (v1.18.0+)</h3>
+        <p class="doc-p">Every <code>/v1/*</code> request is checked against a sliding-minute-window rate limit after Bearer validation.</p>
+        <table class="doc-table">
+          <thead><tr><th>Setting</th><th>Default</th><th>How to change</th></tr></thead>
+          <tbody>
+            <tr><td>Global default</td><td>100 req/min</td><td><code>GATEWAY_TOKEN_RATE_LIMIT_PER_MIN</code> in <code>.env</code></td></tr>
+            <tr><td>Per-token override</td><td>—</td><td>Set <code>request_limit_per_minute</code> on the token via <code>PATCH /api/gateway/tokens/{id}</code></td></tr>
+            <tr><td>Disable for a token</td><td>—</td><td>Set <code>request_limit_per_minute: 0</code></td></tr>
+          </tbody>
+        </table>
+        <p class="doc-p">When the limit is exceeded the gateway returns <code>429 Too Many Requests</code> with <code>Retry-After</code>, <code>X-RateLimit-Limit</code>, and <code>X-RateLimit-Remaining</code> headers.</p>
+
+        <h3 class="doc-h3">Dashboard Banners (v1.18.0+)</h3>
+        <p class="doc-p">Post a banner to notify all dashboard users of major upstream changes:</p>
+        <div class="code-block"><span class="lang-tag">bash</span>curl -X POST https://arbiter.chkoushik.com/api/announcements \
+  -H "Authorization: Bearer your-gateway-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Gemini 3.1 Flash Lite GA",
+    "body": "gemini-3.1-flash-lite-preview is discontinued May 25 2026. Update your model string to gemini-3.1-flash-lite.",
+    "severity": "warning",
+    "impacted_providers": ["gemini"],
+    "action_required": "Change model identifier to gemini-3.1-flash-lite",
+    "ttl_days": 3
+  }'</div>
+        <p class="doc-p">Severities: <code>info</code> (blue), <code>warning</code> (yellow), <code>critical</code> (red). The banner is auto-dismissed after <code>ttl_days</code> and can be dismissed per-browser by the user.</p>
+
+        <h3 class="doc-h3">Weekly AI Analysis Email</h3>
+        <p class="doc-p">Every Monday the daily 22:00 IST report includes a weekly section with 7-day API totals, p50/p95 latency, calls-by-provider, errors-by-category, and an AI-generated SRE insights paragraph routed through Arbiter's own router. No separate weekly email is sent.</p>
+      </div>
+
+      <!-- v1.18 Changelog tab -->
+      <div class="doc-section" id="tab-changelog">
+        <h2 class="doc-h2">What's New in v1.18</h2>
+
+        <h3 class="doc-h3">v1.18.1 — Gemini 3.1 Flash Lite GA (2026-05-12)</h3>
+        <p class="doc-p">Google discontinued <code>gemini-3.1-flash-lite-preview</code> effective May 25 2026. The default model identifier is now <code>gemini-3.1-flash-lite</code> (GA). No prompt or logic changes required.</p>
+
+        <h3 class="doc-h3">v1.18.0 — Observability Hardening (2026-05-20)</h3>
+        <table class="doc-table">
+          <thead><tr><th>Area</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td>Persistent logs</td><td>180-day JSONL file log (api / activity / errors) with daily janitor</td></tr>
+            <tr><td>Activity audit</td><td>HMAC-tagged before/after snapshots on all admin mutations</td></tr>
+            <tr><td>Dashboard banners</td><td><code>POST /api/announcements</code> to publish major-change notices</td></tr>
+            <tr><td>Routing — Gap A</td><td>Unhealthy providers (≥20% error rate) auto-demoted in routing chain</td></tr>
+            <tr><td>Routing — Gap B</td><td>Wait for RPM reset instead of cross-provider fallback when bucket refills in &lt;10 s</td></tr>
+            <tr><td>Key scoring (#9)</td><td>TPM-aware key selection — keys with insufficient TPM headroom deprioritised</td></tr>
+            <tr><td>Rate limiting (#12)</td><td>Per-token sliding-minute-window rate limit with Retry-After headers</td></tr>
+            <tr><td>Email (#8, #11)</td><td>Refined error-rate alerts; secrets stripped from outbound email HTML</td></tr>
+            <tr><td>Cache (#15)</td><td>gzip+base64 compression for cached responses ≥ 512 bytes</td></tr>
+            <tr><td>Error log (#16)</td><td>Migrated to Redis sorted-set for O(log N) writes and score-based eviction</td></tr>
+            <tr><td>Weekly email</td><td>Monday report includes 7-day summary + AI insights (no separate mail)</td></tr>
+            <tr><td>New endpoints</td><td><code>/api/logs/persistent/*</code>, <code>/api/announcements/*</code></td></tr>
+          </tbody>
+        </table>
       </div>
     </main>
   </div>

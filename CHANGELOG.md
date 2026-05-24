@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.19.2] – 2026-05-24 — Real-Time Analytics & Filter Persistence
+
+### Fixed — Analytics Caching (`app/api/analytics_api.py`)
+
+- **`/analytics/data` endpoint now returns proper no-cache headers** (`Cache-Control: no-store, no-cache, must-revalidate`, `Pragma: no-cache`, `CDN-Cache-Control: no-store`). Previously only the HTML page had no-cache headers — the JSON data API was missing them, causing browsers and CDNs to serve stale cached responses.
+- Added `server_ts` field to response payload for client-side freshness verification.
+
+### Improved — Real-Time Updates (`static/analytics.html`)
+
+- **Default refresh interval changed from 30s → 5s** for true real-time monitoring.
+- **Added `cache: 'no-store'` to fetch() calls** — forces the browser to bypass its HTTP cache entirely.
+- **Added cache-busting `_t` query parameter** to every request — prevents any intermediate proxy/CDN caching.
+- **Added fetch deduplication** — overlapping requests are prevented if the previous one is still in-flight.
+- **Timestamps now show seconds** in the "Updated" indicator for better visibility of freshness.
+
+### Added — Filter Persistence (`static/analytics.html`)
+
+- **All filter selections are now persisted to localStorage** — window preset, date range, token, provider, and model selections survive page refresh and browser restart.
+- **Refresh interval is persisted to localStorage** — user's preferred polling speed is remembered across sessions.
+- **Filter values are re-applied after dynamic dropdown population** — on first data load, select dropdowns are populated from the server, then persisted selections are correctly restored even though options weren't available at page load.
+
+---
+
 ## [1.19.1] – 2026-05-24 — Tool-Calling Routing & Provider Fix
 
 ### Fixed — Tool-Call Aware Routing (`app/routing/router.py`)

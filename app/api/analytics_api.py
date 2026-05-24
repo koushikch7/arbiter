@@ -511,30 +511,34 @@ async def analytics_data(
     except Exception:
         auth_enforced = False
 
-    return JSONResponse({
-        "summary": {
-            "total_requests":  requests_total,
-            "success":         requests_success,
-            "failed":          requests_failed,
-            "success_rate":    success_rate,
-            "cache_hits":      cache_hits,
-            "cache_misses":    cache_misses,
-            "cache_hit_rate":  cache_hit_rate,
-            "avg_latency_ms":  avg_latency_ms,
-            "total_tokens":    total_tokens,
-            "active_keys":     active_keys_total,
-            "configured_keys": configured_keys_total,
-            "auth_enforced":   auth_enforced,
+    return JSONResponse(
+        content={
+            "summary": {
+                "total_requests":  requests_total,
+                "success":         requests_success,
+                "failed":          requests_failed,
+                "success_rate":    success_rate,
+                "cache_hits":      cache_hits,
+                "cache_misses":    cache_misses,
+                "cache_hit_rate":  cache_hit_rate,
+                "avg_latency_ms":  avg_latency_ms,
+                "total_tokens":    total_tokens,
+                "active_keys":     active_keys_total,
+                "configured_keys": configured_keys_total,
+                "auth_enforced":   auth_enforced,
+            },
+            "providers":         provider_stats,
+            "models":            model_stats,
+            "history":           history,
+            "window":            win,
+            "key_pools":         key_pools_data,
+            "token_by_provider": token_by_provider,
+            "tokens":            tokens_data,
+            "range":             range_data,
+            "server_ts":         int(_time.time() * 1000),
         },
-        "providers":         provider_stats,
-        "models":            model_stats,
-        "history":           history,
-        "window":            win,
-        "key_pools":         key_pools_data,
-        "token_by_provider": token_by_provider,
-        "tokens":            tokens_data,
-        "range":             range_data,
-    })
+        headers=_NO_CACHE_HEADERS,
+    )
 
 
 @router.delete("/analytics/reset", summary="Reset all analytics counters")

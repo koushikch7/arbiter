@@ -317,9 +317,9 @@
         </div>
         <label style="font-size:11px;color:var(--text-3)">Refresh:</label>
         <select class="refresh-select" id="refresh-select" onchange="setRefreshInterval(this.value)">
-          <option value="5000">5s</option>
+          <option value="5000" selected>5s</option>
           <option value="15000">15s</option>
-          <option value="30000" selected>30s</option>
+          <option value="30000">30s</option>
           <option value="60000">1m</option>
           <option value="0">Off</option>
         </select>
@@ -1035,9 +1035,22 @@ function populateFilterOptions(data) {
     }),
     'All models'
   );
+
+  // After populating options, re-apply any persisted filter values
+  // (needed because options didn't exist when _loadFilters ran at startup)
+  try {
+    const raw = localStorage.getItem(_FILTER_STORAGE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.token && tokSel)  tokSel.value  = s.token;
+      if (s.provider && provSel) provSel.value = s.provider;
+      if (s.model && modSel) modSel.value = s.model;
+    }
+  } catch(e) {}
 }
 
 function applyFilters() {
+  _saveFilters();
   fetchData();
 }
 function clearFilters() {
@@ -1046,6 +1059,8 @@ function clearFilters() {
   document.getElementById('filter-token').value = '';
   document.getElementById('filter-provider').value = '';
   document.getElementById('filter-model').value = '';
+  _activeWindow = '';
+  _saveFilters();
   fetchData();
 }
 function setFilterPreset(p) {
@@ -1056,6 +1071,7 @@ function setFilterPreset(p) {
   document.getElementById('filter-from').value = back.toISOString().slice(0,10);
   document.getElementById('filter-to').value   = today.toISOString().slice(0,10);
   _activeWindow = '';
+  _saveFilters();
   fetchData();
 }
 
@@ -1065,6 +1081,7 @@ function setWindowPreset(w) {
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value   = '';
   _activeWindow = w;
+  _saveFilters();
   fetchData();
 }
 
@@ -1204,11 +1221,52 @@ function renderKeyHealth(kp) {
   }).join('');
 }
 
+// ── Filter persistence (localStorage) ──────────────────────────────────────
+const _FILTER_STORAGE_KEY = 'arbiter_analytics_filters';
+const _REFRESH_STORAGE_KEY = 'arbiter_analytics_refresh';
+
+function _saveFilters() {
+  const state = {
+    window:   _activeWindow,
+    from:     (document.getElementById('filter-from') || {}).value || '',
+    to:       (document.getElementById('filter-to') || {}).value || '',
+    token:    (document.getElementById('filter-token') || {}).value || '',
+    provider: (document.getElementById('filter-provider') || {}).value || '',
+    model:    (document.getElementById('filter-model') || {}).value || '',
+  };
+  try { localStorage.setItem(_FILTER_STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+}
+
+function _loadFilters() {
+  try {
+    const raw = localStorage.getItem(_FILTER_STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.window) _activeWindow = s.window;
+    if (s.from)     { const el = document.getElementById('filter-from');     if (el) el.value = s.from; }
+    if (s.to)       { const el = document.getElementById('filter-to');       if (el) el.value = s.to; }
+    if (s.token)    { const el = document.getElementById('filter-token');    if (el) el.value = s.token; }
+    if (s.provider) { const el = document.getElementById('filter-provider'); if (el) el.value = s.provider; }
+    if (s.model)    { const el = document.getElementById('filter-model');    if (el) el.value = s.model; }
+  } catch(e) {}
+}
+
+function _saveRefreshInterval(ms) {
+  try { localStorage.setItem(_REFRESH_STORAGE_KEY, String(ms)); } catch(e) {}
+}
+
+function _loadRefreshInterval() {
+  try { return localStorage.getItem(_REFRESH_STORAGE_KEY); } catch(e) { return null; }
+}
+
 // ── Fetch + refresh ────────────────────────────────────────────────────────
 let _refreshTimer = null;
 let _lastFetch = 0;
+let _fetchInFlight = false;
 
 async function fetchData() {
+  if (_fetchInFlight) return; // prevent overlapping requests
+  _fetchInFlight = true;
   const dot   = document.getElementById('live-dot');
   const label = document.getElementById('live-label');
   try {
@@ -1224,19 +1282,23 @@ async function fetchData() {
     if (f('filter-token'))    qp.set('token_id', f('filter-token'));
     if (f('filter-provider')) qp.set('provider', f('filter-provider'));
     if (f('filter-model'))    qp.set('model',    f('filter-model'));
+    // Cache-busting parameter to prevent any intermediate caching
+    qp.set('_t', Date.now());
     const qs = qp.toString();
     const url = '/analytics/data' + (qs ? ('?' + qs) : '');
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status);
     const data = await r.json();
     render(data);
     _lastFetch = Date.now();
     dot.className   = 'live-dot';
-    label.textContent = 'Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    label.textContent = 'Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   } catch(e) {
     console.error('Analytics fetch error:', e);
     dot.className   = 'live-dot error';
     label.textContent = 'Fetch error';
+  } finally {
+    _fetchInFlight = false;
   }
 }
 
@@ -1244,6 +1306,10 @@ function setRefreshInterval(ms) {
   if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
   const iv = parseInt(ms, 10);
   if (iv > 0) _refreshTimer = setInterval(fetchData, iv);
+  _saveRefreshInterval(ms);
+  // Update the dropdown to reflect current selection
+  const sel = document.getElementById('refresh-select');
+  if (sel) sel.value = String(ms);
 }
 
 async function confirmReset() {
@@ -1265,8 +1331,15 @@ async function confirmReset() {
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initCharts();
+  // Restore persisted filters from localStorage
+  _loadFilters();
+  // Restore persisted refresh interval (default: 5s for real-time)
+  const savedRefresh = _loadRefreshInterval();
+  const refreshMs = savedRefresh !== null ? parseInt(savedRefresh, 10) : 5000;
+  const refreshSel = document.getElementById('refresh-select');
+  if (refreshSel) refreshSel.value = String(refreshMs);
   fetchData();
-  setRefreshInterval(30000);
+  setRefreshInterval(refreshMs);
 });
 </script>
 <script src="/static/components/sidebar.js" defer></script>

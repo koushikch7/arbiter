@@ -53,7 +53,7 @@ from app.middleware.bot_protection import BotProtectionMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.19.0"
+APP_VERSION = "1.19.1"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),

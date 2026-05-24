@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.19.1] – 2026-05-24 — Tool-Calling Routing & Provider Fix
+
+### Fixed — Tool-Call Aware Routing (`app/routing/router.py`)
+
+- **Requests containing `tools` or `functions` fields are now automatically routed only to providers that support tool calling** (groq, nvidia, openrouter, cerebras, ollama). Previously, tool-call requests could be sent to providers like Cloudflare Workers AI or HuggingFace that silently ignore tools, resulting in empty/meaningless responses.
+- Falls back to all providers with a warning if no tool-capable provider is available.
+
+### Fixed — Tool Forwarding in Providers
+
+- **OpenRouter** (`app/providers/openrouter.py`): Now forwards `tools`, `tool_choice`, `parallel_tool_calls`, and `response_format` fields to the upstream API (both `complete()` and `complete_stream()`).
+- **Cerebras** (`app/providers/cerebras.py`): Same tool-forwarding fields added to both paths.
+- **Ollama Cloud** (`app/providers/ollama_provider.py`): Same tool-forwarding fields added to both paths.
+- **Groq** and **NVIDIA** already had full tool forwarding — no changes needed.
+
+### Changed — Pollinations API Key
+
+- Replaced exhausted Pollinations key (`pk_pbk2w5a...`, budget=0) with new active key. Fixes persistent 402 errors and wasted fallback latency on every request that attempted Pollinations.
+
+---
+
 ## [1.19.0] – 2026-05-23 — Intelligent Complexity-Aware Routing
 
 ### Added — Complexity Analyzer (`app/routing/complexity_analyzer.py`)

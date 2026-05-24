@@ -816,6 +816,31 @@ candidate chain instead (appending the original model as a fallback).
 **Provider Diversity:** `_ensure_provider_diversity()` guarantees 4+ unique providers
 appear in the top-8 candidates by interleaving under-represented providers.
 
+### Tool-Call Aware Routing (v1.19.1)
+
+When a request includes `tools` or `functions` fields (OpenAI function-calling),
+the router automatically filters candidates to **tool-capable providers only**:
+
+```
+Tool-capable providers: groq, nvidia, openrouter, cerebras, ollama
+Non-tool providers:     cloudflare, gemini*, huggingface, pollinations, cohere, zai, routeway
+```
+
+\* Gemini supports tools via its native API but requires format conversion not yet implemented.
+
+**Behaviour:**
+- If tool-capable candidates exist → use only those (log: "Tool-call request: filtered to N...")
+- If no tool-capable candidates → proceed with all (log warning, tools may be ignored)
+- Vendor-pinned requests (`?vendor=...`) bypass this filter (user explicitly chose)
+
+**Tool forwarding** is implemented in providers that pass `tools`, `tool_choice`,
+`parallel_tool_calls`, and `response_format` to the upstream LLM API:
+- `groq_provider.py` — full tool support (messages include tool_calls, tool_call_id)
+- `nvidia_provider.py` — full tool support
+- `openrouter.py` — forwards tool fields to upstream model
+- `cerebras.py` — forwards tool fields to upstream model
+- `ollama_provider.py` — forwards tool fields to Ollama Cloud API
+
 ### Change Routing Strategy
 
 Edit `_provider_order()` in `app/routing/router.py`:

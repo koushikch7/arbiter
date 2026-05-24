@@ -385,6 +385,30 @@ class IntelligentRouter:
                     f"disabled providers: {sorted(disabled_providers)}"
                 )
 
+        # ── Tool-call aware filtering ────────────────────────────────
+        # When the request includes tools/functions, only route to providers
+        # that forward tool definitions to the upstream LLM API. Otherwise
+        # models respond with empty content or ignore tools entirely.
+        _TOOL_CAPABLE_PROVIDERS = {
+            "groq", "nvidia", "openrouter", "cerebras", "ollama",
+        }
+        has_tools = bool(getattr(request, "tools", None) or getattr(request, "functions", None))
+        if has_tools and not vendor:
+            before = len(candidates)
+            tool_candidates = [(p, m) for (p, m) in candidates if p in _TOOL_CAPABLE_PROVIDERS]
+            if tool_candidates:
+                candidates = tool_candidates
+                if before != len(candidates):
+                    logger.info(
+                        f"Tool-call request: filtered to {len(candidates)} tool-capable "
+                        f"candidates (from {before})"
+                    )
+            else:
+                logger.warning(
+                    "Tool-call request but no tool-capable providers in candidates; "
+                    "proceeding with all candidates (tools may be ignored)"
+                )
+
         # ── Experience-based intra-provider model reordering ─────────
         try:
             perf = await self._get_model_perf()

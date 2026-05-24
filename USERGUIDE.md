@@ -1031,6 +1031,8 @@ Authorization: Bearer {gateway_api_key}  # Only if GATEWAY_API_KEY set
 | `max_tokens` | integer | — | Max tokens to generate (optional) |
 | `stop` | array | — | Stop sequences (optional) |
 | `stream` | boolean | false | Enable SSE streaming — see [Streaming](#streaming) section |
+| `tools` | array | — | OpenAI function-calling tool definitions. When present, Arbiter auto-routes to tool-capable providers only (groq, nvidia, openrouter, cerebras, ollama). |
+| `tool_choice` | string/object | — | Controls which tool the model calls (`auto`, `none`, or a specific function). |
 | `fallback` | string | — | `none` (strict pin) \| `same_provider` \| `chain`. Only applies when `model` is a specific model, not `"auto"`. |
 | `metadata` | object | — | Routing hints: `arbiter_intent`, `priority`, `prefer_provider` — see below |
 

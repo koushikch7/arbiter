@@ -80,6 +80,11 @@ class CerebrasProvider(BaseProvider):
             payload["max_tokens"] = request.max_tokens
         if request.stop:
             payload["stop"] = request.stop
+        # Forward tool-calling fields if present
+        for k in ("tools", "tool_choice", "parallel_tool_calls", "response_format"):
+            v = getattr(request, k, None)
+            if v is not None:
+                payload[k] = v
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -145,6 +150,11 @@ class CerebrasProvider(BaseProvider):
             payload["max_tokens"] = request.max_tokens
         if request.stop:
             payload["stop"] = request.stop
+        # Forward tool-calling fields if present
+        for k in ("tools", "tool_choice", "parallel_tool_calls", "response_format"):
+            v = getattr(request, k, None)
+            if v is not None:
+                payload[k] = v
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         async for chunk in stream_openai_chat(
             url=CEREBRAS_API_BASE, headers=headers, payload=payload,

@@ -148,6 +148,14 @@ class CloudflareProvider(BaseProvider):
         prompt_tokens     = usage_raw.get("prompt_tokens",     0)
         completion_tokens = usage_raw.get("completion_tokens", 0)
 
+        # Some Cloudflare models occasionally return `content: null` on
+        # refusal / empty output. Pydantic Message rejects None — coerce
+        # to empty string so the response can still be returned (the
+        # finish_reason carries the refusal signal).
+        _content_raw = msg.get("content")
+        if _content_raw is None:
+            _content_raw = ""
+
         return ChatCompletionResponse(
             id      = data.get("id", f"chatcmpl-{uuid.uuid4().hex[:8]}"),
             object  = "chat.completion",
@@ -156,7 +164,7 @@ class CloudflareProvider(BaseProvider):
             choices = [
                 Choice(
                     index         = 0,
-                    message       = Message(role="assistant", content=msg.get("content", "")),
+                    message       = Message(role="assistant", content=_content_raw),
                     finish_reason = finish,
                 )
             ],

@@ -511,6 +511,20 @@ async def analytics_data(
     except Exception:
         auth_enforced = False
 
+    # ── Real-time gauges and feeds (v1.19.3+) ────────────────────────────────
+    inflight        = await obs_stats.get_inflight(redis)
+    rates_1m        = await obs_stats.get_rolling_rates(redis, window_seconds=60)
+    rates_5m        = await obs_stats.get_rolling_rates(redis, window_seconds=300)
+    rates_15m       = await obs_stats.get_rolling_rates(redis, window_seconds=900)
+    recent_activity = await obs_stats.get_recent_activity(redis, limit=30)
+    # High-resolution per-minute history for the 1h window (replaces 5-min buckets)
+    minute_history: list = []
+    if win == "1h":
+        minute_history = await obs_stats.get_minute_history(redis, minutes=60)
+        # Use minute-level history as the primary chart series for 1h.
+        if minute_history:
+            history = minute_history
+
     return JSONResponse(
         content={
             "summary": {
@@ -526,15 +540,21 @@ async def analytics_data(
                 "active_keys":     active_keys_total,
                 "configured_keys": configured_keys_total,
                 "auth_enforced":   auth_enforced,
+                "inflight":        inflight,
+                "rates_1m":        rates_1m,
+                "rates_5m":        rates_5m,
+                "rates_15m":       rates_15m,
             },
             "providers":         provider_stats,
             "models":            model_stats,
             "history":           history,
+            "minute_history":    minute_history,
             "window":            win,
             "key_pools":         key_pools_data,
             "token_by_provider": token_by_provider,
             "tokens":            tokens_data,
             "range":             range_data,
+            "recent_activity":   recent_activity,
             "server_ts":         int(_time.time() * 1000),
         },
         headers=_NO_CACHE_HEADERS,

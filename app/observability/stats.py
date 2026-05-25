@@ -189,6 +189,18 @@ async def record_success(
             await _incr(redis, f"arbiter:stats:day:{day}:token:{tid}:tokens",
                         tokens_used, ttl=ttl)
 
+    # ── Real-time: per-minute bucket + activity feed ──────────────────
+    await incr_minute_bucket(redis, success=True, tokens=tokens_used)
+    await record_recent_activity(
+        redis,
+        status="success",
+        provider=provider,
+        model=model,
+        tokens=tokens_used,
+        latency_ms=latency_ms,
+        token_id=token_id,
+    )
+
 
 async def record_failure(
     redis,
@@ -247,6 +259,17 @@ async def record_request_failed(
         await _set(redis, f"arbiter:stats:token:{tid}:last_used", str(time.time()))
         await _incr(redis, f"arbiter:stats:day:{day}:token:{tid}:requests", ttl=ttl)
 
+    # ── Real-time: per-minute bucket + activity feed ──────────────────
+    await incr_minute_bucket(redis, success=False, is_error=True)
+    await record_recent_activity(
+        redis,
+        status="error",
+        provider=None,
+        model=None,
+        token_id=token_id,
+        error="all candidates exhausted",
+    )
+
 
 async def record_cache_hit(redis, token_id: Optional[str] = None) -> None:
     if redis is None:
@@ -270,6 +293,16 @@ async def record_cache_hit(redis, token_id: Optional[str] = None) -> None:
         await _incr(redis, f"arbiter:stats:token:{tid}:success")
         await _set(redis, f"arbiter:stats:token:{tid}:last_used", str(time.time()))
         await _incr(redis, f"arbiter:stats:day:{day}:token:{tid}:requests", ttl=ttl)
+
+    # ── Real-time: per-minute bucket + activity feed ──────────────────
+    await incr_minute_bucket(redis, success=True)
+    await record_recent_activity(
+        redis,
+        status="cache_hit",
+        provider="cache",
+        model=None,
+        token_id=token_id,
+    )
 
 
 async def record_cache_miss(redis) -> None:
@@ -460,3 +493,187 @@ async def get_model_performance(redis) -> dict[str, dict]:
     except Exception:
         pass
     return perf
+
+
+# ---------------------------------------------------------------------------
+# Real-time gauges and recent-activity feed (v1.19.3+)
+# ---------------------------------------------------------------------------
+
+_INFLIGHT_KEY        = "arbiter:stats:inflight"
+_RECENT_ACTIVITY_KEY = "arbiter:stats:recent_activity_z"
+_RECENT_ACTIVITY_MAX = 100        # cap on stored entries
+_RECENT_ACTIVITY_TTL = 4 * 3600   # 4-hour retention
+# Per-minute history bucket (high-resolution view for 1h window)
+_HISTORY_1M_TTL      = 3 * 3600   # keep 3 hours of per-minute data
+
+
+async def inflight_increment(redis) -> None:
+    """Atomic increment of in-flight requests gauge."""
+    if redis is None:
+        return
+    try:
+        await redis.incr(_INFLIGHT_KEY)
+    except Exception as exc:
+        logger.debug("inflight_increment failed: %s", exc)
+
+
+async def inflight_decrement(redis) -> None:
+    """Atomic decrement of in-flight requests gauge (clamped at 0)."""
+    if redis is None:
+        return
+    try:
+        val = await redis.decr(_INFLIGHT_KEY)
+        if val is not None and int(val) < 0:
+            # Clamp to 0 if a worker restart desynchronised the counter.
+            await redis.set(_INFLIGHT_KEY, 0)
+    except Exception as exc:
+        logger.debug("inflight_decrement failed: %s", exc)
+
+
+async def get_inflight(redis) -> int:
+    if redis is None:
+        return 0
+    try:
+        v = await redis.get(_INFLIGHT_KEY)
+        return max(0, int(v)) if v else 0
+    except Exception:
+        return 0
+
+
+async def record_recent_activity(
+    redis,
+    *,
+    status: str,                 # "success" | "error" | "cache_hit"
+    provider: Optional[str],
+    model: Optional[str],
+    tokens: int = 0,
+    latency_ms: int = 0,
+    token_id: Optional[str] = None,
+    token_name: Optional[str] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Push a single request event into a sorted-set activity feed.
+
+    Capped at _RECENT_ACTIVITY_MAX entries with sliding-window eviction
+    on every write. Used by analytics dashboard's live activity feed.
+    """
+    if redis is None:
+        return
+    import json
+    now = time.time()
+    entry = json.dumps({
+        "ts":       now,
+        "status":   status,
+        "provider": provider or "",
+        "model":    model or "",
+        "tokens":   int(tokens),
+        "latency":  int(latency_ms),
+        "token_id": token_id or "",
+        "token_name": token_name or "",
+        "error":    (error or "")[:200],
+    })
+    try:
+        await redis.zadd(_RECENT_ACTIVITY_KEY, {entry: now})
+        # Evict by age first, then enforce hard cap by rank.
+        await redis.zremrangebyscore(_RECENT_ACTIVITY_KEY, 0, now - _RECENT_ACTIVITY_TTL)
+        await redis.zremrangebyrank(_RECENT_ACTIVITY_KEY, 0, -(_RECENT_ACTIVITY_MAX) - 1)
+        await redis.expire(_RECENT_ACTIVITY_KEY, _RECENT_ACTIVITY_TTL)
+    except Exception as exc:
+        logger.debug("record_recent_activity failed: %s", exc)
+
+
+async def get_recent_activity(redis, limit: int = 30) -> list:
+    """Retrieve the most recent request events (newest first)."""
+    if redis is None:
+        return []
+    import json
+    try:
+        raw_list = await redis.zrevrange(_RECENT_ACTIVITY_KEY, 0, max(0, limit - 1))
+        return [json.loads(e) for e in raw_list if e]
+    except Exception:
+        return []
+
+
+async def incr_minute_bucket(
+    redis,
+    *,
+    success: bool,
+    is_error: bool = False,
+    tokens: int = 0,
+) -> None:
+    """Increment the 1-minute time-series bucket (high-resolution)."""
+    if redis is None:
+        return
+    minute = (int(time.time()) // 60) * 60
+    base   = f"arbiter:stats:minute:{minute}"
+    try:
+        await _incr(redis, f"{base}:requests", ttl=_HISTORY_1M_TTL)
+        if success:
+            await _incr(redis, f"{base}:success", ttl=_HISTORY_1M_TTL)
+        if is_error:
+            await _incr(redis, f"{base}:errors", ttl=_HISTORY_1M_TTL)
+        if tokens > 0:
+            await _incr(redis, f"{base}:tokens", tokens, ttl=_HISTORY_1M_TTL)
+    except Exception as exc:
+        logger.debug("incr_minute_bucket failed: %s", exc)
+
+
+async def get_rolling_rates(redis, *, window_seconds: int = 60) -> dict:
+    """Compute requests/tokens rate over the last *window_seconds*.
+
+    Reads per-minute buckets in the window and returns totals + per-second
+    rates. Cheap (O(W/60) reads) and accurate to the minute boundary.
+    """
+    if redis is None:
+        return {"requests": 0, "tokens": 0, "errors": 0, "rpm": 0.0, "tpm": 0.0}
+    now      = int(time.time())
+    n_buckets = max(1, window_seconds // 60)
+    cur_min  = (now // 60) * 60
+    req_sum = tok_sum = err_sum = 0
+    for i in range(n_buckets):
+        m = cur_min - i * 60
+        try:
+            r = await redis.get(f"arbiter:stats:minute:{m}:requests")
+            t = await redis.get(f"arbiter:stats:minute:{m}:tokens")
+            e = await redis.get(f"arbiter:stats:minute:{m}:errors")
+            req_sum += int(r) if r else 0
+            tok_sum += int(t) if t else 0
+            err_sum += int(e) if e else 0
+        except Exception:
+            continue
+    # Normalize to per-minute rate over the window.
+    minutes = max(1.0, window_seconds / 60.0)
+    return {
+        "requests": req_sum,
+        "tokens":   tok_sum,
+        "errors":   err_sum,
+        "rpm":      round(req_sum / minutes, 2),
+        "tpm":      round(tok_sum / minutes, 2),
+        "window_s": window_seconds,
+    }
+
+
+async def get_minute_history(redis, *, minutes: int = 60) -> list:
+    """Return the last *minutes* of per-minute buckets, oldest-first."""
+    if redis is None:
+        return []
+    now     = int(time.time())
+    cur_min = (now // 60) * 60
+    out: list = []
+    for i in range(minutes - 1, -1, -1):
+        m = cur_min - i * 60
+        try:
+            r = await redis.get(f"arbiter:stats:minute:{m}:requests")
+            s = await redis.get(f"arbiter:stats:minute:{m}:success")
+            e = await redis.get(f"arbiter:stats:minute:{m}:errors")
+            t = await redis.get(f"arbiter:stats:minute:{m}:tokens")
+        except Exception:
+            r = s = e = t = None
+        out.append({
+            "ts":       m,
+            "requests": int(r) if r else 0,
+            "success":  int(s) if s else 0,
+            "errors":   int(e) if e else 0,
+            "tokens":   int(t) if t else 0,
+        })
+    return out

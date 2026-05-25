@@ -29,7 +29,8 @@
     }
     @media(max-width:1100px){ .kpi-grid{ grid-template-columns:repeat(3,1fr); } }
     @media(max-width:640px) { .kpi-grid{ grid-template-columns:repeat(2,1fr); } }
-
+    @media(max-width:900px) { .live-row{ grid-template-columns:repeat(2,1fr)!important; } }
+    @media(max-width:520px) { .live-row{ grid-template-columns:1fr!important; } }
     .kpi-card {
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -384,6 +385,59 @@
       <!-- ═══ Range summary (only when from/to set) ═══════════════════════ -->
       <div id="range-summary" style="display:none;margin-bottom:18px"></div>
 
+      <!-- ═══ 0. LIVE row — real-time gauges ═══════════════════════════════ -->
+      <div class="live-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div class="kpi-card" style="--kc-color:#22c55e">
+          <div class="kpi-label" style="display:flex;align-items:center;gap:6px">
+            <span class="live-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 1.6s infinite;display:inline-block"></span>
+            In-Flight Requests
+          </div>
+          <div class="kpi-value" id="live-inflight">0</div>
+          <div class="kpi-sub">currently being processed</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#3b82f6">
+          <div class="kpi-label">Requests / min (1m)</div>
+          <div class="kpi-value" id="live-rpm-1m">0</div>
+          <div class="kpi-sub" id="live-rpm-1m-sub">– tokens/min</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#8b5cf6">
+          <div class="kpi-label">Requests / min (5m avg)</div>
+          <div class="kpi-value" id="live-rpm-5m">0</div>
+          <div class="kpi-sub" id="live-rpm-5m-sub">– tokens/min</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#f59e0b">
+          <div class="kpi-label">Requests / min (15m avg)</div>
+          <div class="kpi-value" id="live-rpm-15m">0</div>
+          <div class="kpi-sub" id="live-rpm-15m-sub">– errors in 15m</div>
+        </div>
+      </div>
+
+      <!-- ═══ Live activity feed ═══════════════════════════════════════════ -->
+      <div class="card mb20" id="activity-feed-wrap">
+        <div class="card-hd">
+          <span class="card-title">Live Activity Feed</span>
+          <span class="badge badge-accent" id="activity-feed-count">last 30 requests</span>
+        </div>
+        <div class="card-body" style="max-height:280px;overflow-y:auto;padding:0">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead style="position:sticky;top:0;background:var(--surface-2);z-index:1">
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:8px 10px;color:var(--text-3);font-weight:600">Time</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-3);font-weight:600">Status</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-3);font-weight:600">Provider</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-3);font-weight:600">Model</th>
+                <th style="text-align:right;padding:8px 10px;color:var(--text-3);font-weight:600">Tokens</th>
+                <th style="text-align:right;padding:8px 10px;color:var(--text-3);font-weight:600">Latency</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-3);font-weight:600">Token</th>
+              </tr>
+            </thead>
+            <tbody id="activity-feed-body">
+              <tr><td colspan="7" class="empty-state" style="padding:14px;text-align:center;color:var(--text-3)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- ═══ 1. KPI cards ══════════════════════════════════════════════════ -->
       <div class="kpi-grid" id="kpi-grid">
 
@@ -436,7 +490,7 @@
         <div class="card">
           <div class="card-hd">
             <span class="card-title">Request History</span>
-            <span class="badge badge-accent">5-min buckets · last 4 h</span>
+            <span class="badge badge-accent" id="history-badge">5-min buckets · last 4 h</span>
           </div>
           <div class="card-body" style="height:230px;position:relative">
             <canvas id="chart-history"></canvas>
@@ -811,6 +865,52 @@ function render(data) {
   const kp = data.key_pools      || [];
   const tb = data.token_by_provider || {};
 
+  // ── Live gauges (in-flight + rolling rates) ──────────────────────────────
+  const inflight = s.inflight || 0;
+  const r1  = s.rates_1m  || {};
+  const r5  = s.rates_5m  || {};
+  const r15 = s.rates_15m || {};
+  const inflEl = document.getElementById('live-inflight');
+  if (inflEl) inflEl.textContent = fmtNum(inflight);
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setText('live-rpm-1m',  fmtNum(Math.round(r1.rpm  || 0)));
+  setText('live-rpm-5m',  fmtNum(Math.round(r5.rpm  || 0)));
+  setText('live-rpm-15m', fmtNum(Math.round(r15.rpm || 0)));
+  setText('live-rpm-1m-sub',  fmtNum(Math.round(r1.tpm  || 0)) + ' tokens/min');
+  setText('live-rpm-5m-sub',  fmtNum(Math.round(r5.tpm  || 0)) + ' tokens/min');
+  setText('live-rpm-15m-sub', fmtNum(r15.errors || 0) + ' errors in 15m');
+
+  // ── Activity feed ────────────────────────────────────────────────────────
+  const feed = document.getElementById('activity-feed-body');
+  const acts = data.recent_activity || [];
+  if (feed) {
+    if (!acts.length) {
+      feed.innerHTML = '<tr><td colspan="7" class="empty-state" style="padding:14px;text-align:center;color:var(--text-3)">No recent activity</td></tr>';
+    } else {
+      const statusBadge = (st) => {
+        if (st === 'success')   return '<span class="kh-key-status active">success</span>';
+        if (st === 'cache_hit') return '<span class="kh-key-status active" style="background:rgba(99,102,241,.15);color:#818cf8">cache</span>';
+        return '<span class="kh-key-status failed">error</span>';
+      };
+      feed.innerHTML = acts.map(a => {
+        const t = a.ts ? new Date(a.ts * 1000) : null;
+        const tStr = t ? t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '–';
+        const tokDisp = a.token_name || a.token_id || '–';
+        return `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)">${tStr}</td>
+          <td style="padding:6px 10px">${statusBadge(a.status)}</td>
+          <td style="padding:6px 10px;text-transform:capitalize">${a.provider||'–'}</td>
+          <td style="padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:11px">${a.model||'–'}</td>
+          <td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">${a.tokens ? fmtNum(a.tokens) : '–'}</td>
+          <td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;color:${a.latency > 3000 ? 'var(--red)' : 'var(--text-2)'}">${a.latency ? a.latency+'ms' : '–'}</td>
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-3)">${tokDisp}</td>
+        </tr>`;
+      }).join('');
+    }
+    const cnt = document.getElementById('activity-feed-count');
+    if (cnt) cnt.textContent = `last ${acts.length} requests`;
+  }
+
   // ── KPI cards ────────────────────────────────────────────────────────────
   animateValue(document.getElementById('kpi-total'), s.total_requests||0, fmtNum, 'total');
   document.getElementById('kpi-total-sub').textContent =
@@ -845,9 +945,25 @@ function render(data) {
   document.getElementById('kpi-keys-sub').textContent = totalKeys+' configured across providers';
 
   // ── History charts ────────────────────────────────────────────────────────
-  const last = hs.slice(-32);
+  // For 1h window we have 60 per-minute points; for others up to 32 latest.
+  const _win = data.window || '4h';
+  const _sliceN = _win === '1h' ? 60 : 32;
+  const last = hs.slice(-_sliceN);
   const labs  = last.map(h=>h.ts ? fmtTime(h.ts) : '–');
-  histChart.data.labels         = labs;
+  // Update badge with bucket-type description based on window
+  const hb = document.getElementById('history-badge');
+  if (hb) {
+    const win = data.window || '4h';
+    const badgeMap = {
+      '1h':  '1-min buckets · last 1 h',
+      '4h':  '5-min buckets · last 4 h',
+      '24h': 'hourly buckets · last 24 h',
+      '7d':  'hourly buckets · last 7 d',
+      '30d': 'daily buckets · last 30 d',
+      '90d': 'daily buckets · last 90 d',
+    };
+    hb.textContent = badgeMap[win] || ('window: ' + win);
+  }  histChart.data.labels         = labs;
   histChart.data.datasets[0].data = last.map(h=>h.requests||0);
   histChart.data.datasets[1].data = last.map(h=>h.success||0);
   histChart.data.datasets[2].data = last.map(h=>h.errors||0);

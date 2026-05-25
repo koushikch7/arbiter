@@ -11,6 +11,7 @@ from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, Er
 from app.models.schemas import Choice, Message, Usage
 from app.providers.base import RateLimitError, ProviderError
 from app.observability.persistent_log import log_api_call as _persist_api_call
+from app.observability import stats as _obs_stats
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,7 @@ async def chat_completions(
     router_instance = request.app.state.router
     _req_start = _time.monotonic()
     _req_ip = _client_ip(request)
+    _redis_ref = getattr(request.app.state, "redis", None)
 
     # ── CF Worker direct proxy (model = "cfworker/{name}") ────────────────
     effective_model = force_model or body.model or ""
@@ -176,6 +178,7 @@ async def chat_completions(
             or getattr(request.state, "gateway_token_name", None)
             or "anon"
         )
+        await _obs_stats.inflight_increment(_redis_ref)
         try:
             _cf_resp = await _proxy_cfworker(effective_model, body, request)
             _u = getattr(_cf_resp, "usage", None)
@@ -198,6 +201,8 @@ async def chat_completions(
                 error=str(e.detail), request_id=None, client_ip=_req_ip,
             )
             raise
+        finally:
+            await _obs_stats.inflight_decrement(_redis_ref)
 
     # ── Per-request routing overrides (headers + metadata) ────────────────
     priority_override        = request.headers.get("x-arbiter-priority")
@@ -245,6 +250,7 @@ async def chat_completions(
         async def _logged_stream():
             _err = None
             _status = 200
+            await _obs_stats.inflight_increment(_redis_ref)
             try:
                 async for chunk in agen:
                     yield chunk
@@ -253,6 +259,7 @@ async def chat_completions(
                 _status = 500
                 raise
             finally:
+                await _obs_stats.inflight_decrement(_redis_ref)
                 await _safe_persist(
                     token_id=_tok_for_log,
                     method="POST",
@@ -281,6 +288,7 @@ async def chat_completions(
         )
 
     try:
+        await _obs_stats.inflight_increment(_redis_ref)
         response = await router_instance.route(
             body,
             vendor=vendor,
@@ -293,7 +301,6 @@ async def chat_completions(
             allowed_models=allowed_models,
             blocked_models=blocked_models,
         )
-        # Surface the actual provider/model used so SDK callers can verify.
         chosen_provider = getattr(response, "_arbiter_provider", "") or ""
         chosen_model    = getattr(response, "_arbiter_model", response.model)
         if not chosen_provider and chosen_model:
@@ -376,3 +383,5 @@ async def chat_completions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+    finally:
+        await _obs_stats.inflight_decrement(_redis_ref)

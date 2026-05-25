@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.19.3] – 2026-05-25 — Real-Time Analytics Enhancements & Cloudflare Fix
+
+### Fixed — Cloudflare Provider Null Content Crash (`app/providers/cloudflare.py`)
+
+- **Cloudflare responses with `null` message content (some streaming/tool-call paths) no longer crash with Pydantic `ValidationError`** ("Input should be a valid string, input_value=None"). The provider now coerces `None` → empty string before constructing the `Message` model. This was silently dropping otherwise-valid CF responses and forcing fallbacks.
+
+### Added — In-Flight Request Gauge (`app/observability/stats.py`, `app/api/chat.py`)
+
+- **Live concurrency counter** — atomic Redis `INCR`/`DECR` around every chat request (CF Worker branch, streaming generator, main non-streaming branch). Clamped to ≥0 to recover from crashes. Exposed as `summary.inflight` in `/analytics/data`.
+
+### Added — Per-Minute Granularity History (`app/observability/stats.py`)
+
+- **New `arbiter:stats:minute:{epoch_minute}:{requests,success,errors,tokens}` buckets** with 3h TTL. Written on every `record_success`, `record_request_failed`, and `record_cache_hit`. Surfaced via `get_minute_history(minutes=60)`.
+- The analytics `1h` window now renders **60 one-minute buckets** instead of 12 five-minute buckets — true minute-by-minute visibility for high-traffic chat sessions.
+
+### Added — Rolling Rate Calculators (`app/observability/stats.py`)
+
+- **`get_rolling_rates(window_seconds)`** computes RPM, TPM, and error counts over arbitrary trailing windows. Analytics exposes 1m / 5m / 15m rolling windows.
+
+### Added — Recent Activity Feed (`app/observability/stats.py`, `app/api/analytics_api.py`)
+
+- **Redis sorted-set `arbiter:stats:recent_activity_z`** (4h TTL, sliding window capped at 100 entries) records the 30 most recent requests with `{ts, status, provider, model, tokens, latency_ms, token_label, error}`. Implemented with the same `zadd` + `zremrangebyscore` + `zremrangebyrank` pattern as the error feed.
+
+### Added — Live Analytics UI Row (`static/analytics.html`)
+
+- **4 new real-time cards above the KPI grid:** In-Flight Now, RPM (1 min), RPM (5 min), RPM (15 min) — each with a contextual sub-label (tokens/min or error count).
+- **Live Activity Feed table** — Time / Status / Provider / Model / Tokens / Latency / Token, with color-coded status badges (green=success, indigo=cache_hit, red=error).
+- **Dynamic history badge** — reflects current window granularity ("1-min buckets · last 1 h", "5-min buckets · last 4 h", etc.).
+- **Responsive grid** — live row collapses to 2 columns ≤900px and 1 column ≤520px.
+
+---
+
 ## [1.19.2] – 2026-05-24 — Real-Time Analytics & Filter Persistence
 
 ### Fixed — Analytics Caching (`app/api/analytics_api.py`)

@@ -4,8 +4,63 @@ from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, Me
 
 
 class RateLimitError(Exception):
-    """Raised when an API key hits its rate limit."""
-    pass
+    """Raised when an API key hits its rate limit.
+
+    Carries an optional retry_after (seconds) parsed from the upstream
+    error body / headers so the router can set a tight cooldown instead of
+    the hardcoded 300 s default.
+    """
+
+    def __init__(self, message: str = "", retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def parse_retry_after(headers: dict | None, body_text: str | None = None) -> float | None:
+    """Extract a retry-after value (seconds) from response headers or a body.
+
+    Looks at the Retry-After header first (RFC 7231 — either a delta in
+    seconds or an HTTP-date), then scrapes the upstream JSON body for the
+    common "Please try again in X.Xs" / "reset after Xms" patterns
+    that Groq, Gemini, and OpenAI emit. Returns None if nothing parseable.
+    """
+    import re
+    import email.utils
+    import time as _time
+    if headers:
+        # case-insensitive lookup
+        h = {k.lower(): v for k, v in headers.items()}
+        ra = h.get("retry-after")
+        if ra:
+            try:
+                return max(0.0, float(ra))
+            except ValueError:
+                # HTTP-date
+                try:
+                    parsed = email.utils.parsedate_to_datetime(ra)
+                    return max(0.0, (parsed.timestamp() - _time.time()))
+                except Exception:
+                    pass
+    if body_text:
+        m = re.search(r"try again in\s+([0-9.]+)\s*s", body_text, re.IGNORECASE)
+        if m:
+            try:
+                return max(0.0, float(m.group(1)))
+            except ValueError:
+                pass
+        m = re.search(r"try again in\s+([0-9]+)\s*ms", body_text, re.IGNORECASE)
+        if m:
+            try:
+                return max(0.0, float(m.group(1)) / 1000.0)
+            except ValueError:
+                pass
+        m = re.search(r"reset(?:s)?\s+(?:in|after)\s+([0-9.]+)\s*s", body_text, re.IGNORECASE)
+        if m:
+            try:
+                return max(0.0, float(m.group(1)))
+            except ValueError:
+                pass
+    return None
 
 
 class ProviderError(Exception):

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEYS: str = ""
     GROQ_API_KEYS: str = ""
     OPENROUTER_API_KEYS: str = ""
+    TAVILY_API_KEY: str = ""  # v1.20 — real-time web search
     COHERE_API_KEYS: str = ""
 
     # HuggingFace Inference API token
@@ -172,6 +173,7 @@ class Settings(BaseSettings):
             "routeway":     self.ROUTEWAY_API_KEYS,
             "ollama":       self.OLLAMA_API_KEYS,
             "pollinations": self.POLLINATIONS_API_KEYS,
+            "nvidia":       self.NVIDIA_API_KEYS,
         }
         raw = mapping.get(provider, "")
         tiers: dict = {}

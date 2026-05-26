@@ -166,10 +166,16 @@ def _score(
         complexity_fit = -deficit * 8.0  # Strong penalty
 
     # ── Provider diversity bonus (max 15) ──
-    # Providers that have fewer candidates already scored get a bonus.
-    # This distributes traffic across all providers.
+    # v1.20: only fires when the model is already at or near the quality
+    # tier required by the complexity. This prevents diversity from
+    # pulling a weaker model above a stronger one on EXPERT requests.
     diversity_bonus = 0.0
-    if total_scored > 0:
+    min_q_for_complexity = minimum_quality_for_complexity(complexity)
+    quality_gap = max(0, min_q_for_complexity - spec.quality)
+    diversity_allowed = quality_gap == 0 and (
+        complexity <= Complexity.MODERATE or spec.quality >= 4
+    )
+    if diversity_allowed and total_scored > 0:
         provider_share = provider_counts.get(provider, 0) / max(total_scored, 1)
         # If this provider has less than fair share, boost it
         fair_share = 1.0 / max(len(provider_counts), 1)
@@ -177,7 +183,7 @@ def _score(
             diversity_bonus = 12.0
         elif provider_share < fair_share * 2:
             diversity_bonus = 6.0
-    else:
+    elif total_scored == 0:
         # First candidates — give diversity to non-top providers
         diversity_bonus = 8.0
 

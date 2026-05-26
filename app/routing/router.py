@@ -560,8 +560,7 @@ class IntelligentRouter:
             while True:
                 key = await key_pool.get_best_key(
                     exclude=tried_keys, required_tier=required_tier,
-                    estimated_request_tokens=self._estimate_tokens(request),
-                )
+                    estimated_request_tokens=self._estimate_tokens(request), model=model_name)
                 if key is None:
                     logger.warning(
                         f"[{provider_name}/{model_name}] "
@@ -586,7 +585,7 @@ class IntelligentRouter:
                     tokens_used = (
                         response.usage.total_tokens if response.usage else 0
                     )
-                    await key_pool.record_usage(key, tokens_used)
+                    await key_pool.record_usage(key, tokens_used, model=model_name)
 
                     if request.temperature <= 0.3:
                         await self.cache.set(cache_key, response)
@@ -614,7 +613,7 @@ class IntelligentRouter:
                         f"✗ RateLimit {provider_name}/{model_name}  "
                         f"key=...{key[-4:]}: {exc}"
                     )
-                    await key_pool.mark_failed(key)
+                    await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
                     await obs_stats.record_failure(
                         self.redis, provider=provider_name, model=model_name,
                         rate_limited=True, token_id=token_id,
@@ -772,8 +771,7 @@ class IntelligentRouter:
             while True:
                 key = await key_pool.get_best_key(
                     exclude=tried_keys, required_tier=required_tier,
-                    estimated_request_tokens=self._estimate_tokens(request),
-                )
+                    estimated_request_tokens=self._estimate_tokens(request), model=model_name)
                 if key is None:
                     break
 
@@ -875,7 +873,7 @@ class IntelligentRouter:
                             )
                             yield sse_error(str(exc), error_type="rate_limit", code=429)
                             yield SSE_DONE
-                            await key_pool.mark_failed(key)
+                            await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
                             await obs_stats.record_failure(
                                 self.redis, provider=provider_name, model=model_name,
                                 rate_limited=True, token_id=token_id,
@@ -940,7 +938,7 @@ class IntelligentRouter:
                         prompt_tokens = self._estimate_tokens(request)
                         completion_tokens = max(1, len(accumulated_text.split()))
                         tokens_used = prompt_tokens + completion_tokens
-                    await key_pool.record_usage(key, tokens_used)
+                    await key_pool.record_usage(key, tokens_used, model=model_name)
 
                     # Reconstruct a synthetic ChatCompletionResponse for cache
                     if request.temperature <= 0.3:
@@ -1026,7 +1024,7 @@ class IntelligentRouter:
                         f"✗ [stream] RateLimit {provider_name}/{model_name}  "
                         f"key=...{key[-4:]}: {exc}"
                     )
-                    await key_pool.mark_failed(key)
+                    await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
                     await obs_stats.record_failure(
                         self.redis, provider=provider_name, model=model_name,
                         rate_limited=True, token_id=token_id,
@@ -1068,7 +1066,7 @@ class IntelligentRouter:
                 # ── SUCCESS ────────────────────────────────────────────
                 latency_ms = round((time.perf_counter() - attempt_t0) * 1000)
                 tokens_used = response.usage.total_tokens if (response and response.usage) else 0
-                await key_pool.record_usage(key, tokens_used)
+                await key_pool.record_usage(key, tokens_used, model=model_name)
 
                 if request.temperature <= 0.3:
                     try:

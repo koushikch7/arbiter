@@ -232,6 +232,70 @@ async def chat_completions(
 
     _tok_for_log = token_id or token_name or "anon"
 
+    # ── v1.20: Real-time web search (Tavily) auto-inject ─────────────────
+    # When the caller opts in via X-Arbiter-Realtime: true (or metadata.realtime),
+    # search the live web with Tavily and prepend results to the system prompt.
+    # The chosen LLM then answers grounded in those sources. Source URLs are
+    # echoed back in the X-Arbiter-Realtime-Sources response header.
+    _realtime_hdr = (request.headers.get("x-arbiter-realtime") or "").strip().lower()
+    _realtime_meta = bool(meta.get("realtime")) if isinstance(meta, dict) else False
+    _realtime_on = _realtime_hdr in ("true", "1", "yes", "on") or _realtime_meta
+    _realtime_sources: list = []
+    if _realtime_on:
+        try:
+            from app.services.web_search import TavilyClient
+            _client = TavilyClient(redis_client=_redis_ref)
+            if _client.enabled:
+                # Extract user query from last user message
+                _q = ""
+                for _m in reversed(body.messages or []):
+                    if getattr(_m, "role", None) == "user":
+                        _c = getattr(_m, "content", "")
+                        if isinstance(_c, str):
+                            _q = _c
+                        elif isinstance(_c, list):
+                            # Multimodal — pick the text parts
+                            _q = " ".join(
+                                p.get("text", "") for p in _c
+                                if isinstance(p, dict) and p.get("type") == "text"
+                            )
+                        break
+                if _q:
+                    _sr = await _client.search(_q, max_results=5)
+                    if _sr and (_sr.results or _sr.answer):
+                        _ctx = _sr.as_context_block()
+                        # Prepend as a fresh system message so the model
+                        # consumes it before answering the user.
+                        from app.models.schemas import Message as _Msg
+                        body = body.model_copy(update={
+                            "messages": [_Msg(role="system", content=_ctx)] + list(body.messages),
+                        })
+                        _realtime_sources = _sr.source_urls()
+                        logger.info(
+                            f"[realtime] Tavily injected {len(_realtime_sources)} sources "
+                            f"({_sr.latency_ms}ms) into request for token={_tok_for_log}"
+                        )
+            else:
+                logger.warning("[realtime] requested but TAVILY_API_KEY not configured")
+        except Exception as _e:
+            logger.exception(f"[realtime] Tavily lookup failed (non-fatal): {_e}")
+
+    # ── v1.20: OpenRouter :online opt-in ──────────────────────────────────
+    # If the caller forced an openrouter/* model AND set X-Arbiter-Realtime,
+    # append the :online suffix so OpenRouter's web plugin kicks in. Opt-in
+    # only — never auto-applied to avoid surprise charges.
+    if _realtime_on and effective_model and "/" in effective_model and not effective_model.endswith(":online"):
+        try:
+            # Heuristic: only do this for known OpenRouter-style ids
+            # (vendor/model) — never for cfworker/* or arbiter routing tags.
+            if effective_model.lower().startswith(("openrouter/",)) or effective_model.count("/") == 1:
+                effective_model_online = f"{effective_model}:online"
+                body = body.model_copy(update={"model": effective_model_online})
+                effective_model = effective_model_online
+                logger.info(f"[realtime] OpenRouter :online suffix applied → {effective_model}")
+        except Exception:
+            pass
+
     # ── Streaming branch: return SSE response ─────────────────────────────
     if body.stream:
         agen = router_instance.route_stream(
@@ -311,6 +375,23 @@ async def chat_completions(
                 chosen_provider = ""
         from fastapi.responses import JSONResponse as _JR
         payload = response.model_dump()
+        # Echo the actual model used into the JSON body so SDKs that only
+        # read  see the truth (instead of "auto" or the user's pin).
+        if chosen_model:
+            payload["model"] = chosen_model
+        # Embed routing metadata for client introspection.
+        try:
+            from app.routing.complexity_analyzer import analyze_complexity as _ac
+            _complexity = _ac(body).name
+        except Exception:
+            _complexity = ""
+        if _complexity:
+            payload.setdefault("x_arbiter", {})
+            payload["x_arbiter"]["complexity"] = _complexity
+            payload["x_arbiter"]["provider"] = chosen_provider
+            payload["x_arbiter"]["model"] = chosen_model
+            if _realtime_sources:
+                payload["x_arbiter"]["realtime_sources"] = _realtime_sources
         _usage = getattr(response, "usage", None)
         await _safe_persist(
             token_id=_tok_for_log,
@@ -327,14 +408,16 @@ async def chat_completions(
             request_id=None,
             client_ip=_req_ip,
         )
-        return _JR(
-            content=payload,
-            headers={
-                "X-Arbiter-Model-Used": (
-                    f"{chosen_provider}/{chosen_model}" if chosen_provider else str(chosen_model)
-                ),
-            },
-        )
+        _resp_headers = {
+            "X-Arbiter-Model-Used": (
+                f"{chosen_provider}/{chosen_model}" if chosen_provider else str(chosen_model)
+            ),
+        }
+        if _complexity:
+            _resp_headers["X-Arbiter-Complexity"] = _complexity
+        if _realtime_sources:
+            _resp_headers["X-Arbiter-Realtime-Sources"] = ",".join(_realtime_sources[:5])
+        return _JR(content=payload, headers=_resp_headers)
     except RateLimitError as e:
         logger.warning(f"All providers rate-limited: {e}")
         await _safe_persist(

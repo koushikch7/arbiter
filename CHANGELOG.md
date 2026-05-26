@@ -6,6 +6,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.20.0] – 2026-05-26 — Real-Time Web Search + Multi-Key Hardening + Verified Free-Tier Limits
+
+### Added — Real-Time Web Search via Tavily (`app/services/web_search.py`)
+
+- **New module** wrapping `https://api.tavily.com/search` with async httpx, redis-backed 5-min cache, 8 s timeout, structured response object with `as_context_block()` rendering numbered citations.
+- **Opt-in via header** `X-Arbiter-Realtime: true` (or `metadata.realtime` in the body). When set:
+  1. Last user message is extracted as the search query.
+  2. Tavily is called (top 5 results + AI-generated answer summary).
+  3. Results are prepended to the request as a fresh `system` message with citation markers.
+  4. The chosen LLM answers grounded in those sources.
+- **Source URLs surfaced** via response header `X-Arbiter-Realtime-Sources` and body field `x_arbiter.realtime_sources`.
+- **Auto-detect helper** `looks_time_sensitive()` returns true for keywords like *today, current, latest, price, news, weather, score*. Not auto-invoked — clients explicitly enable.
+- Configured via env var `TAVILY_API_KEY` (free tier: 1 000 searches/month).
+
+### Added — Gemini Native Google Search Grounding (`app/providers/gemini.py`)
+
+- Provider now forwards `{"tools":[{"google_search":{}}]}` to Gemini when the request includes a `tools` entry of type `google_search` / `google_search_retrieval`, or when `metadata.realtime` / `metadata.web_search` / `metadata.google_search` is true.
+- Free on Gemini 2.0+ and 3.x.
+
+### Added — OpenRouter `:online` Opt-In (`app/api/chat.py`)
+
+- When `X-Arbiter-Realtime: true` is set AND an OpenRouter-style `vendor/model` was pinned, the router appends `:online` so OpenRouters Brave-backed web plugin kicks in.
+- Opt-in only — never auto-applied to avoid surprise per-search charges.
+
+### Added — Client Observability (`app/api/chat.py`)
+
+- **JSON response body now echoes the chosen model** into the OpenAI-format `model` field instead of `auto` or the users pin.
+- **New `x_arbiter` block** in the body: `{"provider":..., "model":..., "complexity":..., "realtime_sources":[...]}` for SDKs that dont read custom headers.
+- **New response header `X-Arbiter-Complexity`**: `TRIVIAL` | `SIMPLE` | `MODERATE` | `COMPLEX` | `EXPERT`.
+
+### Fixed — Multi-Key Rotation Correctness (`app/key_management/key_pool.py`)
+
+- **Sliding-window TTL refresh bug**: `record_usage()` was running `INCR; EXPIRE 60` on every call, refreshing the TTL each time so a continuously-used keys RPM counter would accumulate monotonically until the very first 60 s gap. Now uses `SET key 0 EX 60 NX; INCRBY key by` — the TTL anchors to the *first* increment in the window.
+- **Daily counter date-bucketed**: replaced 86 400 s sliding TTL with `{provider}:{key_hash}:daily:YYYY-MM-DD` (30 h safety TTL). Now auto-rolls at UTC 00:00 regardless of traffic pattern (matches Googles reset semantics).
+- **Per-model rate limits**: new `MODEL_OVERRIDES` dict + `get_model_limits()` helper. `get_best_key()` / `record_usage()` / `_score_key()` accept optional `model=`. Effective ceiling = `max(provider_aggregate_used, per_model_used)` versus per-model limit — flash-lite gets 1 000 RPD on the same key that pro is capped at 100 RPD on; llama-3.1-8b-instant gets 14 400 RPD instead of being bottlenecked by 70bs 1 000 RPD.
+- **`get_stats()` exposes per-key tier** (`free` / `paid`) for the analytics dashboard.
+
+### Fixed — Verified-Against-Docs Free-Tier Limits (`app/key_management/key_pool.py`)
+
+All `PROVIDER_LIMITS` values cross-checked against official provider documentation on 2026-05-26:
+
+| Provider | Old | New (verified) |
+|---|---|---|
+| Gemini | 5/250K/100 (pro bottleneck) | 15/250K/1 000 (flash-lite default) |
+| Groq | 30/6 K/1 000 | 30/6 K/14 400 (8b-instant default) |
+| Cerebras | 30/60 K/1 M tokens | 5/30 K/1 000 (tightened per docs) |
+| Cloudflare | 300/1 M/10 000 | 300/1 M/1 000 (chat-call equivalent) |
+| HuggingFace | 10/50 K/500 | 10/50 K/100 ($0.10 monthly credit) |
+| Pollinations | 5/100 K/1 000 | 4/100 K/1 000 (1 req / 15 s) |
+
+NVIDIA, OpenRouter, Cohere, Routeway, Z.ai unchanged. New `ollama` entry: 60 / 500 K / 5 000.
+
+### Fixed — Dead Gemini Pre-GA Bridge (`app/providers/gemini.py`)
+
+- Removed `_PRERELEASE_BRIDGE = {"gemini-3.1-flash-lite": "gemini-3.1-flash-lite-preview"}` mapping. Google retired the preview endpoint on 2026-05-25; the GA endpoint is now live everywhere. Every free-Gemini call had been failing with 404 since the retirement.
+
+### Fixed — `RateLimitError` Cooldown Wastes Capacity
+
+- **`RateLimitError` now carries `retry_after` seconds** (`app/providers/base.py`). New `parse_retry_after()` helper extracts it from `Retry-After` headers (RFC 7231 — seconds or HTTP-date) and from common body patterns (`try again in X.Xs`, `reset after Xms`).
+- Wired through all 13 providers (`gemini`, `groq`, `cerebras`, `cloudflare`, `openrouter`, `cohere`, `huggingface`, `pollinations`, `zai`, `routeway`, `ollama`, `nvidia`, `generic_openai`).
+- Router uses `mark_failed(key, cooldown_seconds=retry_after + 2)` so a key that 429d with a 5 s wait is back in rotation in 7 s, not 5 minutes.
+
+### Fixed — Tightened Diversity Bonus (`app/routing/auto_router.py`)
+
+- Provider-diversity bonus (max 15) now only applies when the candidate model meets the minimum quality tier required by the request complexity. On EXPERT requests, diversity cannot pull a 7B model above a 120B flagship.
+
+### Fixed — `nvidia` Missing From Key-Tier Map (`app/config.py`)
+
+- `get_key_tiers()` mapping was missing `nvidia`. Adding `#paid` to an NVIDIA key now correctly tags it as paid tier.
+
+### Smoke Tests (2026-05-26, live oracle.chkoushik.com)
+
+| Test | Result | Notes |
+|---|---|---|
+| TRIVIAL `hi` | groq/llama-3.1-8b-instant in 392 ms | fast small model picked |
+| Realtime BTC price | nvidia/nemotron-3-super-120b-a12b in 7.5 s | Tavily injected 5 sources, answer cites [1]–[5] |
+| EXPERT CAP/Raft prompt | cloudflare/@cf/openai/gpt-oss-120b in 4 s | flagship picked; diversity bonus didnt pull weaker model |
+| Direct `gemini-3.1-flash-lite` | success | was 100% 404 before |
+
+---
+
 ## [1.19.3] – 2026-05-25 — Real-Time Analytics Enhancements & Cloudflare Fix
 
 ### Fixed — Cloudflare Provider Null Content Crash (`app/providers/cloudflare.py`)

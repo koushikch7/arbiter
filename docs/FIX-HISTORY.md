@@ -4,6 +4,72 @@ Chronological log of all fixes, changes, and improvements.
 
 ---
 
+## 2026-05-26 — v1.20.0 (Real-Time Web Search + Multi-Key Hardening + Verified Free-Tier Limits)
+
+### Root-cause findings
+
+- **Free-Gemini traffic was producing 0 successful calls for ~36 h** — the `_PRERELEASE_BRIDGE` rewrote every `gemini-3.1-flash-lite` request into `gemini-3.1-flash-lite-preview`, which Google retired on 2026-05-25. The router was correctly rotating across 4 keys but every endpoint URL was dead.
+- **Per-key sliding-window counters never expired under load** — `record_usage()` ran `INCR; EXPIRE 60` on every call, refreshing the TTL each time. A continuously-used keys RPM counter would accumulate monotonically until the very first 60 s gap.
+- **Daily quota tracked 24 h since last call, not UTC midnight** — same TTL-refresh bug applied to the daily key.
+- **Provider-default rate limits used the most-restrictive model on the key** — Gemini was hard-capped at the `gemini-2.5-pro` ceiling (5 RPM, 100 RPD) even when the request was for `gemini-2.5-flash-lite` (15 RPM, 1000 RPD), giving 1/10 of actual free quota.
+- **Rate-limit cooldowns hardcoded at 300 s** — Gemini/Groq 429s typically reset within seconds; the 5-min cooldown wasted 80% of usable time on the rate-limited key.
+- **No real-time / web-search capability** — every model answered purely from training data.
+
+### Fixes & additions
+
+**Multi-key rotation correctness (`app/key_management/key_pool.py`)**
+- Removed the TTL-refresh bug — RPM/TPM counters now use `SET key 0 EX 60 NX; INCRBY key by` so the TTL anchors to the first increment in the window.
+- Daily counter is now date-bucketed: `{provider}:{key_hash}:daily:YYYY-MM-DD` with a 30 h safety TTL, so it auto-rolls at UTC midnight irrespective of traffic patterns.
+- New `MODEL_OVERRIDES` dict + `get_model_limits()` helper — flash-lite gets 1000 RPD on the same key that pro is capped at 100 RPD on, llama-3.1-8b-instant gets 14 400 RPD vs llama-3.3-70b at 1 000 RPD.
+- `get_best_key()` / `record_usage()` / `_score_key()` accept an optional `model=` arg and respect per-model ceilings (computed as `max(provider_aggregate, per_model)`).
+- `get_stats()` surfaces tier (`free` / `paid`) per key.
+
+**Verified-against-docs free-tier limits (2026-05-26)**
+- **Gemini**: 15 / 250 K / 1 000 (flash-lite); 10 / 250 K / 250 (flash); 5 / 250 K / 100 (pro — paid).
+- **Groq**: 30 / 6 K / 14 400 (8b-instant); 30 / 12 K / 1 000 (70b); 60 / 6 K / 1 000 (qwen3-32b); 30 / 8 K / 1 000 (gpt-oss-120b).
+- **Cerebras**: tightened from 30 RPM → 5 RPM / 30 K TPM / 1 M TPD per docs.
+- **OpenRouter**: 20 RPM / 50 RPD without credits, 1 000 RPD with $10+ credits.
+- **Cohere**: 20 RPM / 33 RPD (trial). **Cloudflare**: 300 RPM / 1 K daily chat calls. **NVIDIA NIM**: 40 RPM / 1 000 daily.
+
+**`RateLimitError.retry_after` (`app/providers/base.py` + every provider)**
+- `RateLimitError` now carries an optional `retry_after` seconds value.
+- New `parse_retry_after()` extracts it from `Retry-After` headers (RFC 7231) and from common upstream body patterns (`try again in X.Xs`, `reset after Xms`).
+- Router uses `mark_failed(key, cooldown_seconds=retry_after + 2)` — a 5 s wait becomes 7 s, not 5 minutes.
+
+**Real-time web search (`app/services/web_search.py` — new module)**
+- New `TavilyClient` — async HTTP client, redis-backed 5 min cache, 8 s timeout, structured response with numbered citations.
+- Opt-in via `X-Arbiter-Realtime: true` header (or `metadata.realtime = true`). Tavily called, results prepended as a fresh system message with source URLs, chosen LLM answers grounded.
+- Response includes `X-Arbiter-Realtime-Sources` header + `x_arbiter.realtime_sources` in JSON.
+
+**Gemini native grounding (`app/providers/gemini.py`)**
+- Provider forwards `{"tools":[{"google_search":{}}]}` when request contains a `tools` entry of type `google_search` / `google_search_retrieval`, or `metadata.realtime` / `web_search` / `google_search` is true.
+- Free on Gemini 2.0+ and 3.x.
+
+**OpenRouter `:online` opt-in (`app/api/chat.py`)**
+- When `X-Arbiter-Realtime: true` is set AND the caller pinned an OpenRouter-style model, the router appends `:online`. Opt-in only — never auto-applied (avoids surprise per-search charges).
+
+**Client observability (`app/api/chat.py`)**
+- JSON body echoes actual chosen model into `model` field (instead of `auto`).
+- New embedded `x_arbiter` object: `{provider, model, complexity, realtime_sources}`.
+- New `X-Arbiter-Complexity` response header.
+
+**Tighter diversity scoring (`app/routing/auto_router.py`)**
+- Provider-diversity bonus now only fires when the candidate is at-or-above the quality tier required by complexity. On EXPERT requests, diversity can no longer pull a 7B model above a 120B flagship.
+
+**Misc**
+- `app/config.py`: `get_key_tiers()` mapping was missing `nvidia` — added. New `TAVILY_API_KEY` setting.
+
+### Results (smoke-tested live 2026-05-26)
+
+| Test | Routed to | Latency | Outcome |
+|---|---|---|---|
+| `hi` (TRIVIAL) | groq/llama-3.1-8b-instant | 392 ms | ✓ correct fast small model |
+| Bitcoin price (X-Arbiter-Realtime: true) | nvidia/nemotron-3-super-120b-a12b | 7.5 s | ✓ 5 sources injected, citations |
+| Prove CAP + Raft design (EXPERT) | cloudflare/@cf/openai/gpt-oss-120b | 4 s | ✓ flagship picked |
+| `gemini-3.1-flash-lite` direct | gemini/gemini-3.1-flash-lite | <1 s | ✓ working (was 100% 404 before) |
+
+---
+
 ## 2026-05-23 — v1.19.0 (Intelligent Complexity-Aware Routing)
 
 ### Root Cause Analysis

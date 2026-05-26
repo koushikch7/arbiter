@@ -149,7 +149,7 @@ Outbound HTTPS (443) to:
 ## Health Check
 
 ```
-GET /health → 200 {"status": "ok", "version": "1.18.1"}
+GET /health → 200 {"status": "ok", "version": "1.20.0"}
 ```
 
 Docker uses this internally with a 30-second interval.

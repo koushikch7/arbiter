@@ -28,6 +28,8 @@ Complete end-to-end guide for configuring, running, and using the Arbiter.
 20. [Weekly AI Analysis Email](#weekly-ai-analysis-email)
 21. [Adaptive Routing (v1.18)](#adaptive-routing-v118)
 22. [Complexity-Aware Routing (v1.19)](#complexity-aware-routing-v119)
+23. [Real-Time Web Search (v1.20)](#real-time-web-search-v120)
+24. [Model Selection Headers (v1.20)](#model-selection-headers-v120)
 
 ---
 

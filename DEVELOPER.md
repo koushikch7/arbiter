@@ -19,6 +19,53 @@ Complete guide to the architecture, code structure, and extension points for dev
 
 ---
 
+## v1.20 -- Real-Time Web Search Pipeline
+
+When a request opts in (X-Arbiter-Realtime: true or metadata.realtime), the chat endpoint pulls live web context BEFORE routing to an LLM:
+
+```
+Client request (X-Arbiter-Realtime: true)
+       |
+       v
++-----------------------------------+
+| app/api/chat.py                   |
+|   1. Extract last user message    |
+|   2. TavilyClient.search(query)   |
+|      (Redis-cached 5 min)         |
+|   3. Render context block w/ [n]  |
+|      numbered citations           |
+|   4. Prepend as system message    |
++-----------------------------------+
+       |
+       v
++-----------------------------------+
+| Existing complexity-aware router  |
+|   - LLM sees the search context   |
+|     in the system prompt          |
+|   - Answers grounded, cites [1]+  |
++-----------------------------------+
+       |
+       v
+Response w/ X-Arbiter-Realtime-Sources
+```
+
+Files: app/services/web_search.py (Tavily client), app/api/chat.py (auto-inject), app/providers/gemini.py (native google_search tool forwarding).
+
+Env: TAVILY_API_KEY (free tier 1K searches/mo).
+
+---
+
+## v1.20 -- Multi-Key Rotation Internals (KeyPool)
+
+Per-key counters now use anchored-TTL semantics so a continuously-used key does not get its window TTL refreshed on every call.
+
+- RPM/TPM: SET key 0 EX 60 NX; INCRBY key by  -- the TTL is set once on first INCR of the window.
+- Daily: key naming is {provider}:{key_hash}:daily:YYYY-MM-DD with a 30 h TTL safety margin so it aligns with UTC midnight rather than 24 h since last call.
+- Per-model overrides: MODEL_OVERRIDES dict + get_model_limits() helper. KeyPool.get_best_key(model=...) consults per-model limits in addition to the provider aggregate, so flash-lite (1000 RPD) and pro (100 RPD) on the same key do not bottleneck each other.
+- RateLimitError.retry_after: parsed from upstream 429 headers / body via parse_retry_after() in base.py, used by router as the mark_failed cooldown so a 5 s rate limit costs 7 s not 5 minutes.
+
+---
+
 ## Architecture Overview
 
 ### High-Level Data Flow

@@ -8,7 +8,7 @@ AI-friendly context document for onboarding and continuation prompts.
 
 A self-hosted, production-ready LLM gateway that aggregates 12+ providers behind a single OpenAI-compatible endpoint. Designed for multi-agent frameworks (like OpenClaw/JARVIS) that generate concurrent request bursts.
 
-**Current version:** 1.19.0 (as of 2026-05-23)
+**Current version:** 1.20.0 (as of 2026-05-26)
 
 ---
 

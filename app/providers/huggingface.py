@@ -28,7 +28,7 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -107,7 +107,8 @@ class HuggingFaceProvider(BaseProvider):
                 raise ProviderError(f"HuggingFace network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"HuggingFace 429: {resp.text[:300]}")
+            raise RateLimitError(f"HuggingFace 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 503:
             # Model is loading or temporarily unavailable
             raise ProviderError(f"HuggingFace 503 (model loading/unavailable): {resp.text[:300]}")

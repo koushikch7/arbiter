@@ -32,7 +32,7 @@ from typing import List, Optional
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -100,7 +100,10 @@ class GeminiProvider(BaseProvider):
     # outbound request always uses the canonical identifier for the current
     # state of the upstream API.
     _PRERELEASE_BRIDGE: dict = {
-        "gemini-3.1-flash-lite": "gemini-3.1-flash-lite-preview",
+        # 2026-05-26: Google retired gemini-3.1-flash-lite-preview; the GA
+        # endpoint gemini-3.1-flash-lite is now live everywhere — no
+        # rewrite needed. Kept as a dict so future preview→GA bridges can
+        # be added without changing the resolver code.
     }
 
     # --------------------------------------------------------------------------
@@ -167,7 +170,7 @@ class GeminiProvider(BaseProvider):
         """
         import httpx
 
-        from app.providers.base import RateLimitError, ProviderError
+        from app.providers.base import RateLimitError, ProviderError, parse_retry_after
 
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models"
@@ -180,7 +183,8 @@ class GeminiProvider(BaseProvider):
             raise ProviderError(f"[gemini] models fetch network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError("[gemini] models fetch 429")
+            raise RateLimitError("[gemini] models fetch 429",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"[gemini] models fetch {resp.status_code}: {resp.text[:300]}"
@@ -241,6 +245,31 @@ class GeminiProvider(BaseProvider):
             "generationConfig": generation_config,
         }
 
+        # ── v1.20: Google Search grounding tool ──
+        # If the caller passed a tool with type="google_search" or set the
+        # metadata flag, forward it to Gemini in the native shape. Free on
+        # gemini-2.0+ and 3.x. Returns groundingMetadata with citations.
+        client_tools = getattr(request, "tools", None) or []
+        wants_search = False
+        if isinstance(client_tools, list):
+            for t in client_tools:
+                if not isinstance(t, dict):
+                    continue
+                if t.get("type") in ("google_search", "google_search_retrieval"):
+                    wants_search = True
+                    break
+                fn = t.get("function") or {}
+                if isinstance(fn, dict) and fn.get("name") in ("google_search", "web_search"):
+                    wants_search = True
+                    break
+        # Also support a metadata flag from the Arbiter request schema.
+        meta = getattr(request, "metadata", None) or {}
+        if isinstance(meta, dict) and (meta.get("realtime") or meta.get("web_search") or meta.get("google_search")):
+            wants_search = True
+        if wants_search:
+            payload["tools"] = [{"google_search": {}}]
+            logger.info(f"[gemini] enabling google_search grounding tool for {model}")
+
         logger.debug(f"GeminiProvider POST model={model}")
 
         async with httpx.AsyncClient(timeout=90.0) as client:
@@ -253,7 +282,8 @@ class GeminiProvider(BaseProvider):
         if resp.status_code in (429, 403):
             raise RateLimitError(
                 f"Gemini {resp.status_code}: {resp.text[:300]}"
-            )
+            ,
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"Gemini {resp.status_code}: {resp.text[:500]}"
@@ -344,7 +374,8 @@ class GeminiProvider(BaseProvider):
                         body = await resp.aread()
                         raise RateLimitError(
                             f"Gemini {resp.status_code}: {body[:300].decode('utf-8','replace')}"
-                        )
+                        ,
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
                     if resp.status_code != 200:
                         body = await resp.aread()
                         raise ProviderError(

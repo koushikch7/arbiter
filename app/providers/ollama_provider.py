@@ -28,7 +28,7 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -111,9 +111,11 @@ class OllamaProvider(BaseProvider):
                 raise ProviderError(f"Ollama network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"Ollama 429: {resp.text[:300]}")
+            raise RateLimitError(f"Ollama 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 402:
-            raise RateLimitError(f"Ollama 402 (quota exhausted): {resp.text[:300]}")
+            raise RateLimitError(f"Ollama 402 (quota exhausted): {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 503:
             # Upstream model-level issue — try next model, not next key
             raise ProviderError(f"Ollama 503: {resp.text[:300]}")
@@ -128,7 +130,8 @@ class OllamaProvider(BaseProvider):
             code = err.get("code") if isinstance(err, dict) else 0
             msg  = err.get("message") if isinstance(err, dict) else str(err)
             if code in (429, 402):
-                raise RateLimitError(f"Ollama error {code}: {msg}")
+                raise RateLimitError(f"Ollama error {code}: {msg}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
             raise ProviderError(f"Ollama error: {msg}")
 
         try:

@@ -18,7 +18,7 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -114,7 +114,8 @@ class NvidiaProvider(BaseProvider):
                 raise ProviderError(f"NVIDIA network error: {exc!r}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"NVIDIA 429: {resp.text[:300]}")
+            raise RateLimitError(f"NVIDIA 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(f"NVIDIA {resp.status_code}: {resp.text[:500]}")
 

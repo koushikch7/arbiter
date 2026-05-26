@@ -29,7 +29,7 @@ from typing import List, Tuple
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -131,7 +131,8 @@ class CloudflareProvider(BaseProvider):
                 raise ProviderError(f"Cloudflare network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"Cloudflare 429: {resp.text[:300]}")
+            raise RateLimitError(f"Cloudflare 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(f"Cloudflare {resp.status_code}: {resp.text[:500]}")
 

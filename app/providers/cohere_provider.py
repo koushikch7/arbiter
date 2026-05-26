@@ -25,7 +25,7 @@ from typing import List, Optional
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -115,7 +115,8 @@ class CohereProvider(BaseProvider):
                 raise ProviderError(f"Cohere network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"Cohere 429: {resp.text[:300]}")
+            raise RateLimitError(f"Cohere 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(f"Cohere {resp.status_code}: {resp.text[:500]}")
 
@@ -201,7 +202,8 @@ class CohereProvider(BaseProvider):
                 async with client.stream("POST", COHERE_CHAT_URL, json=payload, headers=headers) as resp:
                     if resp.status_code == 429:
                         body = await resp.aread()
-                        raise RateLimitError(f"Cohere 429: {body[:300].decode('utf-8','replace')}")
+                        raise RateLimitError(f"Cohere 429: {body[:300].decode('utf-8','replace')}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
                     if resp.status_code != 200:
                         body = await resp.aread()
                         raise ProviderError(

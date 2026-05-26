@@ -23,7 +23,7 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -116,10 +116,12 @@ class RoutewayProvider(BaseProvider):
                 raise ProviderError(f"Routeway network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"Routeway 429: {resp.text[:300]}")
+            raise RateLimitError(f"Routeway 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 402:
             # "Payment required" — out of credits on a paid model
-            raise RateLimitError(f"Routeway 402 (quota exhausted): {resp.text[:300]}")
+            raise RateLimitError(f"Routeway 402 (quota exhausted): {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 503:
             # 503 is MODEL-level ("No eligible providers" / upstream bad
             # gateway) not KEY-level. Raising ProviderError lets the router
@@ -138,7 +140,8 @@ class RoutewayProvider(BaseProvider):
             msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
             code = err.get("code", 0) if isinstance(err, dict) else 0
             if code in (429, 402):
-                raise RateLimitError(f"Routeway error {code}: {msg}")
+                raise RateLimitError(f"Routeway error {code}: {msg}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
             # code == 503 or any other model-level failure → ProviderError
             # so we fall through to next model instead of burning the key.
             raise ProviderError(f"Routeway error {code or '?'}: {msg}")
@@ -196,7 +199,8 @@ class RoutewayProvider(BaseProvider):
                 raise ProviderError(f"Routeway models fetch network error: {exc}") from exc
 
         if resp.status_code == 429:
-            raise RateLimitError("Routeway models fetch: rate limited")
+            raise RateLimitError("Routeway models fetch: rate limited",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"Routeway models fetch {resp.status_code}: {resp.text[:300]}"

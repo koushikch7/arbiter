@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError
+from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -255,11 +255,13 @@ class GenericOpenAIProvider(BaseProvider):
             ) from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}")
+            raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code == 402:
             raise RateLimitError(
                 f"[custom:{self.name}] 402 (quota exhausted): {resp.text[:300]}"
-            )
+            ,
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"[custom:{self.name}] {resp.status_code}: {resp.text[:500]}"
@@ -344,7 +346,8 @@ class GenericOpenAIProvider(BaseProvider):
             ) from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}")
+            raise RateLimitError(f"[custom:{self.name}] 429: {resp.text[:300]}",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"[custom:{self.name}] anthropic {resp.status_code}: {resp.text[:500]}"
@@ -409,7 +412,8 @@ class GenericOpenAIProvider(BaseProvider):
             ) from exc
 
         if resp.status_code == 429:
-            raise RateLimitError(f"[custom:{self.name}] models fetch 429")
+            raise RateLimitError(f"[custom:{self.name}] models fetch 429",
+                retry_after=parse_retry_after(getattr(resp, "headers", None), getattr(resp, "text", "")))
         if resp.status_code != 200:
             raise ProviderError(
                 f"[custom:{self.name}] models fetch {resp.status_code}: "

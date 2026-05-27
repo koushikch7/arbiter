@@ -6,6 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.20.1] – 2026-05-27 — Enterprise UI + Analytics Hardening + OpenAPI Parity
+
+### Added — OpenAPI / Swagger / ReDoc Parity (`app/models/schemas.py`, `app/api/chat.py`)
+
+- **`ChatTool` schema published** in OpenAPI — `tools` field on `ChatCompletionRequest` is now formally declared (was previously hidden behind `extra="allow"`). SDK code generators now see it.
+- Added formal `tool_choice`, `parallel_tool_calls`, `response_format` fields.
+- `metadata` description expanded to enumerate every recognized key including v1.20 additions: `realtime`, `web_search`, `google_search`.
+- `/v1/chat/completions` docstring rewritten as a Markdown reference table with v1.20 headers (`X-Arbiter-Realtime`, `X-Arbiter-Complexity`, `X-Arbiter-Realtime-Sources`) and Tavily/grounding sections.
+
+### Added — Auto-generated Developer Endpoint Table (`static/developer.html`)
+
+- Hand-maintained API endpoint table replaced with client-side fetch from `/openapi.json`. The Developer page now reflects whatever Swagger reflects — no drift possible.
+- Filter input + tag dropdown + endpoint count surfaces all 87 operations across 17 tags.
+
+### Added — Analytics Enhancements (`app/api/analytics_api.py`, `static/analytics.html`)
+
+- **Percentile latency tracking** — new Redis sorted-set per provider (`arbiter:stats:lat_samples:*`) holding the last 1 000 observations. `obs_stats.get_latency_percentiles()` computes p50/p95/p99 on demand. Surfaced as 3 KPI cards on Analytics.
+- **Error-type breakdown KPI** — splits 24h errors into rate-limited (429) vs upstream provider errors, with per-provider drilldown.
+- **Cost / quota ledger** — `_cost_ledger()` aggregates the last 7 daily buckets plus month-to-date plus linear month-end projection. Rendered as 6-cell KPI + 7-day sparkline.
+- **Per-key health table** — `_per_key_gauges()` exposes live `KeyPool.get_stats()` per provider with RPM/TPM/daily progress bars (color-graded 60/85%) and tier badges.
+- **Date presets** — Today / Yesterday / Week / Month / Year buttons added alongside the existing 1h/4h/24h/7d/30d window presets.
+- **Compare mode toggle** — UI button wired; full overlay implementation in next pass.
+- **CSV / JSON export** — every analytics table gets a download helper (`exportTable()`); column headers preserved.
+- **Page Visibility guardrail** — auto-refresh suspends when the tab is hidden (saves 10–15 req/min per idle browser tab).
+- **Anomaly bell** — rolling z-score on RPM. >2.5σ spike or drop surfaces as a topbar bell with title tooltip showing baseline + z.
+
+### Added — Persistent Log & Audit Viewer (`static/logs-persistent.html`, `app/main.py`)
+
+- New `/logs/persistent` page with 4 tabs: **API Calls** (180-day request log), **Admin Activity** (HMAC-signed audit), **Errors** (provider + UI errors), **Summary** (per-day stats).
+- Filter by date range + free-text search; export current view as JSON.
+- Wraps the existing `/api/logs/persistent/*` endpoints — no backend changes required.
+
+### Added — Frontend Error Reporter (`app/api/ui_errors_api.py`, `static/analytics.html`)
+
+- New `POST /api/ui-error` endpoint (public, IP-rate-limited to 1/2s) accepts JS runtime errors and unhandled promise rejections from the frontend.
+- JS shim added: `window.onerror` + `unhandledrejection` → POST → appended to the daily errors JSONL file (180-day retention).
+- New `persistent_log.write_error()` helper used by both the existing provider-error path and the new UI ingest.
+
+### Added — Accessibility Pass (WCAG 2.1 AA basics) (`static/arbiter.css`, all `static/*.html`)
+
+- Skip-link added to every page (`<a href="#main" class="skip-link">` becomes focusable from the keyboard).
+- `role="main"` on `<main>`, `role="banner"` on topbar, `role="navigation" aria-label="Primary"` on sidebar.
+- `id="main"` on the main content landmark on every page for the skip-link target.
+- Universal `:focus-visible` ring (`outline: 2px solid var(--accent-br)`).
+- `@media (prefers-reduced-motion: reduce)` disables animations for users with vestibular sensitivities.
+- New `.sr-only` utility for screen-reader-only labels.
+- `aria-label` filled in on icon-only buttons across analytics and persistent-log pages.
+
+### Smoke-tested (live 2026-05-27)
+
+- `GET /openapi.json` now lists `X-Arbiter-Realtime`, `X-Arbiter-Complexity`, `x_arbiter`, `Tavily`, plus the `ChatTool` schema and `tools` field on `ChatCompletionRequest`. ✓
+- `POST /api/ui-error` returns `{"ok": true}` unauthenticated, records to `data/logs/errors/YYYY-MM-DD.jsonl`. ✓
+- `/v1/chat/completions` (TRIVIAL prompt) routes to `groq/llama-3.1-8b-instant` with `x_arbiter` block in body and v1.20 headers. ✓
+- `/logs/persistent` page renders the 4 tabs and loads /api/logs/persistent/api/activity/errors/summary. ✓
+
+---
+
 ## [1.20.0] – 2026-05-26 — Real-Time Web Search + Multi-Key Hardening + Verified Free-Tier Limits
 
 ### Added — Real-Time Web Search via Tavily (`app/services/web_search.py`)

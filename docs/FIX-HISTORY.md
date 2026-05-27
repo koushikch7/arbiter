@@ -4,6 +4,28 @@ Chronological log of all fixes, changes, and improvements.
 
 ---
 
+## 2026-05-27 — v1.20.1 (Enterprise UI + Analytics Hardening + OpenAPI Parity)
+
+### Audit findings addressed
+
+- **OpenAPI was stale on v1.20.0 changes** — `tools`, `metadata.realtime`, `X-Arbiter-Realtime`, `X-Arbiter-Complexity`, `x_arbiter` body field werent exposed in the schema. Swagger/ReDoc consumers had no way to discover them.
+- **Analytics dashboard missed enterprise-grade analyst capabilities** — no percentile latency (only avg), no error-type split, no cost / quota projection, no per-key live gauges, no today/yesterday/week/month presets, no export, no anomaly detection, no audit-log viewer.
+- **Developer docs page drift** — hand-maintained endpoint table out-of-sync with `/openapi.json` since v1.18.
+- **Zero accessibility baseline** — no skip-links, no ARIA landmarks, no focus-visible styles.
+- **No frontend error reporting** — JS runtime exceptions silently swallowed; couldnt triage user-reported issues.
+- **Refresh-tab thrash** — analytics polled every 5 s even when the tab was hidden, wasting ~150 req/min for 10 idle admins.
+
+### Implemented
+
+- All Phase A (OpenAPI parity, dev-table auto-gen, presets, percentile cards, key gauges, error breakdown).
+- Phase B (persistent-log viewer, audit viewer, CSV/JSON export, comparison toggle, cost ledger, Page Visibility pause).
+- Phase C (accessibility pass with skip-link/landmarks/focus-visible/reduced-motion, anomaly z-score bell).
+- Phase D (frontend error reporter wired through `/api/ui-error` → `persistent_log.write_error()` → daily errors JSONL).
+
+See CHANGELOG `[1.20.1]` for the per-file detail.
+
+---
+
 ## 2026-05-26 — v1.20.0 (Real-Time Web Search + Multi-Key Hardening + Verified Free-Tier Limits)
 
 ### Root-cause findings

@@ -157,7 +157,8 @@
     .confirm-btns { display: flex; gap: 10px; justify-content: flex-end; }
   </style>
 </head>
-<body>
+<body\1>
+  <a href="#main" class="skip-link" tabindex="0">Skip to main content</a>
 <div class="app-shell">
 
   <!-- Sidebar -->
@@ -165,7 +166,7 @@
 
   <div class="main-wrapper">
     <!-- Topbar -->
-    <header class="topbar">
+    <header class="topbar" role="banner">
       <button class="sidebar-toggle" id="sidebar-toggle">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
@@ -175,7 +176,7 @@
       </div>
     </header>
 
-    <main class="page-content">
+    <main class="page-content" id="main" role="main">
 
       <!-- Storage warning -->
       <div id="warn-banner" class="warn-banner" style="display:none">

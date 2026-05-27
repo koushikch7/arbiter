@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Logs & Audit — Arbiter</title>
+  <link rel="stylesheet" href="/static/arbiter.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+<body>
+  <a href="#main" class="skip-link" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden">Skip to main content</a>
+  <div class="app-shell">
+    <aside id="sidebar" role="navigation" aria-label="Primary"></aside>
+    <main class="app-main" role="main">
+      <header class="topbar" role="banner">
+        <h1 class="page-title">Logs &amp; Audit</h1>
+        <div style="flex:1"></div>
+        <div class="topbar-actions">
+          <span class="badge badge-blue">180-day retention</span>
+          <button class="btn btn-ghost" onclick="loadLogs()" aria-label="Refresh logs">⟳ Refresh</button>
+          <button class="btn btn-ghost" onclick="exportLogs()" aria-label="Export current view as JSON">⤓ Export</button>
+        </div>
+      </header>
+
+      <section id="main" class="container">
+        <!-- Tab nav -->
+        <div class="card mb20" role="tablist" aria-label="Log type">
+          <div style="display:flex;gap:8px;padding:10px;border-bottom:1px solid var(--border)">
+            <button class="btn btn-primary" role="tab" id="tab-api" onclick="switchTab('api')" aria-selected="true">API Calls</button>
+            <button class="btn btn-ghost"   role="tab" id="tab-activity" onclick="switchTab('activity')" aria-selected="false">Admin Activity</button>
+            <button class="btn btn-ghost"   role="tab" id="tab-errors"   onclick="switchTab('errors')" aria-selected="false">Errors</button>
+            <button class="btn btn-ghost"   role="tab" id="tab-summary"  onclick="switchTab('summary')" aria-selected="false">Summary</button>
+          </div>
+          <div style="display:flex;gap:8px;padding:10px;flex-wrap:wrap;align-items:center">
+            <label style="font-size:11px;color:var(--text-muted)">From <input type="date" id="from" class="form-control" style="font-size:12px;padding:5px 8px"></label>
+            <label style="font-size:11px;color:var(--text-muted)">To <input type="date" id="to" class="form-control" style="font-size:12px;padding:5px 8px"></label>
+            <label style="font-size:11px;color:var(--text-muted)">Search <input type="text" id="q" class="form-control" placeholder="text filter…" style="font-size:12px;padding:5px 8px;min-width:180px"></label>
+            <label style="font-size:11px;color:var(--text-muted)">Limit
+              <select id="limit" class="form-control" style="font-size:12px;padding:5px 8px">
+                <option>200</option><option>500</option><option>1000</option><option>5000</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" onclick="loadLogs()">Apply</button>
+            <span style="flex:1"></span>
+            <span id="result-count" style="font-size:11px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <!-- Summary tab (visible when summary selected) -->
+        <div id="panel-summary" class="card mb20" hidden>
+          <div class="card-hd"><span class="card-title">Persistent Log Summary</span></div>
+          <div class="card-body" style="padding:14px">
+            <div id="summary-body" style="font-size:13px">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Records table -->
+        <div id="panel-records" class="card">
+          <div class="card-body" style="padding:0">
+            <div class="table-wrap" style="max-height:calc(100vh - 320px);overflow:auto">
+              <table data-sortable id="log-table">
+                <thead id="log-thead"></thead>
+                <tbody id="log-tbody"><tr><td colspan="10" style="text-align:center;padding:14px;color:var(--text-muted)">Choose a tab to start…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/components/sidebar.js"></script>
+  <script src="/static/components/announcements.js"></script>
+  <script src="/static/components/ui.js"></script>
+  <script src="/static/arbiter.js"></script>
+  <script>
+    let _tab = 'api';
+    let _lastRecords = [];
+
+    const COLUMNS = {
+      api:      ['ts','token_id','method','path','model','provider','status_code','latency_ms','prompt_tokens','completion_tokens','error'],
+      activity: ['ts','actor','action','target','before','after','client_ip'],
+      errors:   ['ts','kind','msg','src','line','page','ua'],
+    };
+
+    function switchTab(tab){
+      _tab = tab;
+      ['api','activity','errors','summary'].forEach(t => {
+        const btn = document.getElementById('tab-'+t);
+        if (!btn) return;
+        btn.classList.toggle('btn-primary', t===tab);
+        btn.classList.toggle('btn-ghost', t!==tab);
+        btn.setAttribute('aria-selected', t===tab ? 'true' : 'false');
+      });
+      document.getElementById('panel-summary').hidden = (tab !== 'summary');
+      document.getElementById('panel-records').hidden = (tab === 'summary');
+      loadLogs();
+    }
+
+    async function loadLogs(){
+      const tab = _tab;
+      const limit = document.getElementById('limit').value;
+      const fromV = document.getElementById('from').value;
+      const toV = document.getElementById('to').value;
+      const q = document.getElementById('q').value;
+
+      if (tab === 'summary') return loadSummary();
+
+      const params = new URLSearchParams();
+      if (fromV) params.set('from_date', fromV);
+      if (toV)   params.set('to_date', toV);
+      if (q)     params.set('search', q);
+      params.set('limit', limit);
+
+      const url = `/api/logs/persistent/${tab}?` + params.toString();
+      try {
+        const r = await fetch(url, {credentials: 'include'});
+        if (!r.ok) {
+          document.getElementById('log-tbody').innerHTML = `<tr><td colspan="10" style="text-align:center;padding:14px;color:#ef4444">HTTP ${r.status} — ${await r.text()}</td></tr>`;
+          return;
+        }
+        const d = await r.json();
+        _lastRecords = d.records || d.entries || d.data || [];
+        renderRecords(tab, _lastRecords);
+        document.getElementById('result-count').textContent = `${_lastRecords.length} records`;
+      } catch (e) {
+        document.getElementById('log-tbody').innerHTML = `<tr><td colspan="10" style="text-align:center;padding:14px;color:#ef4444">Error: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function loadSummary(){
+      try {
+        const r = await fetch('/api/logs/persistent/summary', {credentials: 'include'});
+        const d = await r.json();
+        document.getElementById('summary-body').innerHTML = `<pre style="background:var(--bg-elev);padding:14px;border-radius:6px;overflow:auto;font-size:11px">${JSON.stringify(d, null, 2)}</pre>`;
+      } catch (e) {
+        document.getElementById('summary-body').textContent = 'Failed: ' + e.message;
+      }
+    }
+
+    function renderRecords(tab, records){
+      const cols = COLUMNS[tab] || [];
+      const thead = document.getElementById('log-thead');
+      thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+      const tbody = document.getElementById('log-tbody');
+      if (records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;padding:14px;color:var(--text-muted)">No records.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = records.map(r => {
+        return '<tr>' + cols.map(c => {
+          let v = r[c]; if (v === undefined || v === null) v = '';
+          if (typeof v === 'object') v = JSON.stringify(v);
+          v = String(v); if (v.length > 200) v = v.slice(0,200)+'…';
+          v = v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          let cls = '';
+          if (c === 'status_code') {
+            const n = parseInt(v, 10);
+            if (n >= 500) cls = 'color:#ef4444';
+            else if (n >= 400) cls = 'color:#eab308';
+            else if (n >= 200) cls = 'color:#22c55e';
+          }
+          return `<td style="font-size:11px;font-family:${c==='ts'?'monospace':'inherit'};${cls}">${v}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+    }
+
+    function exportLogs(){
+      if (!_lastRecords.length) { alert('Nothing to export'); return; }
+      const blob = new Blob([JSON.stringify(_lastRecords, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `arbiter-logs-${_tab}-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // Initial: today
+    document.addEventListener('DOMContentLoaded', () => {
+      const today = new Date().toISOString().slice(0,10);
+      document.getElementById('from').value = today;
+      document.getElementById('to').value = today;
+      loadLogs();
+    });
+  </script>
+</body>
+</html>

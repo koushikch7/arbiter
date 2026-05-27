@@ -33,11 +33,12 @@
     .warn-callout { padding: 14px 18px; border-radius: 8px; border-left: 4px solid var(--yellow); background: var(--yellow-dim); margin: 16px 0; font-size: 13px; color: var(--text-2); }
   </style>
 </head>
-<body>
+<body\1>
+  <a href="#main" class="skip-link" tabindex="0">Skip to main content</a>
 <div class="app-shell">
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main-wrapper">
-    <header class="topbar">
+    <header class="topbar" role="banner">
       <button class="sidebar-toggle" id="sidebar-toggle">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
@@ -48,7 +49,7 @@
       </div>
     </header>
 
-    <main class="page-content">
+    <main class="page-content" id="main" role="main">
       <div class="doc-tabs">
         <div class="doc-tab active" data-tab="quickstart">Quick Start</div>
         <div class="doc-tab" data-tab="authentication">Authentication</div>
@@ -149,17 +150,13 @@ print(response.choices[0].message.content)</div>
       <!-- Endpoints -->
       <div class="doc-section" id="tab-endpoints">
         <h2 class="doc-h2">API Endpoints</h2>
-
-        <h3 class="doc-h3">Inference (OpenAI-compatible)</h3>
-        <table class="doc-table">
-          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/chat/completions</code></td><td>Chat completion — streaming and non-streaming</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/models</code></td><td>List all routable models</td></tr>
-            <tr><td><span class="badge-method badge-post">POST</span></td><td><code>/v1/images/generations</code></td><td>Image generation via Pollinations.ai</td></tr>
-            <tr><td><span class="badge-method badge-get">GET</span></td><td><code>/v1/images/models</code></td><td>List image generation models</td></tr>
-          </tbody>
-        </table>
+        <p class="doc-p" style="margin-bottom:10px">Auto-generated from <a href="/openapi.json">/openapi.json</a> · also available as <a href="/docs">Swagger UI</a> · <a href="/redoc">ReDoc</a></p>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+          <input id="ep-search" type="text" class="form-control" placeholder="Filter endpoints…" style="font-size:12px;padding:5px 10px;max-width:240px" aria-label="Filter endpoints"/>
+          <select id="ep-tag-filter" class="form-control" style="font-size:12px;padding:5px 10px" aria-label="Filter by tag"><option value="">All tags</option></select>
+          <span id="ep-count" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+        <table data-sortable id="endpoints-table"><thead><tr><th>Method</th><th>Path</th><th>Tag</th><th>Summary</th></tr></thead><tbody id="endpoints-tbody"><tr><td colspan="4" style="text-align:center;padding:14px;color:var(--text-muted)">Loading from /openapi.json…</td></tr></tbody></table>
 
         <h3 class="doc-h3">Provider &amp; Key Management (admin)</h3>
         <table class="doc-table">
@@ -634,5 +631,51 @@ with open("data/logs/activity/2026-05-12.jsonl") as f:
     });
   });
 </script>
+
+<script>
+// v1.20: auto-generate the endpoint table from /openapi.json so it never drifts.
+(async function(){
+  try {
+    const r = await fetch('/openapi.json');
+    if (!r.ok) return;
+    const d = await r.json();
+    const paths = d.paths || {};
+    const tags = new Set();
+    const rows = [];
+    for (const [path, ops] of Object.entries(paths)) {
+      for (const [method, info] of Object.entries(ops)) {
+        if (!['get','post','put','delete','patch'].includes(method)) continue;
+        const tag = (info.tags||['untagged'])[0];
+        tags.add(tag);
+        rows.push({method, path, tag, summary: info.summary || (info.description||'').slice(0,80)});
+      }
+    }
+    rows.sort((a,b)=> (a.tag+a.path).localeCompare(b.tag+b.path));
+
+    const tbody = document.getElementById('endpoints-tbody');
+    const tagSel = document.getElementById('ep-tag-filter');
+    Array.from(tags).sort().forEach(t => {
+      const o = document.createElement('option'); o.value = t; o.textContent = t; tagSel.appendChild(o);
+    });
+
+    function render(){
+      const q = (document.getElementById('ep-search').value || '').toLowerCase();
+      const tagF = tagSel.value;
+      const f = rows.filter(r => (!q || (r.path+' '+r.summary+' '+r.tag).toLowerCase().includes(q)) && (!tagF || r.tag===tagF));
+      tbody.innerHTML = f.map(r => {
+        const cls = {get:'badge-get',post:'badge-post',put:'badge-patch',delete:'badge-delete',patch:'badge-patch'}[r.method] || 'badge-gray';
+        return `<tr><td><span class="badge-method ${cls}">${r.method.toUpperCase()}</span></td><td><code>${r.path}</code></td><td><span class="badge badge-gray">${r.tag}</span></td><td>${r.summary||''}</td></tr>`;
+      }).join('') || '<tr><td colspan="4" style="text-align:center;padding:14px;color:var(--text-muted)">No endpoints match.</td></tr>';
+      document.getElementById('ep-count').textContent = `${f.length} / ${rows.length} endpoints`;
+    }
+    document.getElementById('ep-search').addEventListener('input', render);
+    tagSel.addEventListener('change', render);
+    render();
+  } catch (e) {
+    console.warn('OpenAPI load failed:', e);
+  }
+})();
+</script>
+
 </body>
 </html>

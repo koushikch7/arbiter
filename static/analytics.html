@@ -299,14 +299,15 @@
     .error-model-id { flex:1; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-2); }
   </style>
 </head>
-<body>
+<body\1>
+  <a href="#main" class="skip-link" tabindex="0">Skip to main content</a>
 <div class="app-shell">
 
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar"></aside>
 
   <div class="main-wrapper">
-    <header class="topbar">
+    <header class="topbar" role="banner">
       <button class="sidebar-toggle" id="sidebar-toggle">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
@@ -328,7 +329,7 @@
       </div>
     </header>
 
-    <main class="page-content">
+    <main class="page-content" id="main" role="main">
 
       <!-- ═══ Auth banner (shown when /v1/* is open) ═══════════════════════ -->
       <div id="auth-banner" style="display:none;background:#7c2d12;color:#fed7aa;padding:10px 14px;
@@ -373,11 +374,18 @@
           <button class="btn btn-primary" onclick="applyFilters()" style="font-size:12px">Apply</button>
           <button class="btn btn-ghost"   onclick="clearFilters()" style="font-size:12px">Clear</button>
           <span style="font-size:11px;opacity:.6;margin-left:6px">Quick:</span>
-          <button class="btn btn-ghost"   onclick="setWindowPreset('1h')"  style="font-size:11px">1h</button>
-          <button class="btn btn-ghost"   onclick="setWindowPreset('4h')"  style="font-size:11px">4h</button>
-          <button class="btn btn-ghost"   onclick="setWindowPreset('24h')" style="font-size:11px">24h</button>
-          <button class="btn btn-ghost"   onclick="setWindowPreset('7d')"  style="font-size:11px">7d</button>
-          <button class="btn btn-ghost"   onclick="setWindowPreset('30d')" style="font-size:11px">30d</button>
+          <button class="btn btn-ghost" onclick="setWindowPreset('1h')"  style="font-size:11px" aria-label="Last 1 hour">1h</button>
+          <button class="btn btn-ghost" onclick="setWindowPreset('4h')"  style="font-size:11px" aria-label="Last 4 hours">4h</button>
+          <button class="btn btn-ghost" onclick="setWindowPreset('24h')" style="font-size:11px" aria-label="Last 24 hours">24h</button>
+          <button class="btn btn-ghost" onclick="setWindowPreset('7d')"  style="font-size:11px" aria-label="Last 7 days">7d</button>
+          <button class="btn btn-ghost" onclick="setWindowPreset('30d')" style="font-size:11px" aria-label="Last 30 days">30d</button>
+          <span style="display:inline-block;width:1px;background:var(--border);height:18px;vertical-align:middle;margin:0 4px"></span>
+          <button class="btn btn-ghost" onclick="setDatePreset('today')"     style="font-size:11px" aria-label="Today">Today</button>
+          <button class="btn btn-ghost" onclick="setDatePreset('yesterday')" style="font-size:11px" aria-label="Yesterday">Yday</button>
+          <button class="btn btn-ghost" onclick="setDatePreset('this_week')" style="font-size:11px" aria-label="This week">Week</button>
+          <button class="btn btn-ghost" onclick="setDatePreset('this_month')" style="font-size:11px" aria-label="This month">Month</button>
+          <button class="btn btn-ghost" onclick="setDatePreset('this_year')"  style="font-size:11px" aria-label="This year">Year</button>
+          <button class="btn btn-ghost" onclick="toggleCompare()" id="compare-toggle" style="font-size:11px" aria-label="Compare to previous period">Compare</button>
           <button class="btn btn-ghost"   onclick="setWindowPreset('90d')" style="font-size:11px">90d</button>
         </div>
       </div>
@@ -413,6 +421,71 @@
       </div>
 
       <!-- ═══ Live activity feed ═══════════════════════════════════════════ -->
+      <!-- v1.20: percentiles + cost ledger -->
+      <div class="kpi-grid" style="margin-bottom:12px">
+        <div class="kpi-card" style="--kc-color:#06b6d4" role="group" aria-label="50th percentile latency">
+          <div class="kpi-label">Latency p50</div>
+          <div class="kpi-value" id="kpi-p50">–</div>
+          <div class="kpi-sub" id="kpi-p50-sub">median</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#0ea5e9" role="group" aria-label="95th percentile latency">
+          <div class="kpi-label">Latency p95</div>
+          <div class="kpi-value" id="kpi-p95">–</div>
+          <div class="kpi-sub" id="kpi-p95-sub">tail</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#3b82f6" role="group" aria-label="99th percentile latency">
+          <div class="kpi-label">Latency p99</div>
+          <div class="kpi-value" id="kpi-p99">–</div>
+          <div class="kpi-sub" id="kpi-p99-sub">worst-case</div>
+        </div>
+        <div class="kpi-card" style="--kc-color:#ef4444" role="group" aria-label="Error breakdown">
+          <div class="kpi-label">Errors (24h)</div>
+          <div class="kpi-value" id="kpi-errors">–</div>
+          <div class="kpi-sub" id="kpi-errors-sub">– 429 · – upstream</div>
+        </div>
+      </div>
+
+      <!-- v1.20: cost ledger -->
+      <div class="card mb20">
+        <div class="card-hd">
+          <span class="card-title">Daily Usage Ledger & Month Projection</span>
+          <span class="badge badge-gray" id="cost-mtd-days">– days MTD</span>
+        </div>
+        <div class="card-body" style="padding:14px">
+          <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+            <div><div class="kpi-label">Today · Requests</div><div class="kpi-value" id="cost-today-req" style="font-size:22px">–</div></div>
+            <div><div class="kpi-label">Today · Tokens</div><div class="kpi-value" id="cost-today-tok" style="font-size:22px">–</div></div>
+            <div><div class="kpi-label">MTD · Requests</div><div class="kpi-value" id="cost-mtd-req"  style="font-size:22px">–</div></div>
+            <div><div class="kpi-label">MTD · Tokens</div><div class="kpi-value" id="cost-mtd-tok"  style="font-size:22px">–</div></div>
+            <div><div class="kpi-label">Projected · Requests</div><div class="kpi-value" id="cost-proj-req" style="font-size:22px;color:var(--accent-br)">–</div></div>
+            <div><div class="kpi-label">Projected · Tokens</div><div class="kpi-value" id="cost-proj-tok" style="font-size:22px;color:var(--accent-br)">–</div></div>
+          </div>
+          <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">Last 7 days (newest right):</div>
+          <div id="cost-spark" style="display:flex;gap:4px;align-items:flex-end;height:50px;margin-top:6px"></div>
+        </div>
+      </div>
+
+      <!-- v1.20: per-key health gauges -->
+      <div class="card mb20">
+        <div class="card-hd">
+          <span class="card-title">Free-Tier Key Health</span>
+          <span class="badge badge-gray">Live per-key quota</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost" onclick="exportTable('key-gauge-table','csv')" style="font-size:11px" aria-label="Export key gauges as CSV">⤓ CSV</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap">
+            <table id="key-gauge-table" data-sortable>
+              <thead><tr>
+                <th>Provider</th><th>Key</th><th>Tier</th><th>Status</th>
+                <th>RPM</th><th>TPM</th><th>Daily</th><th>Score</th>
+              </tr></thead>
+              <tbody id="key-gauge-tbody"><tr><td colspan="8" style="text-align:center;padding:14px;color:var(--text-muted)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb20" id="activity-feed-wrap">
         <div class="card-hd">
           <span class="card-title">Live Activity Feed</span>
@@ -547,7 +620,7 @@
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table data-sortable>
+            <table data-sortable class="exportable">
               <thead><tr>
                 <th data-sort-type="str">Provider</th>
                 <th data-sort-type="num">Requests</th>
@@ -575,7 +648,7 @@
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table data-sortable>
+            <table data-sortable class="exportable">
               <thead><tr>
                 <th data-sort-type="str">Token</th>
                 <th data-sort-type="str">Token ID</th>
@@ -601,7 +674,7 @@
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table data-sortable>
+            <table data-sortable class="exportable">
               <thead><tr>
                 <th data-sort-type="str">Model</th>
                 <th data-sort-type="str">Provider</th>
@@ -1460,5 +1533,262 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <script src="/static/components/sidebar.js" defer></script>
 <script src="/static/components/ui.js" defer></script>
+
+
+<script>
+// v1.20 frontend enhancements: date presets, compare mode, percentile rendering,
+// cost ledger render, key gauges render, CSV export, Page Visibility guard,
+// frontend error reporter.
+
+// ─── Page Visibility: pause auto-refresh when tab is hidden ───
+(function(){
+  let _origInterval = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (typeof _refreshInterval !== 'undefined' && _refreshTimer) {
+        _origInterval = parseInt(document.getElementById('refresh-select')?.value || '5000', 10);
+        clearInterval(_refreshTimer);
+        _refreshTimer = null;
+      }
+    } else if (_origInterval) {
+      try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+      if (typeof setRefreshInterval === 'function') setRefreshInterval(_origInterval);
+      _origInterval = null;
+    }
+  });
+})();
+
+// ─── Date presets ───
+function setDatePreset(p){
+  const today = new Date();
+  const toISO = d => d.toISOString().slice(0,10);
+  const from = document.getElementById('filter-from');
+  const to   = document.getElementById('filter-to');
+  if (!from || !to) return;
+  if (p === 'today') {
+    from.value = toISO(today); to.value = toISO(today);
+  } else if (p === 'yesterday') {
+    const y = new Date(today); y.setDate(today.getDate()-1);
+    from.value = toISO(y); to.value = toISO(y);
+  } else if (p === 'this_week') {
+    const d = new Date(today); const day = d.getUTCDay(); // 0=Sun
+    const monday = new Date(d); monday.setUTCDate(d.getUTCDate() - ((day+6)%7));
+    from.value = toISO(monday); to.value = toISO(today);
+  } else if (p === 'this_month') {
+    const first = new Date(today.getUTCFullYear(), today.getUTCMonth(), 1);
+    from.value = toISO(first); to.value = toISO(today);
+  } else if (p === 'this_year') {
+    const first = new Date(today.getUTCFullYear(), 0, 1);
+    from.value = toISO(first); to.value = toISO(today);
+  }
+  try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+}
+
+// ─── Compare mode toggle (placeholder — overlay rendered when data fetched) ───
+let _compareMode = false;
+function toggleCompare(){
+  _compareMode = !_compareMode;
+  const btn = document.getElementById('compare-toggle');
+  if (btn) {
+    btn.classList.toggle('btn-primary', _compareMode);
+    btn.classList.toggle('btn-ghost', !_compareMode);
+  }
+  try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+}
+
+// ─── Render percentiles / errors / cost ledger / key gauges after main load ───
+function renderV120Extensions(data){
+  if (!data) return;
+  const sum = data.summary || {};
+  // Percentiles
+  const pct = sum.percentiles || {};
+  const setLat = (id, v) => { const e=document.getElementById(id); if (e) e.textContent = v ? (v >= 1000 ? (v/1000).toFixed(1)+'s' : v+'ms') : '–'; };
+  setLat('kpi-p50', pct.p50);
+  setLat('kpi-p95', pct.p95);
+  setLat('kpi-p99', pct.p99);
+  const e50 = document.getElementById('kpi-p50-sub'); if (e50) e50.textContent = `n=${pct.n||0}`;
+  // Error breakdown
+  const eb = sum.error_breakdown || {};
+  const ke = document.getElementById('kpi-errors'); if (ke) ke.textContent = (eb.total||0).toLocaleString();
+  const kes= document.getElementById('kpi-errors-sub'); if (kes) kes.textContent = `${eb.rate_limited||0} 429 · ${eb.provider_error||0} upstream`;
+  // Cost ledger
+  const cl = sum.cost_ledger || {};
+  const t = cl.today || {};
+  const mtd = cl.month_to_date || {};
+  const proj = cl.month_projection || {};
+  const setN = (id, v) => { const e=document.getElementById(id); if (e) e.textContent = (v||0).toLocaleString(); };
+  setN('cost-today-req', t.requests); setN('cost-today-tok', t.tokens);
+  setN('cost-mtd-req',   mtd.requests); setN('cost-mtd-tok',   mtd.tokens);
+  setN('cost-proj-req',  proj.requests); setN('cost-proj-tok', proj.tokens);
+  const dd = document.getElementById('cost-mtd-days'); if (dd) dd.textContent = `${mtd.days||0} days MTD`;
+  // Sparkline (last 7 days)
+  const spark = document.getElementById('cost-spark');
+  if (spark && cl.last_7d) {
+    const max = Math.max(...cl.last_7d.map(d => d.requests || 0), 1);
+    spark.innerHTML = cl.last_7d.map(d => {
+      const h = Math.max(2, Math.round((d.requests || 0) / max * 48));
+      return `<div title="${d.date}: ${(d.requests||0).toLocaleString()} req" style="flex:1;background:linear-gradient(180deg,var(--accent-br),#06b6d4);height:${h}px;border-radius:3px"></div>`;
+    }).join('');
+  }
+  // Key gauges
+  const tbody = document.getElementById('key-gauge-tbody');
+  if (tbody && sum.key_gauges) {
+    if (sum.key_gauges.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:14px;color:var(--text-muted)">No keys configured.</td></tr>';
+    } else {
+      const bar = (used, lim) => {
+        const pct = lim > 0 ? Math.min(100, Math.round(used/lim*100)) : 0;
+        const col = pct < 60 ? '#22c55e' : pct < 85 ? '#eab308' : '#ef4444';
+        return `<div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${col}"></div>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);min-width:60px;text-align:right">${used}/${lim}</span>
+        </div>`;
+      };
+      const statusBadge = (s) => {
+        const colors = {active:'#22c55e', limited:'#eab308', exhausted:'#ef4444', failed:'#dc2626'};
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${colors[s]||'#6b7280'}20;color:${colors[s]||'#6b7280'};font-size:11px">${s}</span>`;
+      };
+      tbody.innerHTML = sum.key_gauges.map(k => `
+        <tr>
+          <td>${k.provider}</td>
+          <td style="font-family:monospace;font-size:11px">${k.key_hash||''}</td>
+          <td>${k.tier === 'paid' ? '<span class="badge badge-blue">paid</span>' : '<span class="badge badge-gray">free</span>'}</td>
+          <td>${statusBadge(k.status)}</td>
+          <td>${bar(k.rpm_used, k.rpm_limit)}</td>
+          <td>${bar(k.tpm_used, k.tpm_limit)}</td>
+          <td>${bar(k.daily_used, k.daily_limit)}</td>
+          <td style="font-family:monospace">${(k.score||0).toFixed(3)}</td>
+        </tr>
+      `).join('');
+    }
+  }
+}
+
+// Hook into existing loadAnalytics() via MutationObserver if present:
+if (window._origLoad === undefined && typeof loadAnalytics === 'function') {
+  window._origLoad = window.loadAnalytics;
+  window.loadAnalytics = async function(){
+    const r = await window._origLoad.apply(this, arguments);
+    try { renderV120Extensions(window._lastAnalyticsData || null); } catch(e){ console.warn('v1.20 render err', e); }
+    return r;
+  };
+}
+
+// Capture data into _lastAnalyticsData (the original code uses local data binding).
+// We hook fetch() to intercept /analytics/data responses.
+(function(){
+  const _origFetch = window.fetch;
+  window.fetch = async function(...args){
+    const r = await _origFetch.apply(this, args);
+    try {
+      const url = typeof args[0] === 'string' ? args[0] : args[0].url;
+      if (url && url.includes('/analytics/data')) {
+        const cl = r.clone();
+        cl.json().then(d => {
+          window._lastAnalyticsData = d;
+          try { renderV120Extensions(d); } catch(e){}
+        }).catch(()=>{});
+      }
+    } catch(e){}
+    return r;
+  };
+})();
+
+// ─── CSV Export ───
+function exportTable(tableId, format){
+  const t = document.getElementById(tableId);
+  if (!t) return;
+  const rows = Array.from(t.querySelectorAll('tr')).map(tr =>
+    Array.from(tr.querySelectorAll('th,td')).map(c => c.innerText.replace(/\s+/g,' ').trim())
+  );
+  let content, mime, ext;
+  if (format === 'json') {
+    const head = rows[0] || [];
+    const objs = rows.slice(1).map(r => Object.fromEntries(head.map((h,i)=>[h, r[i]||''])));
+    content = JSON.stringify(objs, null, 2); mime = 'application/json'; ext = 'json';
+  } else {
+    content = rows.map(r => r.map(c => '"' + c.replace(/"/g,'""') + '"').join(',')).join('
+');
+    mime = 'text/csv'; ext = 'csv';
+  }
+  const blob = new Blob([content], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `arbiter-${tableId}-${new Date().toISOString().slice(0,10)}.${ext}`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ─── Frontend error reporter ───
+(function(){
+  const send = (kind, msg, src, line, col, err) => {
+    try {
+      fetch('/api/ui-error', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          kind, msg: String(msg||''), src: String(src||''),
+          line: line||0, col: col||0,
+          stack: (err && err.stack) ? String(err.stack).slice(0, 2000) : '',
+          ua: navigator.userAgent.slice(0, 200),
+          page: location.pathname,
+        }),
+        keepalive: true,
+      }).catch(()=>{});
+    } catch(e){}
+  };
+  window.addEventListener('error', e => send('error', e.message, e.filename, e.lineno, e.colno, e.error));
+  window.addEventListener('unhandledrejection', e => send('promise', e.reason && e.reason.message || String(e.reason), '', 0, 0, e.reason));
+})();
+</script>
+
+
+<script>
+// v1.20 C17: rolling z-score anomaly detection on RPM
+window._lastAnomaly = null;
+function anomalyMarkers(history){
+  try {
+    if (!history || !history.requests) return null;
+    const v = (history.requests || []).map(b => (b && (b.value || b[1])) || 0);
+    if (v.length < 6) return null;
+    const w = v.slice(-11, -1);
+    const cur = v[v.length - 1];
+    const mean = w.reduce((a,b)=>a+b,0) / Math.max(1, w.length);
+    const sq = w.reduce((a,b)=>a+(b-mean)*(b-mean),0) / Math.max(1, w.length);
+    const sd = Math.sqrt(sq) || 1;
+    const z = (cur - mean) / sd;
+    const flag = Math.abs(z) > 2.5;
+    const bell = document.getElementById("anomaly-bell");
+    if (flag && bell) {
+      window._lastAnomaly = {at: Date.now(), value: cur, baseline: mean, z};
+      bell.textContent = "\ud83d\udd14 " + (z>0?"spike":"drop") + " \u03c3=" + z.toFixed(1);
+      bell.style.color = z>0 ? "#ef4444" : "#eab308";
+      bell.title = `Current bucket ${cur} vs avg ${mean.toFixed(1)} (z=${z.toFixed(2)})`;
+    } else if (bell) { bell.textContent = ""; bell.title = ""; }
+    return {flag, z, cur, mean};
+  } catch (e) { return null; }
+}
+document.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("anomaly-bell")) return;
+  const tb = document.querySelector(".topbar");
+  if (tb) {
+    const span = document.createElement("span");
+    span.id = "anomaly-bell";
+    span.style.cssText = "font-size:11px;margin-right:8px";
+    span.setAttribute("role", "status");
+    span.setAttribute("aria-live", "polite");
+    tb.appendChild(span);
+  }
+});
+(function(){
+  const _orig = window.renderV120Extensions || function(){};
+  window.renderV120Extensions = function(d){
+    const r = _orig.apply(this, arguments);
+    try { if (d) anomalyMarkers(d.history); } catch(e){}
+    return r;
+  };
+})();
+</script>
 </body>
 </html>

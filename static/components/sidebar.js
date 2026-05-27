@@ -62,6 +62,7 @@
       tip: "Live request log with filters and export.",
       icon: '<path d="M4 6h16M4 10h16M4 14h10M4 18h6"/>',
     },
+      { label: 'Audit & Persistent Logs', href: '/logs/persistent', icon: '📜' },
     {
       href: "/backup",
       label: "Backup",

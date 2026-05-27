@@ -677,3 +677,69 @@ async def get_minute_history(redis, *, minutes: int = 60) -> list:
             "tokens":   int(t) if t else 0,
         })
     return out
+
+# ---------------------------------------------------------------------------
+# v1.20: Latency percentile tracking — rolling sorted-set of last ~1000 samples
+# per provider and per (provider, model). Lets the analytics API surface true
+# p50/p95/p99 instead of just the avg.
+# ---------------------------------------------------------------------------
+_PERCENTILE_KEEP = 1000  # latest N samples per series
+_PERCENTILE_TTL  = 86_400  # 24h sliding (refreshed on every write — OK here)
+
+async def record_latency_sample(redis, *, provider: str, model: str, latency_ms: int) -> None:
+    """Add a latency observation to the rolling sorted-set for provider+model.
+
+    The score is the current epoch (microseconds) to keep entries unique;
+    the member is a JSON-like ``\"<ts>:<latency>\"`` string. ZREMRANGEBYRANK
+    trims to the most recent _PERCENTILE_KEEP samples.
+    """
+    if redis is None or latency_ms <= 0:
+        return
+    try:
+        ts_us = int(time.time() * 1_000_000)
+        p_safe = _safe(provider, 40)
+        m_safe = _safe(model, 80)
+        for series in (f"arbiter:stats:lat_samples:{p_safe}", f"arbiter:stats:lat_samples:m:{m_safe}"):
+            await redis.zadd(series, {f"{ts_us}:{latency_ms}": ts_us})
+            await redis.zremrangebyrank(series, 0, -_PERCENTILE_KEEP - 1)
+            await redis.expire(series, _PERCENTILE_TTL)
+    except Exception:
+        return
+
+
+async def get_latency_percentiles(redis, *, provider: str | None = None, model: str | None = None) -> dict:
+    """Return {p50, p95, p99, n} for the chosen series (provider OR model OR global).
+
+    When neither is supplied, aggregates across all provider samples.
+    """
+    if redis is None:
+        return {"p50": 0, "p95": 0, "p99": 0, "n": 0}
+    try:
+        keys = []
+        if model:
+            keys.append(f"arbiter:stats:lat_samples:m:{_safe(model, 80)}")
+        elif provider:
+            keys.append(f"arbiter:stats:lat_samples:{_safe(provider, 40)}")
+        else:
+            async for k in redis.scan_iter("arbiter:stats:lat_samples:*"):
+                # Skip the per-model duplicates (prefix ::m:)
+                if ":m:" not in k:
+                    keys.append(k)
+        samples: list[int] = []
+        for key in keys:
+            members = await redis.zrange(key, 0, -1)
+            for mem in members:
+                try:
+                    samples.append(int(mem.split(":", 1)[1]))
+                except (ValueError, IndexError):
+                    continue
+        if not samples:
+            return {"p50": 0, "p95": 0, "p99": 0, "n": 0}
+        samples.sort()
+        n = len(samples)
+        def _pct(p: float) -> int:
+            idx = max(0, min(n - 1, int(round((p / 100.0) * (n - 1)))))
+            return samples[idx]
+        return {"p50": _pct(50), "p95": _pct(95), "p99": _pct(99), "n": n}
+    except Exception:
+        return {"p50": 0, "p95": 0, "p99": 0, "n": 0}

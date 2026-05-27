@@ -11,6 +11,19 @@ class Message(BaseModel):
     model_config = {"extra": "allow"}
 
 
+
+
+class ChatTool(BaseModel):
+    """OpenAI-format tool definition (function calling or built-in like google_search).
+    Forwarded to providers that support tools (groq, nvidia, openrouter, cerebras, ollama)
+    or interpreted natively (Gemini google_search grounding).
+    """
+    type: str = Field(..., description="Tool type: function | google_search | google_search_retrieval | web_search")
+    function: Optional[Dict[str, Any]] = Field(None, description="For type=function: name, description, parameters")
+
+    model_config = {"extra": "allow"}
+
+
 class ChatCompletionRequest(BaseModel):
     model: str = Field(..., max_length=256)
     messages: List[Message]
@@ -34,13 +47,24 @@ class ChatCompletionRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
-            "Arbiter v1.12+. Optional routing metadata. Recognised keys: "
-            "'arbiter_intent' (code|reasoning|long-context|vision|creative|fast|balanced) — "
-            "force intent classification; "
-            "'priority' (speed|quality|balanced) — auto-routing scoring bias; "
-            "'prefer_provider' (provider name) — boost a provider in auto routing."
+            "Arbiter routing metadata. Recognised keys: "
+            "arbiter_intent (code|reasoning|long-context|vision|creative|fast|balanced) - force intent; "
+            "priority (speed|quality|balanced) - auto-routing scoring bias; "
+            "prefer_provider (provider name) - boost a provider; "
+            "realtime (bool, v1.20) - enable Tavily web search auto-injection; "
+            "web_search or google_search (bool, v1.20) - enable Gemini Google Search grounding when routed to Gemini."
         ),
     )
+    tools: Optional[List[ChatTool]] = Field(
+        default=None,
+        description=(
+            "OpenAI-format tool definitions. Routes to tool-capable providers only (groq, nvidia, "
+            "openrouter, cerebras, ollama). For Gemini, type=google_search activates native grounding."
+        ),
+    )
+    tool_choice: Optional[Any] = Field(default=None, description="auto | none | required | {type: function, function: {name: ...}}")
+    parallel_tool_calls: Optional[bool] = Field(default=None, description="Allow the model to issue multiple tool calls in one response.")
+    response_format: Optional[Dict[str, Any]] = Field(default=None, description="{type: json_object} for JSON mode, or {type: json_schema, json_schema: {...}}.")
 
     model_config = {"extra": "allow"}
 

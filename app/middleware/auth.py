@@ -72,6 +72,10 @@ _ALWAYS_OPEN: frozenset = frozenset([
     "/manifest.json",
     "/sw.js",
     "/service-worker.js",
+    # v1.20 — frontend JS error reporter ingest is rate-limited and IP-bound
+    # at the endpoint level; needs to be reachable even when the user is
+    # unauthenticated (so login-page errors arenot swallowed).
+    "/api/ui-error",
 ])
 
 _ALWAYS_OPEN_PREFIXES: tuple = (

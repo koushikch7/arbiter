@@ -26,7 +26,7 @@ from app.providers.ollama_provider import OllamaProvider
 from app.providers.nvidia_provider import NvidiaProvider
 from app.routing.router import IntelligentRouter
 from app.cache.cache import CacheLayer
-from app.api import chat, models_api, dashboard
+from app.api import chat, models_api, dashboard, ui_errors_api
 from app.api.cloudflare_manager import router as cloudflare_router
 from app.api.settings_api import router as settings_router
 from app.api.preferences_api import router as preferences_router
@@ -53,7 +53,7 @@ from app.middleware.bot_protection import BotProtectionMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.20.0"
+APP_VERSION = "1.20.1"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
@@ -555,6 +555,7 @@ app.include_router(custom_providers_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(analytics_router)
+app.include_router(ui_errors_api.router)
 app.include_router(backup_router)
 app.include_router(announcements_router)
 app.include_router(persistent_logs_router)
@@ -904,3 +905,15 @@ class _InMemoryPipeline:
             elif cmd == "incrby":
                 results.append(await self._store.incrby(key, arg))
         return results
+
+
+# v1.20: persistent logs + audit viewer
+@app.get("/logs/persistent", summary="Persistent logs & audit viewer", tags=["Dashboard"])
+async def logs_persistent_page():
+    from fastapi.responses import FileResponse, HTMLResponse as _HTMLResponse
+    import pathlib
+    p = pathlib.Path(_STATIC_DIR) / "logs-persistent.html"
+    if p.exists():
+        return FileResponse(str(p))
+    return _HTMLResponse("<h1>Page not found</h1>", status_code=404)
+

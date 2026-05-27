@@ -132,7 +132,25 @@ async def chat_completions(
     ),
 ) -> ChatCompletionResponse:
     """
-    OpenAI-compatible chat completions endpoint.
+    **OpenAI-compatible chat completions endpoint.**
+
+    Drop-in replacement for `POST https://api.openai.com/v1/chat/completions`,
+    routed across 11+ free-tier and paid providers with intelligent
+    complexity-aware model selection.
+
+    ## Quick reference
+
+    | Header | Body field | Effect |
+    |--------|-----------|--------|
+    | `X-Arbiter-Priority` | `metadata.priority` | speed \| quality \| balanced — scoring bias |
+    | `X-Arbiter-Prefer-Provider` | `metadata.prefer_provider` | boost a provider in auto routing |
+    | `X-Arbiter-Fallback` | `fallback` | none \| same_provider \| chain — fallback policy |
+    | `X-Arbiter-Realtime` (v1.20) | `metadata.realtime` | true → Tavily web search auto-inject + OR `:online` opt-in |
+    | (response) `X-Arbiter-Model-Used` | `x_arbiter.model`, `model` | actual provider/model selected |
+    | (response) `X-Arbiter-Complexity` (v1.20) | `x_arbiter.complexity` | TRIVIAL \| SIMPLE \| MODERATE \| COMPLEX \| EXPERT |
+    | (response) `X-Arbiter-Realtime-Sources` (v1.20) | `x_arbiter.realtime_sources` | comma-separated source URLs (when realtime on) |
+    | (response) `X-RateLimit-Limit`, `X-RateLimit-Remaining` | — | per-token rate limit state |
+    | (response) `Retry-After` | — | seconds until quota reset (on 429) |
 
     Use the optional **vendor** query parameter to pin a specific provider
     (e.g. `?vendor=cerebras`).  Use **force_model** to override the model
@@ -159,6 +177,40 @@ async def chat_completions(
     fallback, key-rotation, and caching logic applies; the response is
     delivered as a sequence of ``chat.completion.chunk`` events terminated
     by ``data: [DONE]``.
+
+    ## Real-time web search (v1.20)
+
+    Set header ``X-Arbiter-Realtime: true`` (or body ``metadata.realtime: true``)
+    to ground the response in live web data via Tavily. Top-5 search results
+    are prepended to the prompt as a system message with numbered citations.
+    Source URLs are returned in ``X-Arbiter-Realtime-Sources`` header and
+    ``x_arbiter.realtime_sources`` body field.
+
+    ## Native tool calling
+
+    Pass an OpenAI-format ``tools`` array in the body. The router auto-filters
+    to tool-capable providers (groq, nvidia, openrouter, cerebras, ollama).
+    For Gemini specifically, ``tools: [{"type": "google_search"}]`` activates
+    native Google Search grounding (free on 2.0+/3.x).
+
+    ## Response shape (v1.20)
+
+    The response body echoes the actual chosen model in ``model`` and embeds
+    Arbiter routing metadata under ``x_arbiter``::
+
+        {
+          "id": "chatcmpl-...",
+          "object": "chat.completion",
+          "model": "gemini-3.1-flash-lite",
+          "choices": [...],
+          "usage": {...},
+          "x_arbiter": {
+            "provider": "gemini",
+            "model": "gemini-3.1-flash-lite",
+            "complexity": "TRIVIAL",
+            "realtime_sources": []
+          }
+        }
     """
     router_instance = request.app.state.router
     _req_start = _time.monotonic()

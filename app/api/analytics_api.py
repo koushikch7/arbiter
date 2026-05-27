@@ -80,6 +80,109 @@ def _gauge_color(pct: float) -> str:
     return "red"
 
 
+
+
+
+async def _error_breakdown(redis):
+    """Aggregate error counts split by rate_limited vs provider_error."""
+    if redis is None:
+        return {"rate_limited": 0, "provider_error": 0, "total": 0, "per_provider": []}
+    rl_total = 0; pe_total = 0; per_prov = []
+    try:
+        async for key in redis.scan_iter("arbiter:stats:provider:*:rate_limited"):
+            parts = key.split(":")
+            if len(parts) < 5:
+                continue
+            pname = parts[3]
+            rl = int(await redis.get(key) or 0)
+            er = int(await redis.get(f"arbiter:stats:provider:{pname}:errors") or 0)
+            rl_total += rl
+            pe_total += max(er - rl, 0)
+            per_prov.append({
+                "provider": pname,
+                "rate_limited": rl,
+                "provider_error": max(er - rl, 0),
+            })
+    except Exception:
+        pass
+    per_prov.sort(key=lambda r: r["rate_limited"] + r["provider_error"], reverse=True)
+    return {
+        "rate_limited":   rl_total,
+        "provider_error": pe_total,
+        "total":          rl_total + pe_total,
+        "per_provider":   per_prov[:10],
+    }
+
+
+async def _cost_ledger(redis):
+    """7-day rolling + month-to-date + linear projection from arbiter:stats:day:*."""
+    if redis is None:
+        return {}
+    from datetime import datetime, timezone, timedelta
+    import calendar
+    today = datetime.now(timezone.utc).date()
+
+    async def _day(date_str):
+        try:
+            r = int(await redis.get(f"arbiter:stats:day:{date_str}:requests") or 0)
+            t = int(await redis.get(f"arbiter:stats:day:{date_str}:tokens")   or 0)
+            s = int(await redis.get(f"arbiter:stats:day:{date_str}:search_credits") or 0)
+            return {"date": date_str, "requests": r, "tokens": t, "search_credits": s}
+        except Exception:
+            return {"date": date_str, "requests": 0, "tokens": 0, "search_credits": 0}
+
+    last_7 = []
+    for off in range(7):
+        last_7.append(await _day((today - timedelta(days=off)).strftime("%Y-%m-%d")))
+    last_7.reverse()
+
+    first = today.replace(day=1)
+    days_elapsed = (today - first).days + 1
+    mtd = {"requests": 0, "tokens": 0, "search_credits": 0, "days": days_elapsed}
+    for off in range(days_elapsed):
+        row = await _day((first + timedelta(days=off)).strftime("%Y-%m-%d"))
+        mtd["requests"] += row["requests"]
+        mtd["tokens"] += row["tokens"]
+        mtd["search_credits"] += row["search_credits"]
+
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    scale = days_in_month / max(days_elapsed, 1)
+    projection = {
+        "requests":       int(mtd["requests"] * scale),
+        "tokens":         int(mtd["tokens"] * scale),
+        "search_credits": int(mtd["search_credits"] * scale),
+    }
+    return {
+        "today":           last_7[-1] if last_7 else {},
+        "last_7d":         last_7,
+        "month_to_date":   mtd,
+        "month_projection": projection,
+    }
+
+
+async def _per_key_gauges(request, max_per_provider=5):
+    """Per-provider, per-key utilization gauges from live KeyPool."""
+    out = []
+    pools = getattr(request.app.state, "key_pools", None) or {}
+    for pname, pool in pools.items():
+        try:
+            stats = await pool.get_stats()
+            for k in stats.get("keys", [])[:max_per_provider]:
+                rpm = k.get("rpm", {}); tpm = k.get("tpm", {}); daily = k.get("daily", {})
+                out.append({
+                    "provider":   pname,
+                    "key_hash":   k.get("hash"),
+                    "tier":       k.get("tier", "free"),
+                    "status":     k.get("status"),
+                    "score":      k.get("score"),
+                    "rpm_used":   rpm.get("used", 0), "rpm_limit": rpm.get("limit", 0),
+                    "tpm_used":   tpm.get("used", 0), "tpm_limit": tpm.get("limit", 0),
+                    "daily_used": daily.get("used", 0), "daily_limit": daily.get("limit", 0),
+                })
+        except Exception:
+            continue
+    return out
+
 @router.get("/analytics", response_class=HTMLResponse, summary="Analytics dashboard")
 async def analytics_page() -> HTMLResponse:
     path = os.path.join(_STATIC_DIR, "analytics.html")
@@ -544,6 +647,10 @@ async def analytics_data(
                 "rates_1m":        rates_1m,
                 "rates_5m":        rates_5m,
                 "rates_15m":       rates_15m,
+                "percentiles":     await obs_stats.get_latency_percentiles(redis),
+                "error_breakdown": await _error_breakdown(redis),
+                "cost_ledger":     await _cost_ledger(redis),
+                "key_gauges":      await _per_key_gauges(request),
             },
             "providers":         provider_stats,
             "models":            model_stats,

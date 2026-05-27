@@ -475,3 +475,25 @@ def stop_janitor() -> None:
     global _janitor_task
     if _janitor_task and not _janitor_task.done():
         _janitor_task.cancel()
+
+
+def write_error(record: dict) -> None:
+    """Append a frontend / UI error record to the daily errors JSONL file.
+
+    Non-blocking — silently drops on disk-full or any I/O error so a runaway
+    UI bug can't take the gateway down.
+    """
+    try:
+        import json, time as _t, os as _os
+        record = dict(record or {})
+        record.setdefault("ts", _t.strftime("%Y-%m-%dT%H:%M:%S+00:00", _t.gmtime()))
+        path = _os.path.join(
+            _os.environ.get("ARBITER_LOG_DIR", "/app/data/logs"),
+            "errors",
+            _t.strftime("%Y-%m-%d.jsonl", _t.gmtime()),
+        )
+        _os.makedirs(_os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+    except Exception:
+        return

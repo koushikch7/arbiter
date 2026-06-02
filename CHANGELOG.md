@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.20.2] – 2026-06-02 — Smart Quota Management + Model Catalog Cleanup
+
+### Fixed — Limit Management (`app/key_management/key_pool.py`, `app/routing/router.py`)
+
+- **Daily-exhaustion 429 now sets until-midnight cooldown** — previously a Cloudflare "neurons exhausted" 429 set only a 62-second cooldown, causing the key to be retried every minute all day and generating thousands of wasted requests. Now any 429 containing "neuron", "daily free allocation", "daily limit", or "daily quota" calls `mark_daily_exhausted()` which sets the daily Redis counter to `daily_limit+1` with a TTL expiring 10 minutes after midnight UTC — the key is effectively invisible to the scorer until the quota resets.
+- **Provider fast-skip when daily quota exhausted** — after the first model from a provider returns `key=None`, Arbiter checks `is_daily_exhausted()`. If all keys for that provider are out of budget, all remaining models from that provider are skipped immediately (O(1) per skip vs O(Redis reads × models) before). Eliminates 10–15 wasted routing iterations per request when Cloudflare's daily neurons are spent.
+- **New `KeyPool` methods** — `mark_daily_exhausted(key)` and `is_daily_exhausted(model=None)` added to the public interface; both are safe to call from concurrent routing tasks.
+
+### Fixed — Model Catalog (`app/providers/_free_tier_catalog.py`)
+
+- Removed `@cf/moonshot/kimi-k2.6` and `@cf/moonshot/kimi-k2.5` — Cloudflare never shipped these models; every attempt returned HTTP 400 "No such model", poisoning Cloudflare's error rate counter.
+- Removed `ollama/deepseek-v3.1:671b-cloud` — requires an Ollama Plus subscription; always returned HTTP 403, pushing Ollama into Gap-A demotion.
+- Removed `gemini/gemini-3.1-flash-lite-preview` — model was discontinued 2026-05-25; returning errors continuously.
+- Fixed `cerebras/qwen-3-235b-a22b-instruct-2507` → `qwen-3-235b-a22b-instruct` (Cerebras API does not accept date suffixes).
+
+### Fixed — Cloudflare Quota (`app/key_management/key_pool.py`)
+
+- Cloudflare provider `daily` limit corrected from 1,000 → 200 calls (10,000 neurons ÷ ~50 avg/call). Added per-model overrides: 8B models → 400/day, 20B → 300/day, 70B → 150/day, 120B → 80/day.
+
+### Fixed — Model Auto-Disable (`app/routing/router.py`, `app/services/model_health.py`)
+
+- Permanent errors (HTTP 404 "not found", 403 "forbidden/no access") now automatically write `arbiter:disabled:model:{provider}:{model}` to Redis with 7-day TTL.
+- Router checks this set (60s cache) and removes permanently-disabled models from the candidate chain before routing begins.
+- Weekly health probe clears the disabled flag when a model recovers; sets it on permanent failure.
+
+### No API changes
+
+- `/v1/chat/completions` and `/v1/models` request/response formats are unchanged. All client applications using Arbiter are unaffected.
+
+---
+
 ## [1.20.1] – 2026-05-27 — Enterprise UI + Analytics Hardening + OpenAPI Parity
 
 ### Added — OpenAPI / Swagger / ReDoc Parity (`app/models/schemas.py`, `app/api/chat.py`)

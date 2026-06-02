@@ -577,9 +577,12 @@ class IntelligentRouter:
 
         last_error: Optional[Exception] = None
         attempted_providers: List[str] = []
+        _prov_daily_skip: set = set()
 
         # ── 3. Walk the chain — key rotation per (provider, model) ────
         for provider_name, model_name in candidates:
+            if provider_name in _prov_daily_skip:
+                continue  # daily quota exhausted — skip all models from this provider
             provider = self.providers.get(provider_name)
             key_pool = self.key_pools.get(provider_name)
             if provider is None or key_pool is None:
@@ -607,6 +610,13 @@ class IntelligentRouter:
                         f"No available key after trying {len(tried_keys)} account(s)"
                         + (f" (required_tier={required_tier})" if required_tier else "")
                     )
+                    try:
+                        if await key_pool.is_daily_exhausted(model=model_name):
+                            _prov_daily_skip.add(provider_name)
+                            logger.info("%s daily quota exhausted — skipping all"
+                                        " remaining models", provider_name)
+                    except Exception:
+                        pass
                     break  # → next candidate
 
                 tried_keys.add(key)
@@ -653,7 +663,15 @@ class IntelligentRouter:
                         f"✗ RateLimit {provider_name}/{model_name}  "
                         f"key=...{key[-4:]}: {exc}"
                     )
-                    await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
+                    _exc_msg = str(exc).lower()
+                    if any(x in _exc_msg for x in (
+                        "neuron", "daily free allocation", "daily limit",
+                        "daily quota", "daily allocation",
+                    )):
+                        await key_pool.mark_daily_exhausted(key)
+                    else:
+                        await key_pool.mark_failed(key, cooldown_seconds=int(
+                            getattr(exc, "retry_after", None) or 60) + 2)
                     await obs_stats.record_failure(
                         self.redis, provider=provider_name, model=model_name,
                         rate_limited=True, token_id=token_id,
@@ -805,9 +823,12 @@ class IntelligentRouter:
 
         last_error: Optional[Exception] = None
         attempted_providers: List[str] = []
+        _prov_daily_skip: set = set()
 
         # ---- Walk the candidate chain -----------------------------------
         for provider_name, model_name in candidates:
+            if provider_name in _prov_daily_skip:
+                continue
             provider = self.providers.get(provider_name)
             key_pool = self.key_pools.get(provider_name)
             if provider is None or key_pool is None:
@@ -826,6 +847,11 @@ class IntelligentRouter:
                     exclude=tried_keys, required_tier=required_tier,
                     estimated_request_tokens=self._estimate_tokens(request), model=model_name)
                 if key is None:
+                    try:
+                        if await key_pool.is_daily_exhausted(model=model_name):
+                            _prov_daily_skip.add(provider_name)
+                    except Exception:
+                        pass
                     break
 
                 tried_keys.add(key)
@@ -926,7 +952,15 @@ class IntelligentRouter:
                             )
                             yield sse_error(str(exc), error_type="rate_limit", code=429)
                             yield SSE_DONE
-                            await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
+                            _exc_msg2 = str(exc).lower()
+                            if any(x in _exc_msg2 for x in (
+                                "neuron", "daily free allocation", "daily limit",
+                                "daily quota", "daily allocation",
+                            )):
+                                await key_pool.mark_daily_exhausted(key)
+                            else:
+                                await key_pool.mark_failed(key, cooldown_seconds=int(
+                                    getattr(exc, "retry_after", None) or 60) + 2)
                             await obs_stats.record_failure(
                                 self.redis, provider=provider_name, model=model_name,
                                 rate_limited=True, token_id=token_id,
@@ -1077,7 +1111,15 @@ class IntelligentRouter:
                         f"✗ [stream] RateLimit {provider_name}/{model_name}  "
                         f"key=...{key[-4:]}: {exc}"
                     )
-                    await key_pool.mark_failed(key, cooldown_seconds=int(getattr(exc, "retry_after", None) or 60) + 2)
+                    _exc_msg = str(exc).lower()
+                    if any(x in _exc_msg for x in (
+                        "neuron", "daily free allocation", "daily limit",
+                        "daily quota", "daily allocation",
+                    )):
+                        await key_pool.mark_daily_exhausted(key)
+                    else:
+                        await key_pool.mark_failed(key, cooldown_seconds=int(
+                            getattr(exc, "retry_after", None) or 60) + 2)
                     await obs_stats.record_failure(
                         self.redis, provider=provider_name, model=model_name,
                         rate_limited=True, token_id=token_id,

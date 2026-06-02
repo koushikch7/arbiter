@@ -420,6 +420,31 @@ class KeyPool:
             f"[{self.provider}] key={h} on cooldown for {cooldown_seconds}s"
         )
 
+    async def mark_daily_exhausted(self, key: str) -> None:
+        """Set daily counter to limit+1 so this key scores -1.0 until midnight UTC."""
+        h = _hash_key(key)
+        daily_key = self._daily_key(h)
+        import time as _t
+        secs_to_midnight = int(86400 - (_t.time() % 86400)) + 600  # +10 min buffer
+        await self.redis.set(daily_key, str(self.daily_limit + 1), ex=secs_to_midnight)
+        logger.warning(
+            "[%s] key=%s daily-exhausted; blocked until midnight UTC (%.1fh away)",
+            self.provider, h, secs_to_midnight / 3600,
+        )
+
+    async def is_daily_exhausted(self, model=None) -> bool:
+        """True when ALL keys for this provider have hit today's daily limit."""
+        if not self.keys:
+            return True
+        for key in self.keys:
+            h = _hash_key(key)
+            _, _, daily_limit = self._limits_for(model)
+            daily_used = int((await self.redis.get(self._daily_key(h))) or 0)
+            if daily_used < daily_limit:
+                return False
+        return True
+
+
     async def get_stats(self) -> Dict:
         stats: Dict = {
             "provider":    self.provider,

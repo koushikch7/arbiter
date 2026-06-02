@@ -1,8 +1,92 @@
-# Changelog
+# Changelog — Arbiter AI Gateway
 
-All notable changes to the Arbiter project are documented here.
+> **This file is the single source of truth** for both human release notes and AI session context.
+> Any AI assistant picking up work on this codebase should read the **Project Context** section
+> below for current architecture, then scan recent version entries for what changed and why.
+> Append a new version entry (or add to `[Unreleased]`) at the end of every work session.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
+
+## Project Context (always kept current)
+
+**What:** Self-hosted OpenAI-compatible AI gateway aggregating 11 free-tier LLM providers into
+a single `/v1/chat/completions` endpoint. Intelligent routing by intent, complexity, quota state,
+and provider health — with automatic failover, rate-limit management, and model-level error tracking.
+
+**Live:** `https://arbiter.chkoushik.com` · Health: `GET /health` → `{"status":"ok","version":"..."}`
+**Server:** `oracle.chkoushik.com` · SSH: `ubuntu@oracle.chkoushik.com`
+**Container:** `arbiter-gateway-1` (Docker, host port 8080 → container 8000)
+**Redis:** `556ac8df0f28_arbiter-redis-1`
+**Source:** `/var/www/html/arbiter/` · GitHub: `github.com/koushikch7/arbiter` (branch: `master`)
+**API docs:** `/docs` (Swagger) · `/redoc` · `/openapi.json` — auto-generated, always current
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/routing/router.py` | Main routing loop, Gap A demotion, provider fast-skip, auto-disable on permanent errors |
+| `app/routing/auto_router.py` | Candidate scoring (intent × complexity × quota × diversity) |
+| `app/key_management/key_pool.py` | Per-key Redis counters: RPM, TPM, daily (UTC midnight reset), monthly |
+| `app/providers/_free_tier_catalog.py` | **Single source of truth** for all provider models and their limits — edit here to add/remove models |
+| `app/services/model_health.py` | Weekly health probe (Mondays 17:00 UTC); auto-disables permanently failing models |
+| `app/main.py` | FastAPI app, provider init, background schedulers, version constant |
+| `.env` | All API keys — never commit; `.env.example` is the template |
+
+### Providers & Current Limits
+
+| Provider | RPM | Daily | Monthly | Keys | Notes |
+|----------|-----|-------|---------|------|-------|
+| Gemini | 15 | 1,000 (flash-lite) | — | 4 | Per-model overrides; paid models gated to `#paid` keys |
+| Groq | 30 | 14,400 (8b) / 1,000 (70b+) | — | 2 | Per-model overrides in `key_pool.py` |
+| OpenRouter | 20 | 50 | — | 1 | No credits; free :free models only |
+| Cohere | 20 | 33 | **1,000** | 1 | Trial key; monthly counter active since v1.20.3 |
+| Cloudflare | 300 | 200 mixed / 80 (120B) | — | 1 | 10K neurons/day; per-model overrides by size |
+| Cerebras | 5 | 1,000 | — | 1 | 30K TPM; very tight RPM |
+| HuggingFace | 10 | 100 | — | 1 | Credit-based; unreliable uptime |
+| Pollinations | 4 | 1,000 | — | 1 | |
+| Routeway | 60 | 10,000 | — | 1 | |
+| NVIDIA | 40 | 1,000 | — | 1 | |
+| Ollama | 60 | 5,000 | — | 1 | Cloud-tagged MoE models |
+
+### Redis Key Patterns
+
+```
+arbiter:stats:provider:{name}:success/errors/rate_limited  — Gap A demotion calculation
+{provider}:{hash}:rpm                                      — 60s anchored TTL
+{provider}:{hash}:tpm                                      — 60s anchored TTL
+{provider}:{hash}:daily:{YYYY-MM-DD}                       — UTC midnight reset (30h TTL)
+{provider}:{hash}:monthly:{YYYY-MM}                        — end-of-month TTL
+{provider}:{hash}:m:{slug}:daily:{YYYY-MM-DD}              — per-model daily counter
+{provider}:{hash}:failed                                   — cooldown flag (15s–3600s)
+arbiter:disabled:model:{provider}:{model}                  — 7-day permanent-fail disable
+arbiter:health:model:{provider}:{model}                    — weekly health probe result
+```
+
+### Deployment
+
+```bash
+# Rebuild and restart (after any code change)
+cd /var/www/html/arbiter && docker compose up --build -d
+
+# View logs (excluding health pings)
+docker logs arbiter-gateway-1 --since 10m 2>&1 | grep -v 'GET /health'
+
+# Health check
+curl -s http://localhost:8080/health
+
+# Check Redis provider stats
+docker exec 556ac8df0f28_arbiter-redis-1 redis-cli KEYS 'arbiter:stats:provider:*'
+docker exec 556ac8df0f28_arbiter-redis-1 redis-cli KEYS 'arbiter:disabled:model:*'
+```
+
+### Known Issues / Open Items
+
+- **HuggingFace 93% error rate** — inherently unreliable; stays Gap-A demoted most of the time. No fix without paid HF Inference Endpoints.
+- **Cerebras 5 RPM** — very tight; throttles quickly on burst. Only 1 key.
+- **Cloudflare neuron budget** — 200/day is a safe approximation but may diverge on long prompts. Monitor `cloudflare:*:daily:*` Redis key; if mid-day 429s return, lower `daily` in `PROVIDER_LIMITS`.
+- **Cohere trial key** — 1000/month hard ceiling; once exhausted, unavailable until next calendar month.
+- **Model catalog drift** — models hardcoded in `_free_tier_catalog.py`; weekly health check auto-disables permanent failures but new models need manual additions.
+- **Dependabot** — 2 vulnerabilities (1 high, 1 moderate) on GitHub. Review when possible.
 
 ---
 

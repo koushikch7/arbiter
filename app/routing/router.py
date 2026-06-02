@@ -143,6 +143,8 @@ class IntelligentRouter:
         # on healthier providers first.
         self._unhealthy_cache: Set[str] = set()
         self._unhealthy_cache_ts: float = 0.0
+        self._disabled_models_cache: Dict = {}
+        self._disabled_models_cache_ts: float = 0.0
 
     async def _get_disabled_providers(self) -> Set[str]:
         """Return the set of provider names disabled via the Settings UI.
@@ -260,6 +262,31 @@ class IntelligentRouter:
         if unhealthy:
             logger.debug("Gap A demote set: %s", unhealthy)
         return unhealthy
+
+    async def _get_disabled_models(self) -> "Set[str]":
+        """
+        Return set of '{provider}:{model}' strings that are permanently disabled
+        due to repeated 404/model-not-found errors. Cached 60s.
+        """
+        now = time.time()
+        if now - self._disabled_models_cache_ts < 60:
+            return self._disabled_models_cache.get("set", set())
+        try:
+            pattern = "arbiter:disabled:model:*"
+            keys = []
+            async for k in self.redis.scan_iter(pattern):
+                keys.append(k.decode() if isinstance(k, bytes) else k)
+            result = set()
+            for k in keys:
+                # key format: arbiter:disabled:model:{provider}:{model}
+                parts = k.split(":", 4)  # ["arbiter","disabled","model",provider,model]
+                if len(parts) == 5:
+                    result.add(f"{parts[3]}:{parts[4]}")
+            self._disabled_models_cache["set"] = result
+            self._disabled_models_cache_ts = now
+            return result
+        except Exception:
+            return set()
 
     def _apply_health_demote(self, order: List[str]) -> List[str]:
         """Move providers in ``self._unhealthy_cache`` to the tail of *order*.
@@ -436,6 +463,19 @@ class IntelligentRouter:
                         )
             except Exception as _gap_a_err:
                 logger.debug("Gap A demotion skipped: %s", _gap_a_err)
+
+        # ── Model-level permanent-failure filter ────────────────────────────
+        try:
+            disabled = await self._get_disabled_models()
+            if disabled:
+                before_d = len(candidates)
+                candidates = [(p, m) for (p, m) in candidates
+                              if f"{p}:{m}" not in disabled]
+                if len(candidates) < before_d:
+                    logger.debug("Filtered %d permanently-disabled model(s)",
+                                 before_d - len(candidates))
+        except Exception:
+            pass
 
         # ── Gateway-level routing policy ─────────────────────────────
         if routing_policy == "restricted" and allowed_models:
@@ -646,6 +686,19 @@ class IntelligentRouter:
                         error_message=str(exc),
                         rate_limited=False,
                     )
+                    # Detect permanent model errors and auto-disable
+                    exc_str = str(exc).lower()
+                    if any(x in exc_str for x in ("not found", "not exist", "no such model",
+                                                    "model_not_found", "does not exist",
+                                                    "404", "forbidden", "403", "no access")):
+                        _dis_key = f"arbiter:disabled:model:{provider_name}:{model_name}"
+                        try:
+                            await self.redis.set(_dis_key, "1", ex=7 * 86_400)
+                            self._disabled_models_cache_ts = 0.0
+                            logger.warning("Auto-disabled %s/%s for 7 days: %s",
+                                           provider_name, model_name, str(exc)[:120])
+                        except Exception:
+                            pass
                     last_error = exc
                     break  # → next candidate
 
@@ -1049,6 +1102,19 @@ class IntelligentRouter:
                         error_type="ProviderError", error_message=str(exc),
                         rate_limited=False,
                     )
+                    # Detect permanent model errors and auto-disable
+                    exc_str = str(exc).lower()
+                    if any(x in exc_str for x in ("not found", "not exist", "no such model",
+                                                    "model_not_found", "does not exist",
+                                                    "404", "forbidden", "403", "no access")):
+                        _dis_key = f"arbiter:disabled:model:{provider_name}:{model_name}"
+                        try:
+                            await self.redis.set(_dis_key, "1", ex=7 * 86_400)
+                            self._disabled_models_cache_ts = 0.0
+                            logger.warning("Auto-disabled %s/%s for 7 days: %s",
+                                           provider_name, model_name, str(exc)[:120])
+                        except Exception:
+                            pass
                     last_error = exc
                     break  # next candidate
 

@@ -89,12 +89,12 @@ PROVIDER_LIMITS = {
         "daily": 33,
     },
     "cloudflare": {
-        # Text-generation default = 300 RPM. Daily quota is denominated in
-        # "neurons" (10 000/day free) which is roughly 200–600 chat calls.
-        # We approximate daily as 1 000 chat calls.
+        # Text-generation: 300 RPM aggregate. Daily quota = 10,000 neurons free.
+        # Large models (~120B) use ~80-150 neurons/call → ~80 calls max.
+        # Mixed models average ~50 neurons → ~200 calls. Set conservative limit.
         "rpm":   300,
         "tpm":   1_000_000,
-        "daily": 1_000,
+        "daily": 200,   # was 1_000 — actual neuron budget is ~200 large-model calls
     },
     "cerebras": {
         # Per docs (2026-05-26): ALL free models share 5 RPM · 30 K TPM ·
@@ -177,6 +177,16 @@ MODEL_OVERRIDES = {
     "qwen3-32b":               {"rpm": 60, "tpm":  6_000, "daily":  1_000},
     "openai/gpt-oss-120b":     {"rpm": 30, "tpm":  8_000, "daily":  1_000},
     "gpt-oss-120b":            {"rpm": 30, "tpm":  8_000, "daily":  1_000},
+
+    # ── Cloudflare per-model overrides (neurons vary by model size) ──────
+    # Small models (8-20B) ~20-40 neurons/call → more daily budget
+    # Large models (120B+) ~100-150 neurons/call → tighter daily budget
+    "@cf/meta/llama-3.1-8b-instruct-fast": {"rpm": 300, "tpm": 1_000_000, "daily": 400},
+    "@cf/openai/gpt-oss-20b":              {"rpm": 300, "tpm": 1_000_000, "daily": 300},
+    "@cf/meta/llama-3.3-70b-instruct-fp8": {"rpm": 300, "tpm": 1_000_000, "daily": 150},
+    "@cf/openai/gpt-oss-120b":             {"rpm": 300, "tpm": 1_000_000, "daily": 80},
+    "@cf/qwen/qwq-32b":                    {"rpm": 300, "tpm": 1_000_000, "daily": 120},
+    "@cf/deepseek/deepseek-r1":            {"rpm": 300, "tpm": 1_000_000, "daily": 100},
 }
 
 

@@ -21,8 +21,9 @@ Capability tag vocabulary
 "creative"      — strong on open-ended writing / creative content
 "balanced"      — general-purpose default
 
-Verified live April 2026.  Models that returned 4xx / 5xx during probing
+Verified June 2026.  Models that returned 4xx / 5xx during probing
 are excluded.  Use scripts/test_curated_models.py to re-validate.
+Invalid models are now tracked in arbiter:disabled:model:{provider}:{model} Redis keys.
 """
 from __future__ import annotations
 
@@ -115,13 +116,6 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             rpm=15, rpd=1_500, quality=5, speed=5,
             modality="multimodal",
             notes="free · GA (was preview) · TOP free Gemini",
-        ),
-        ModelSpec(
-            id="gemini-3.1-flash-lite-preview", context=1_048_576,
-            tags={"long-context", "balanced", "fast", "creative", "vision"},
-            rpm=15, rpd=1_500, quality=5, speed=5,
-            modality="multimodal",
-            notes="free · preview bridge (active until May 25 2026, then discontinued)",
         ),
         ModelSpec(
             id="gemini-3-flash-preview", context=1_048_576,
@@ -271,18 +265,6 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             notes="Llama 4 Scout · multimodal",
         ),
         ModelSpec(
-            id="@cf/moonshot/kimi-k2.6", context=262_144,
-            tags={"long-context", "reasoning", "creative", "vision", "large"},
-            rpm=300, quality=5, speed=3,
-            modality="multimodal",
-            notes="Kimi K2.6 · 262K ctx · 1T params · multimodal",
-        ),
-        ModelSpec(
-            id="@cf/moonshot/kimi-k2.5", context=262_144,
-            tags={"long-context", "reasoning", "creative", "large"},
-            rpm=300, quality=4, speed=3,
-        ),
-        ModelSpec(
             id="@cf/zhipu/glm-4.7-flash", context=131_072,
             tags={"balanced", "reasoning", "fast"},
             rpm=300, quality=4, speed=4,
@@ -371,7 +353,7 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             rpm=30, rpd=1_000, quality=4, speed=5,
         ),
         ModelSpec(
-            id="qwen-3-235b-a22b-instruct-2507", context=8_192,
+            id="qwen-3-235b-a22b-instruct", context=8_192,
             tags={"reasoning", "code", "creative", "large"},
             rpm=30, rpd=1_000, quality=5, speed=5,
             notes="Qwen 3 235B MoE — best free reasoning at 8K ctx",
@@ -627,12 +609,6 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             id="gpt-oss:120b-cloud", context=131_072,
             tags={"reasoning", "code", "creative", "large"},
             quality=5, speed=3,
-        ),
-        ModelSpec(
-            id="deepseek-v3.1:671b-cloud", context=163_840,
-            tags={"reasoning", "code", "creative", "large", "long-context"},
-            quality=5, speed=2,
-            notes="671B parameters · best free reasoning model anywhere",
         ),
     ],
 

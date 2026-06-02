@@ -108,6 +108,27 @@ async def _probe_one(provider, model: str, redis) -> dict:
         logger.warning("Failed to persist health record for %s/%s: %s",
                        provider.name, model, exc)
 
+    # Auto-disable models with permanent errors (404, not found, etc.)
+    if status == "fail":
+        permanent_keywords = ("not found", "not exist", "no such model",
+                              "model_not_found", "does not exist",
+                              "404", "forbidden", "403", "no access")
+        if any(kw in error_msg.lower() for kw in permanent_keywords):
+            try:
+                dis_key = f"arbiter:disabled:model:{provider.name}:{model}"
+                await redis.set(dis_key, "1", ex=7 * 86_400)
+                logger.warning("Health probe auto-disabled %s/%s (7d): %s",
+                               provider.name, model, error_msg[:80])
+            except Exception:
+                pass
+    elif status == "ok":
+        # Clear any existing disabled flag when model recovers
+        try:
+            dis_key = f"arbiter:disabled:model:{provider.name}:{model}"
+            await redis.delete(dis_key)
+        except Exception:
+            pass
+
     return record
 
 

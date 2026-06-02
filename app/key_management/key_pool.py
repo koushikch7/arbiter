@@ -83,10 +83,13 @@ PROVIDER_LIMITS = {
         "daily": 50,
     },
     "cohere": {
-        # Trial: 20 RPM, ~1 000 calls/month (≈ 33/day).
-        "rpm":   20,
-        "tpm":   100_000,     # no published TPM
-        "daily": 33,
+        # Trial: 20 RPM, 1 000 calls/month hard ceiling (≈ 33/day average).
+        # "monthly" is tracked as a separate Redis counter so heavy days
+        # don't silently erode the monthly budget and cause mid-month 403s.
+        "rpm":     20,
+        "tpm":     100_000,     # no published TPM
+        "daily":   33,
+        "monthly": 1_000,
     },
     "cloudflare": {
         # Text-generation: 300 RPM aggregate. Daily quota = 10,000 neurons free.
@@ -279,6 +282,30 @@ class KeyPool:
         """UTC date string used to bucket daily counters."""
         return time.strftime("%Y-%m-%d", time.gmtime())
 
+    @staticmethod
+    def _this_month_utc() -> str:
+        """UTC year-month string used to bucket monthly counters."""
+        return time.strftime("%Y-%m", time.gmtime())
+
+    @staticmethod
+    def _seconds_until_month_end() -> int:
+        """Seconds from now until 00:10 UTC on the 1st of next month."""
+        import calendar as _cal, time as _t
+        gm = _t.gmtime()
+        year, month = gm.tm_year, gm.tm_mon
+        next_month = month % 12 + 1
+        next_year  = year + (1 if month == 12 else 0)
+        # First day of next month 00:00 UTC
+        rollover = _cal.timegm((next_year, next_month, 1, 0, 10, 0, 0, 0, 0))
+        return max(3600, int(rollover - _t.time()))
+
+    def _monthly_key(self, hash_: str) -> str:
+        return f"{self.provider}:{hash_}:monthly:{self._this_month_utc()}"
+
+    def _monthly_limit(self) -> int | None:
+        """Return monthly limit for this provider, or None if no monthly cap."""
+        return PROVIDER_LIMITS.get(self.provider, {}).get("monthly")
+
     def _daily_key(self, hash_: str) -> str:
         return f"{self.provider}:{hash_}:daily:{self._today_utc()}"
 
@@ -379,6 +406,13 @@ class KeyPool:
         pipe = self.redis.pipeline()
         pipe.incr(daily_key)
         pipe.expire(daily_key, 30 * 3600)
+        # Monthly — bucketed by YYYY-MM; TTL expires 10 min into the 1st of
+        # next month so the counter is gone before any new-month request.
+        m_limit = self._monthly_limit()
+        if m_limit is not None:
+            monthly_k = self._monthly_key(h)
+            pipe.incr(monthly_k)
+            pipe.expire(monthly_k, self._seconds_until_month_end())
         # Health — 30-min sliding success counter (TTL refresh OK here:
         # we want this to track recent state, not anchor to a fixed window).
         pipe.incr(f"{prefix}:ok")
@@ -457,10 +491,13 @@ class KeyPool:
             h      = _hash_key(key)
             prefix = f"{self.provider}:{h}"
 
-            failed      = await self.redis.get(f"{prefix}:failed")
-            rpm_used    = int(await self.redis.get(f"{prefix}:rpm")   or 0)
-            tpm_used    = int(await self.redis.get(f"{prefix}:tpm")   or 0)
-            daily_used  = int(await self.redis.get(self._daily_key(h)) or 0)
+            failed       = await self.redis.get(f"{prefix}:failed")
+            rpm_used     = int(await self.redis.get(f"{prefix}:rpm")   or 0)
+            tpm_used     = int(await self.redis.get(f"{prefix}:tpm")   or 0)
+            daily_used   = int(await self.redis.get(self._daily_key(h)) or 0)
+            m_cap        = self._monthly_limit()
+            monthly_used = (int(await self.redis.get(self._monthly_key(h)) or 0)
+                            if m_cap is not None else None)
 
             score  = await self._score_key(key)
             status = "failed" if failed else (
@@ -471,7 +508,7 @@ class KeyPool:
             if status == "active":
                 stats["active_keys"] += 1
 
-            stats["keys"].append({
+            entry = {
                 "hash":   h,
                 "status": status,
                 "score":  round(score, 3),
@@ -479,7 +516,10 @@ class KeyPool:
                 "rpm":   {"used": rpm_used,   "limit": self.rpm_limit},
                 "tpm":   {"used": tpm_used,   "limit": self.tpm_limit},
                 "daily": {"used": daily_used, "limit": self.daily_limit},
-            })
+            }
+            if m_cap is not None:
+                entry["monthly"] = {"used": monthly_used, "limit": m_cap}
+            stats["keys"].append(entry)
 
         stats["keys"].sort(key=lambda k: k["score"], reverse=True)
         return stats
@@ -551,6 +591,21 @@ class KeyPool:
         if daily_used >= daily_limit:
             return -1.0
 
+        # Monthly hard limit (only for providers that declare one, e.g. Cohere).
+        monthly_avail = 1.0  # neutral when no monthly cap
+        m_limit = self._monthly_limit()
+        if m_limit is not None:
+            monthly_used = int(await self.redis.get(self._monthly_key(h)) or 0)
+            if monthly_used >= m_limit:
+                logger.debug(
+                    "[%s] key=%s monthly limit %d reached (%d used)",
+                    self.provider, h, m_limit, monthly_used,
+                )
+                return -1.0
+            if monthly_used >= m_limit * _PREDICTIVE_THRESHOLD:
+                return -1.0  # predictive throttle — reserve last 15%
+            monthly_avail = max(0.0, 1.0 - monthly_used / m_limit)
+
         if (
             rpm_used   >= rpm_limit   * _PREDICTIVE_THRESHOLD
             or daily_used >= daily_limit * _PREDICTIVE_THRESHOLD
@@ -575,11 +630,15 @@ class KeyPool:
 
         health = (ok_count + 1) / (ok_count + err_count + 2)
 
+        # Clamp daily_avail by monthly headroom so keys close to monthly
+        # ceiling score lower even when daily budget looks healthy.
+        effective_daily_avail = daily_avail * monthly_avail
+
         score = (
-            rpm_avail   * _W_RPM
-            + tpm_avail * _W_TPM
-            + daily_avail * _W_DAILY
-            + health      * _W_HEALTH
+            rpm_avail            * _W_RPM
+            + tpm_avail          * _W_TPM
+            + effective_daily_avail * _W_DAILY
+            + health             * _W_HEALTH
         )
 
         return score

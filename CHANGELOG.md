@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.20.3] – 2026-06-02 — Monthly Quota Tracking
+
+### Added — Monthly Limit Tracking (`app/key_management/key_pool.py`)
+
+- **Monthly counter** — `record_usage()` now increments `{provider}:{hash}:monthly:{YYYY-MM}` for providers that declare a `"monthly"` limit in `PROVIDER_LIMITS`. TTL is set to expire 10 minutes after UTC midnight on the 1st of the following month so counters cleanly roll into the new period.
+- **Cohere `monthly: 1_000`** — the trial key's 1000 calls/month hard ceiling is now enforced. Previously approximated as 33/day; on heavy days (e.g. 60 calls when other providers were down) the monthly budget silently eroded and could produce mid-month 403s even when the daily counter showed headroom.
+- **`_this_month_utc()` / `_seconds_until_month_end()` / `_monthly_key()` / `_monthly_limit()` helpers** added to `KeyPool`.
+- **Monthly check in `_score_key()`** — returns -1.0 when the monthly hard limit or 85% predictive threshold is reached; `monthly_avail` clamps `effective_daily_avail` so keys approaching the monthly ceiling score progressively lower even when the daily budget looks healthy.
+- **`get_stats()` extended** — per-key stats now include `monthly.used / monthly.limit` when a monthly cap exists (visible in the Analytics per-key gauge table).
+- **Version bump** to `1.20.3`.
+
+### No API changes
+
+- `/v1/chat/completions` and `/v1/models` unchanged. All client applications unaffected.
+
+---
+
 ## [1.20.2] – 2026-06-02 — Smart Quota Management + Model Catalog Cleanup
 
 ### Fixed — Limit Management (`app/key_management/key_pool.py`, `app/routing/router.py`)

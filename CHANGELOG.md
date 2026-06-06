@@ -90,6 +90,35 @@ docker exec 556ac8df0f28_arbiter-redis-1 redis-cli KEYS 'arbiter:disabled:model:
 
 ---
 
+## [1.20.4] – 2026-06-06 — Analytics Quick-Range Buttons Fix
+
+### Fixed — Analytics date/window preset buttons did nothing (`static/analytics.html`)
+The Quick-range buttons on the Analytics page (`1h` `4h` `24h` `7d` `30d`, and `Today` `Yday` `Week` `Month` `Year`) were dead — clicking produced `Uncaught ReferenceError: setDatePreset is not defined` / `setWindowPreset is not defined` in the console.
+
+**Root cause:** the CSV-export helper in the second inline `<script>` block contained a string literal broken across a physical newline:
+
+```js
+// before (invalid — JS string literals can't span newlines):
+content = rows.map(...).join(',')).join('
+');
+```
+
+This is a hard `SyntaxError: Invalid or unexpected token`, so the **entire** script block failed to parse and **none** of the functions it declared (`setDatePreset`, compare mode, percentile/cost-ledger renderers, CSV export, the frontend error reporter, …) were ever defined. Because Cloudflare **Rocket Loader** bundles the page's inline scripts together, the single broken block also took down the functions in the other blocks (e.g. `setWindowPreset`), which is why the `1h/4h/7d` buttons were dead too. The Rocket Loader `Failed to execute 'insertBefore' … Invalid or unexpected token` console error was the same syntax error surfaced through Rocket Loader's injector.
+
+**Fix:** one line — write the row separator correctly as `'\n'`:
+
+```js
+content = rows.map(...).join(',')).join('\n');
+```
+
+With the block parsing again, all preset/compare/export handlers register and the buttons work. Verified all three inline `<script>` blocks now pass `node --check`.
+
+### Notes
+- No backend, API, or dependency changes. `static/` is bind-mounted into the container, so the fix is live on next request — no rebuild/restart needed.
+- If the old page is still cached, hard-refresh (Cmd/Ctrl+Shift+R); purge the Cloudflare cache for `/analytics` if it persists.
+
+---
+
 ## [1.20.3] – 2026-06-02 — Monthly Quota Tracking
 
 ### Added — Monthly Limit Tracking (`app/key_management/key_pool.py`)

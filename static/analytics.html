@@ -1709,8 +1709,7 @@ function exportTable(tableId, format){
     const objs = rows.slice(1).map(r => Object.fromEntries(head.map((h,i)=>[h, r[i]||''])));
     content = JSON.stringify(objs, null, 2); mime = 'application/json'; ext = 'json';
   } else {
-    content = rows.map(r => r.map(c => '"' + c.replace(/"/g,'""') + '"').join(',')).join('
-');
+    content = rows.map(r => r.map(c => '"' + c.replace(/"/g,'""') + '"').join(',')).join('\n');
     mime = 'text/csv'; ext = 'csv';
   }
   const blob = new Blob([content], {type: mime});

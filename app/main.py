@@ -84,6 +84,19 @@ async def lifespan(app: FastAPI):
 
     app.state.redis = redis_client
 
+    # Reset the in-flight request gauge on startup. It is a live counter
+    # (incr on request start, decr in a finally on completion), but the
+    # Redis store is persistent (appendonly), so any increments orphaned by
+    # a container restart / crash / killed worker survive forever and the
+    # gauge drifts upward without bound (observed: 1.2K "in-flight" with no
+    # real concurrent load). At startup there are genuinely zero requests in
+    # flight, so resetting to 0 is correct and self-heals accumulated drift.
+    try:
+        await redis_client.set("arbiter:stats:inflight", 0)
+        logger.info("Reset in-flight request gauge to 0 on startup")
+    except Exception as e:
+        logger.warning(f"Could not reset in-flight gauge: {e}")
+
     # Initialize providers
     providers = {}
     provider_classes = {

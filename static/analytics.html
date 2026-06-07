@@ -439,7 +439,7 @@
           <div class="kpi-sub" id="kpi-p99-sub">worst-case</div>
         </div>
         <div class="kpi-card" style="--kc-color:#ef4444" role="group" aria-label="Error breakdown">
-          <div class="kpi-label">Errors (24h)</div>
+          <div class="kpi-label" title="Cumulative error events across all providers since stats were last reset. Includes rate-limited (429) attempts that are automatically retried and usually succeed, so this is higher than the Dashboard's terminal failure count.">Errors (total)</div>
           <div class="kpi-value" id="kpi-errors">–</div>
           <div class="kpi-sub" id="kpi-errors-sub">– 429 · – upstream</div>
         </div>
@@ -1551,7 +1551,7 @@ document.addEventListener('DOMContentLoaded', function() {
         _refreshTimer = null;
       }
     } else if (_origInterval) {
-      try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+      try { if (typeof fetchData === 'function') fetchData(); } catch(e){}
       if (typeof setRefreshInterval === 'function') setRefreshInterval(_origInterval);
       _origInterval = null;
     }
@@ -1581,7 +1581,13 @@ function setDatePreset(p){
     const first = new Date(today.getUTCFullYear(), 0, 1);
     from.value = toISO(first); to.value = toISO(today);
   }
-  try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+  // Date presets use the from/to range, not the rolling window — clear any
+  // active window so fetchData() honours the dates, then reload (mirrors the
+  // working setWindowPreset/setFilterPreset). The old code called a
+  // never-defined loadAnalytics() so these buttons silently did nothing.
+  _activeWindow = '';
+  if (typeof _saveFilters === 'function') _saveFilters();
+  fetchData();
 }
 
 // ─── Compare mode toggle (placeholder — overlay rendered when data fetched) ───
@@ -1593,7 +1599,7 @@ function toggleCompare(){
     btn.classList.toggle('btn-primary', _compareMode);
     btn.classList.toggle('btn-ghost', !_compareMode);
   }
-  try { if (typeof loadAnalytics === 'function') loadAnalytics(); } catch(e){}
+  fetchData();
 }
 
 // ─── Render percentiles / errors / cost ledger / key gauges after main load ───

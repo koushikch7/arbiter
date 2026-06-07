@@ -90,6 +90,25 @@ docker exec 556ac8df0f28_arbiter-redis-1 redis-cli KEYS 'arbiter:disabled:model:
 
 ---
 
+## [1.20.5] – 2026-06-07 — Analytics Date Presets Reload + In-Flight Gauge Drift + Errors Label
+
+Follow-up to v1.20.4. After the syntax fix the rolling-window presets (`1h/4h/24h/7d/30d/90d`) worked, but the **date presets still didn't refresh the page**, and two displayed numbers were misleading.
+
+### Fixed — Date-preset buttons did nothing (`static/analytics.html`)
+`setDatePreset()` (Today / Yday / Week / Month / Year), `toggleCompare()`, and the Page-Visibility refresh handler all called `loadAnalytics()` — a function that **does not exist anywhere in the page** (only `typeof`-guarded references; the wrapper at the bottom that would have defined it never installs because it also guards on `typeof loadAnalytics === 'function'`). So those buttons set the date inputs but never reloaded data. The real loader is `fetchData()` (used by `applyFilters`/`setWindowPreset`/`clearFilters`). Repointed all three call sites to `fetchData()`. `setDatePreset()` now also clears `_activeWindow` first (so the from/to range is honoured instead of a stale rolling window) and persists via `_saveFilters()`. Selecting a date range now reloads the KPIs, charts, and the "Filtered: from → to" range-summary card.
+
+### Fixed — In-flight request gauge drifting upward forever (`app/main.py`)
+The Analytics "IN-FLIGHT REQUESTS" card showed **1.2K** with no real concurrent load, and only ever grew across refreshes. The gauge (`arbiter:stats:inflight`) is incremented on request start and decremented in a `finally` on completion — all three call sites in `app/api/chat.py` are correctly paired — but **Redis is persistent (`appendonly`)**, so any increment orphaned by a container restart / crash / killed worker survives forever and the counter drifts upward without bound. Added a startup reset in the `lifespan` handler: at boot there are genuinely zero requests in flight, so `SET arbiter:stats:inflight 0` is correct and self-heals all accumulated drift on every future restart. The currently-leaked value (1230) was also reset live.
+
+### Changed — "Errors (24h)" card relabeled to "Errors (total)" (`static/analytics.html`)
+The card was labeled `Errors (24h)` but the backend `_error_breakdown()` sums the **lifetime** `arbiter:stats:provider:*:errors` + `:rate_limited` counters (no 24-hour window). It also counts rate-limited `429`s that are automatically retried and usually succeed — which is why the figure (e.g. 924 = 712 `429` + 212 upstream) looks far larger than, and does not reconcile with, the Dashboard's terminal-failure count (≈2% of total). Relabeled to `Errors (total)` with an explanatory tooltip so the number matches what it actually measures. (The Dashboard success-rate and this error-event total intentionally measure different things; they are not expected to be equal.)
+
+### Notes
+- `static/` and `app/` are bind-mounted. The `analytics.html` changes are live immediately (the `/analytics` route reads the file per request). The `main.py` startup reset arms on the next container recreate; the leaked gauge was reset directly in Redis so the fix is visible now without forcing gateway downtime.
+- No API, routing, or dependency changes.
+
+---
+
 ## [1.20.4] – 2026-06-06 — Analytics Quick-Range Buttons Fix
 
 ### Fixed — Analytics date/window preset buttons did nothing (`static/analytics.html`)

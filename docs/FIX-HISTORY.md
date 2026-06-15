@@ -4,6 +4,44 @@ Chronological log of all fixes, changes, and improvements.
 
 ---
 
+## 2026-06-15 — v1.21.0 (Enterprise Hardening: Security · Performance · Reliability)
+
+Full enterprise-grade audit → **13 fixes**. See CHANGELOG `[1.21.0]` for per-file detail.
+
+### Root-cause findings
+
+- **All recurring log errors traced to upstream/catalog issues, not gateway bugs.** Dominant error was `nvidia/google/gemma-3-27b-it: 410 Gone` (EOL 2026-05-12) on every attempt; secondary were NVIDIA heavy-model 45 s timeouts and Pollinations 402 (no balance) — **all retried on every request** because there was no circuit breaker.
+- **Per-request TLS handshakes** — every built-in provider opened `async with httpx.AsyncClient(...)` per call (no keep-alive). Only `generic_openai.py` was pooled.
+- **Key scoring was 6-11 sequential Redis GETs per key** — ~120 round-trips worst case on the routing hot path.
+- **Cache key omitted `tools` / `response_format` / `seed`** — a tool-call or JSON-mode request (temp ≤ 0.3) could be served a plain-text cached answer.
+- **Timing side-channel in bearer-token check** (`token in keys` is not constant-time).
+- **`.env` writer accepted newlines** — authenticated-admin env-line injection.
+- **UI-error limiter used an unbounded per-process dict** keyed on the proxy IP.
+- **SSRF probe used a weak string check** missing IPv6-mapped IPv4 + DNS rebinding.
+- **`pip-audit`: 7 CVEs** across `python-multipart`, `pyjwt`, `authlib`.
+
+### Fixes implemented
+
+**Security** — constant-time token comparison; `.env` write sanitisation; DNS-aware SSRF guard on custom-provider probe + create; Redis-backed + bounded UI-error limiter (XFF-aware); fail-closed `/v1/*` rate limiter on Redis error; dependency bumps `python-multipart` 0.0.27 / `PyJWT` 2.13.0 / `authlib` 1.6.12 (pip-audit now clean).
+
+**Performance** — process-wide pooled `httpx.AsyncClient` in `base.py` (`get_shared_async_client`) reused by all 11 providers + CF-Worker proxy; pipelined `_score_key()` (single round-trip per key); NVIDIA timeout 45 s → 25 s; non-blocking persistent-log writes via `asyncio.to_thread`.
+
+**Reliability** — per-`(provider, model)` circuit breaker (3 fails / 120 s → skip 5 min) in both routing loops; 429s excluded; self-bypass when all candidates tripped. Complements the v1.20.2 permanent-error auto-disable.
+
+**Catalog** — removed EOL `google/gemma-3-27b-it` from NVIDIA.
+
+### Recovery note (process)
+
+During this work the deployment machine's working tree was discovered to be a **stale ~v1.20.0 snapshot** while `git HEAD` was at v1.20.5. An initial commit was reset (`git reset --hard` to `origin/master`) and all 13 fixes were re-applied cleanly on top of v1.20.5 so no v1.20.1–1.20.5 work was lost.
+
+### API impact (for integrated apps)
+
+- Cache cold-starts on deploy (correct distinct responses for tool/JSON-mode requests).
+- `/v1/*` may now return a transient **429** when Redis is down (fail-closed) — clients must honour `Retry-After`.
+- Circuit breaker is transparent (router falls through to the next candidate).
+
+---
+
 ## 2026-05-27 — v1.20.1 (Enterprise UI + Analytics Hardening + OpenAPI Parity)
 
 ### Audit findings addressed

@@ -22,7 +22,10 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
+from app.providers.base import (
+    BaseProvider, RateLimitError, ProviderError, parse_retry_after,
+    get_shared_async_client,
+)
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -93,11 +96,11 @@ class CerebrasProvider(BaseProvider):
 
         logger.debug(f"CerebrasProvider POST model={model}")
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                resp = await client.post(CEREBRAS_API_BASE, json=payload, headers=headers)
-            except httpx.RequestError as exc:
-                raise ProviderError(f"Cerebras network error: {exc}") from exc
+        client = get_shared_async_client()
+        try:
+            resp = await client.post(CEREBRAS_API_BASE, json=payload, headers=headers, timeout=60.0)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"Cerebras network error: {exc}") from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"Cerebras 429: {resp.text[:300]}",

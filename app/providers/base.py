@@ -1,6 +1,61 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
+
+import httpx
+
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, Message
+
+
+# ---------------------------------------------------------------------------
+# Process-wide pooled HTTP client (P1, v1.21.0)
+# ---------------------------------------------------------------------------
+# Every built-in provider previously opened a fresh ``httpx.AsyncClient`` per
+# request (``async with httpx.AsyncClient(...) as client``), which forced a new
+# TCP + TLS handshake on every single upstream call. Under the concurrent
+# request bursts Arbiter is designed for, that added ~100-200 ms of handshake
+# latency per call and risked ephemeral-port exhaustion.
+#
+# We now share one pooled client across all providers. Connections are kept
+# alive and reused. Per-request timeouts are still honoured by passing
+# ``timeout=`` to the individual ``.post()`` / ``.stream()`` call, so a slow
+# provider can keep its longer ceiling without affecting the shared pool.
+_SHARED_CLIENT: Optional[httpx.AsyncClient] = None
+_SHARED_LIMITS = httpx.Limits(
+    max_connections=200,
+    max_keepalive_connections=50,
+    keepalive_expiry=30.0,
+)
+_SHARED_DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=15.0, pool=5.0)
+
+
+def get_shared_async_client() -> httpx.AsyncClient:
+    """Return the lazily-initialised, process-wide pooled ``httpx.AsyncClient``.
+
+    Callers MUST NOT use this inside ``async with`` (that would close the
+    shared client for everyone). Use it directly and pass a per-request
+    ``timeout=`` to ``.post()`` / ``.stream()`` as needed::
+
+        client = get_shared_async_client()
+        resp = await client.post(url, json=payload, headers=headers, timeout=45.0)
+    """
+    global _SHARED_CLIENT
+    if _SHARED_CLIENT is None or _SHARED_CLIENT.is_closed:
+        _SHARED_CLIENT = httpx.AsyncClient(
+            timeout=_SHARED_DEFAULT_TIMEOUT,
+            limits=_SHARED_LIMITS,
+            follow_redirects=False,
+        )
+    return _SHARED_CLIENT
+
+
+async def aclose_shared_async_client() -> None:
+    """Close the shared pooled client on application shutdown."""
+    global _SHARED_CLIENT
+    if _SHARED_CLIENT is not None and not _SHARED_CLIENT.is_closed:
+        try:
+            await _SHARED_CLIENT.aclose()
+        finally:
+            _SHARED_CLIENT = None
 
 
 class RateLimitError(Exception):
@@ -169,8 +224,10 @@ class BaseProvider(ABC):
             "Accept":        "application/json",
         }
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.get(self.models_discovery_url, headers=headers)
+            client = get_shared_async_client()
+            resp = await client.get(
+                self.models_discovery_url, headers=headers, timeout=20.0
+            )
         except httpx.RequestError as exc:
             raise ProviderError(
                 f"[{self.name}] models fetch network error: {exc}"

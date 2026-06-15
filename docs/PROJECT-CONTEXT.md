@@ -8,7 +8,7 @@ AI-friendly context document for onboarding and continuation prompts.
 
 A self-hosted, production-ready LLM gateway that aggregates 12+ providers behind a single OpenAI-compatible endpoint. Designed for multi-agent frameworks (like OpenClaw/JARVIS) that generate concurrent request bursts.
 
-**Current version:** 1.20.0 (as of 2026-05-26)
+**Current version:** 1.21.0 (as of 2026-06-15)
 
 ---
 
@@ -32,8 +32,10 @@ A self-hosted, production-ready LLM gateway that aggregates 12+ providers behind
 1. **Redis `decode_responses=True`** — all values are UTF-8 strings. Binary data (gzip cache) must be base64-wrapped with `GZ1:` prefix.
 2. **Middleware ordering** — Starlette LIFO: Session must wrap GatewayAuth (added after) so `scope["session"]` is populated before auth reads it.
 3. **`docker compose down && docker compose up -d`** — never `restart`. Config changes require fresh container.
-4. **Best-effort logging** — persistent log writes never block request handling. If disk is full, records are silently dropped.
-5. **Fail-open rate limiting** — Redis unavailability bypasses rate checks rather than blocking traffic.
+4. **Best-effort logging** — persistent log writes never block request handling (run via `asyncio.to_thread` since v1.21.0). If disk is full, records are silently dropped.
+5. **Rate limiting** — the per-token `/v1/*` limiter is **fail-closed** since v1.21.0 (Redis error → 429), so quota can't be silently bypassed. Non-critical limiters (e.g. `/api/ui-error`) remain fail-open with a bounded in-process fallback.
+6. **Shared HTTP client (v1.21.0)** — one process-wide pooled `httpx.AsyncClient` lives in `app/providers/base.py` (`get_shared_async_client`). All providers reuse it; never wrap it in `async with`. Per-request timeouts are passed to each `.post()`/`.stream()` call.
+7. **Circuit breaker (v1.21.0)** — per `(provider, model)` pair. 3 hard `ProviderError`s in 120 s opens the circuit (Redis `arbiter:circuit:open:*`) for 300 s. Rate-limit 429s do NOT trip it. Bypasses itself if every candidate is tripped.
 
 ---
 

@@ -32,7 +32,10 @@ from typing import List, Optional
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
+from app.providers.base import (
+    BaseProvider, RateLimitError, ProviderError, parse_retry_after,
+    get_shared_async_client,
+)
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -170,15 +173,18 @@ class GeminiProvider(BaseProvider):
         """
         import httpx
 
-        from app.providers.base import RateLimitError, ProviderError, parse_retry_after
+        from app.providers.base import (
+            RateLimitError, ProviderError, parse_retry_after,
+            get_shared_async_client,
+        )
 
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models"
             f"?key={api_key}&pageSize=200"
         )
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.get(url)
+            client = get_shared_async_client()
+            resp = await client.get(url, timeout=20.0)
         except httpx.RequestError as exc:
             raise ProviderError(f"[gemini] models fetch network error: {exc}") from exc
 
@@ -272,11 +278,11 @@ class GeminiProvider(BaseProvider):
 
         logger.debug(f"GeminiProvider POST model={model}")
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            try:
-                resp = await client.post(url, json=payload)
-            except httpx.RequestError as exc:
-                raise ProviderError(f"Gemini network error: {exc}") from exc
+        client = get_shared_async_client()
+        try:
+            resp = await client.post(url, json=payload, timeout=90.0)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"Gemini network error: {exc}") from exc
 
         # 429 = quota exhausted / rate-limited; 403 = invalid key / project quota
         if resp.status_code in (429, 403):

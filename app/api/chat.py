@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, ErrorResponse
 from app.models.schemas import Choice, Message, Usage
-from app.providers.base import RateLimitError, ProviderError
+from app.providers.base import RateLimitError, ProviderError, get_shared_async_client
 from app.observability.persistent_log import log_api_call as _persist_api_call
 from app.observability import stats as _obs_stats
 
@@ -66,12 +66,13 @@ async def _proxy_cfworker(model_str: str, body, request) -> ChatCompletionRespon
     }
     t0 = _time.perf_counter()
     try:
-        async with _httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                worker_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            )
+        client = get_shared_async_client()
+        resp = await client.post(
+            worker_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=60.0,
+        )
     except _httpx.RequestError as exc:
         raise HTTPException(502, f"CF Worker unreachable: {exc}")
 

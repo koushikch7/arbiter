@@ -36,38 +36,13 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 
 
-# Module-level pooled httpx client (audit fix #6).
-# Reused across all GenericOpenAIProvider instances so we don't open a new
-# TCP connection pool on every request. Lazily initialised on first use so
-# import-order doesn't matter, and a getter is provided to ease testing.
-_HTTPX_CLIENT: httpx.AsyncClient | None = None
-_HTTPX_LIMITS = httpx.Limits(
-    max_connections=100,
-    max_keepalive_connections=40,
-    keepalive_expiry=30.0,
+# Pooled httpx client — delegates to the process-wide shared client in
+# base.py (P1, v1.21.0) so every provider, built-in or custom, reuses one
+# connection pool instead of opening a fresh TCP+TLS handshake per request.
+from app.providers.base import (
+    get_shared_async_client as _get_http_client,
+    aclose_shared_async_client as aclose_http_client,
 )
-
-
-def _get_http_client() -> httpx.AsyncClient:
-    """Lazy singleton httpx client with pooled connections."""
-    global _HTTPX_CLIENT
-    if _HTTPX_CLIENT is None or _HTTPX_CLIENT.is_closed:
-        _HTTPX_CLIENT = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=90.0, write=15.0, pool=5.0),
-            limits=_HTTPX_LIMITS,
-            follow_redirects=False,
-        )
-    return _HTTPX_CLIENT
-
-
-async def aclose_http_client() -> None:
-    """Close the shared pooled client on app shutdown."""
-    global _HTTPX_CLIENT
-    if _HTTPX_CLIENT is not None and not _HTTPX_CLIENT.is_closed:
-        try:
-            await _HTTPX_CLIENT.aclose()
-        finally:
-            _HTTPX_CLIENT = None
 
 
 def _validate_base_url(base_url: str) -> None:

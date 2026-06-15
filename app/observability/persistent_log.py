@@ -150,12 +150,17 @@ async def _append(directory: Path, record: dict) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     path = directory / f"{today}.jsonl"
     line = (json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
+    def _write() -> None:
+        with open(path, "ab") as f:
+            f.write(line)
+
     async with _lock_for(str(directory)):
         try:
-            # Synchronous file write inside an asyncio lock — fast enough for our
-            # write rate (low hundreds/sec worst case) and avoids pulling in aiofiles.
-            with open(path, "ab") as f:
-                f.write(line)
+            # Run the blocking write in a worker thread so a logging spike can
+            # never stall the event loop on disk I/O (P5, v1.21.0). The async
+            # lock still serialises appends to the same file.
+            await asyncio.to_thread(_write)
         except OSError as exc:
             _warn_once(str(path), f"log append failed for {path}: {exc}")
 

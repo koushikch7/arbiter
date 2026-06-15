@@ -18,7 +18,10 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
+from app.providers.base import (
+    BaseProvider, RateLimitError, ProviderError, parse_retry_after,
+    get_shared_async_client,
+)
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -30,6 +33,13 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 
 NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+# Hot-path timeout (P4, v1.21.0): reduced 45s -> 25s. NVIDIA is first in the
+# default provider chain, so when a heavy model (nemotron/mistral-medium) is
+# overloaded the old 45s ceiling dominated tail latency before fallback. 25s
+# still covers normal completions while failing over to healthy providers
+# sooner. Streaming keeps its longer ceiling.
+_NVIDIA_TIMEOUT = 25.0
 
 
 class NvidiaProvider(BaseProvider):
@@ -102,16 +112,18 @@ class NvidiaProvider(BaseProvider):
 
         logger.debug(f"NvidiaProvider POST model={model}")
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            try:
-                resp = await client.post(NVIDIA_API_BASE, json=payload, headers=headers)
-            except httpx.TimeoutException as exc:
-                raise ProviderError(
-                    f"NVIDIA upstream timeout after 45s for model {model!r} "
-                    f"(model may be overloaded or unavailable)"
-                ) from exc
-            except httpx.RequestError as exc:
-                raise ProviderError(f"NVIDIA network error: {exc!r}") from exc
+        client = get_shared_async_client()
+        try:
+            resp = await client.post(
+                NVIDIA_API_BASE, json=payload, headers=headers, timeout=_NVIDIA_TIMEOUT
+            )
+        except httpx.TimeoutException as exc:
+            raise ProviderError(
+                f"NVIDIA upstream timeout after {_NVIDIA_TIMEOUT:.0f}s for model {model!r} "
+                f"(model may be overloaded or unavailable)"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ProviderError(f"NVIDIA network error: {exc!r}") from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"NVIDIA 429: {resp.text[:300]}",

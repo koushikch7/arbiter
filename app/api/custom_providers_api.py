@@ -18,6 +18,7 @@ POST   /api/custom-providers/{name}/test  test connectivity
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -51,6 +52,26 @@ _RESERVED_NAMES = {
     "gemini", "groq", "openrouter", "cohere", "cloudflare", "cerebras",
     "huggingface", "pollinations", "zai", "routeway", "ollama", "nvidia",
 }
+
+
+async def _ssrf_guard(base_url: str) -> None:
+    """Validate *base_url* against SSRF using the shared, DNS-aware guard.
+
+    Routes both the probe and create paths through
+    ``generic_openai._validate_base_url`` (S6, v1.21.0), which rejects
+    non-http(s) schemes, private/loopback/link-local/reserved IPs,
+    IPv6-mapped IPv4, and cloud metadata hostnames — and resolves the host to
+    catch DNS names that point at internal addresses. The previous inline
+    check only string-matched a handful of literals and missed all of those.
+
+    ``getaddrinfo`` is blocking, so it runs in a thread to keep the event loop
+    free.
+    """
+    from app.providers.generic_openai import _validate_base_url
+    try:
+        await asyncio.to_thread(_validate_base_url, base_url)
+    except ValueError as exc:
+        raise HTTPException(422, f"base_url rejected: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -227,17 +248,7 @@ async def probe_provider(body: CreateProviderBody,
     base_url = (body.base_url or "").strip()
     if not base_url.startswith(("http://", "https://")):
         raise HTTPException(422, "base_url must start with http:// or https://")
-    import ipaddress
-    from urllib.parse import urlparse
-    host = (urlparse(base_url).hostname or "").lower()
-    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal"):
-        raise HTTPException(422, "base_url cannot point to localhost / metadata IPs")
-    try:
-        ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            raise HTTPException(422, "base_url cannot point to a private / loopback IP")
-    except ValueError:
-        pass
+    await _ssrf_guard(base_url)
     config = {
         "name":        body.name,
         "label":       body.label or body.name,
@@ -305,18 +316,8 @@ async def create_provider(body: CreateProviderBody, request: Request,
     if not base_url.startswith(("http://", "https://")):
         raise HTTPException(422, "base_url must start with http:// or https://")
     # SECURITY: block internal addresses to prevent SSRF / credential-stealing
-    # against local services. This is a basic guard — not exhaustive.
-    import ipaddress
-    from urllib.parse import urlparse
-    host = (urlparse(base_url).hostname or "").lower()
-    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal"):
-        raise HTTPException(422, "base_url cannot point to localhost / metadata IPs")
-    try:
-        ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            raise HTTPException(422, "base_url cannot point to a private / loopback IP")
-    except ValueError:
-        pass  # hostname, not IP — OK
+    # against local services (S6, v1.21.0 — now DNS-aware via the shared guard).
+    await _ssrf_guard(base_url)
 
     models = body.models or list(tpl.get("default_models", []))
 

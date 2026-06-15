@@ -8,6 +8,7 @@ DoS the log dir.
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -30,8 +31,33 @@ class UIErrorPayload(BaseModel):
     page: str = Field("", max_length=256)
 
 
-_LAST_BY_IP: dict[str, float] = {}
-_MIN_INTERVAL_SEC = 2.0  # 1 error report per 2 seconds per IP
+_LAST_BY_IP: "OrderedDict[str, float]" = OrderedDict()
+_LAST_BY_IP_MAX = 2048
+_MIN_INTERVAL_SEC = 2  # 1 error report per 2 seconds per IP
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve the real client IP, honouring the X-Forwarded-For chain set by
+    nginx / Cloudflare (so the limiter buckets per real user, not per proxy)."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "?"
+
+
+def _fallback_rate_limited(ip: str, now: float) -> bool:
+    """Bounded in-process limiter for when Redis is down."""
+    last = _LAST_BY_IP.get(ip, 0.0)
+    if now - last < _MIN_INTERVAL_SEC:
+        return True
+    _LAST_BY_IP[ip] = now
+    _LAST_BY_IP.move_to_end(ip)
+    # Evict oldest entries so the dict can never grow without bound.
+    while len(_LAST_BY_IP) > _LAST_BY_IP_MAX:
+        _LAST_BY_IP.popitem(last=False)
+    return False
 
 
 @router.post(
@@ -44,14 +70,28 @@ _MIN_INTERVAL_SEC = 2.0  # 1 error report per 2 seconds per IP
     ),
 )
 async def report_ui_error(payload: UIErrorPayload, request: Request) -> JSONResponse:
-    ip = (
-        request.client.host if request.client else "?"
-    )
+    ip = _client_ip(request)
     now = time.time()
-    last = _LAST_BY_IP.get(ip, 0)
-    if now - last < _MIN_INTERVAL_SEC:
+
+    # Primary limiter: Redis (works across workers/replicas). The key
+    # self-evicts after the interval via EX, so there's no unbounded growth.
+    redis = getattr(request.app.state, "redis", None)
+    limited = False
+    if redis is not None:
+        try:
+            rl_key = f"arbiter:ui_error:rl:{ip}"
+            count = await redis.incr(rl_key)
+            if count == 1:
+                await redis.expire(rl_key, _MIN_INTERVAL_SEC)
+            limited = count > 1
+        except Exception:
+            # Redis trouble → fall back to the bounded in-process limiter.
+            limited = _fallback_rate_limited(ip, now)
+    else:
+        limited = _fallback_rate_limited(ip, now)
+
+    if limited:
         return JSONResponse({"ok": False, "reason": "rate_limited"}, status_code=429)
-    _LAST_BY_IP[ip] = now
 
     rec = {
         "kind":  payload.kind,

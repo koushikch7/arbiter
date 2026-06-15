@@ -53,7 +53,7 @@ from app.middleware.bot_protection import BotProtectionMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # Single source of truth for the app version — update here only.
-APP_VERSION = "1.20.3"
+APP_VERSION = "1.21.0"
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
@@ -229,6 +229,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.providers.generic_openai import aclose_http_client
         await aclose_http_client()
+    except Exception:
+        pass
+    try:
+        from app.providers.base import aclose_shared_async_client
+        await aclose_shared_async_client()
     except Exception:
         pass
     try:

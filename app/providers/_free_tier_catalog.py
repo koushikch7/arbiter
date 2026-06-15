@@ -691,12 +691,9 @@ FREE_TIER_CATALOG: Dict[str, List[ModelSpec]] = {
             rpm=10, rpd=1_000, quality=4, speed=3,
             notes="Mistral Small 4 hybrid MoE · 119B params",
         ),
-        ModelSpec(
-            id="google/gemma-3-27b-it", context=131_072,
-            tags={"balanced", "creative"},
-            rpm=10, rpd=1_000, quality=4, speed=4,
-            notes="Google Gemma 3 27B instruction-tuned",
-        ),
+        # NOTE: google/gemma-3-27b-it removed v1.21.0 — NVIDIA retired it
+        # (EOL 2026-05-12, upstream now returns HTTP 410 Gone). The OpenRouter
+        # `google/gemma-3-27b-it:free` variant is a separate live entry.
     ],
 }
 

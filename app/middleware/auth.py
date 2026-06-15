@@ -38,6 +38,7 @@ authorization failure.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import re
@@ -107,6 +108,26 @@ def _error_403(message: str = "Access denied") -> JSONResponse:
     )
 
 
+def _constant_time_match(token: str, keys: frozenset) -> Optional[str]:
+    """Return the key in *keys* that equals *token*, or ``None``.
+
+    Uses :func:`hmac.compare_digest` for each candidate so the comparison is
+    not short-circuited on the first differing byte. This closes the timing
+    side-channel where an attacker could otherwise recover a valid bearer
+    token byte-by-byte by measuring response latency (S1, v1.21.0).
+
+    The loop intentionally does **not** ``break`` on a match so the total
+    work — and therefore the timing — is independent of *where* in the set a
+    valid token sits. The number of configured keys remains weakly
+    observable, but individual token bytes do not leak.
+    """
+    matched: Optional[str] = None
+    for candidate in keys:
+        if hmac.compare_digest(token, candidate):
+            matched = candidate
+    return matched
+
+
 def _error_429(message: str, retry_after: int = 30, limit: int | None = None) -> JSONResponse:
     headers = {"Retry-After": str(max(1, retry_after))}
     if limit is not None:
@@ -168,9 +189,18 @@ async def _check_token_rate_limit(request: Request):
         if current == 1:
             # First hit in this bucket — set TTL so the key self-evicts
             await redis.expire(key, 65)
-    except Exception:
-        # Fail-open on Redis errors — better to serve than to drop traffic
-        return None
+    except Exception as exc:
+        # Fail-CLOSED on Redis errors (S4, v1.21.0). If we cannot enforce the
+        # per-token limit we reject rather than allow unbounded traffic that
+        # could burn upstream provider quota or be abused. This only affects
+        # the /v1/* hot path; the rest of the app is unaffected.
+        logger.error("Rate-limit check failed (Redis error); rejecting: %s", exc)
+        return _error_429(
+            "Rate limiter temporarily unavailable; request rejected for safety. "
+            "Retry shortly.",
+            retry_after=5,
+            limit=limit,
+        )
 
     if current > limit:
         seconds_to_next_bucket = 60 - int(_t.time()) % 60
@@ -369,11 +399,15 @@ class GatewayAuthMiddleware(BaseHTTPMiddleware):
         if not auth.startswith("Bearer "):
             return False
         token = auth[len("Bearer "):].strip()
-        if token not in keys:
+        # Constant-time membership test — defeats timing side-channel token
+        # recovery (S1). Returns the matched key so we can attribute the
+        # request to its named gateway token below.
+        matched = _constant_time_match(token, keys)
+        if matched is None:
             return False
         # Identify which named token (if any) was used
         meta = getattr(request.app.state, "gateway_token_meta", {}) or {}
-        info = meta.get(token)
+        info = meta.get(matched)
         if info:
             request.state.gateway_token_id = info.get("id")
             request.state.gateway_token_name = info.get("name")

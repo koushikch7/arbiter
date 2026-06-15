@@ -32,9 +32,9 @@ See [requirements.txt](requirements.txt) for pinned versions. Key packages:
 | pydantic | 2.9.2 | Data validation |
 | pydantic-settings | 2.5.2 | Env-based config |
 | tiktoken | 0.7.0 | Token estimation for TPM scoring |
-| authlib | 1.6.11 | Google OAuth / SSO |
+| authlib | 1.6.12 | Google OAuth / SSO |
 | itsdangerous | 2.2.0 | Session signing |
-| PyJWT[crypto] | 2.12.0 | JWT token verification |
+| PyJWT[crypto] | 2.13.0 | JWT token verification |
 | jinja2 | 3.1.6 | Email templates |
 | boto3 | ≥1.34.0 | OCI Object Storage backups |
 
@@ -149,7 +149,7 @@ Outbound HTTPS (443) to:
 ## Health Check
 
 ```
-GET /health → 200 {"status": "ok", "version": "1.20.0"}
+GET /health → 200 {"status": "ok", "version": "1.21.0"}
 ```
 
 Docker uses this internally with a 30-second interval.

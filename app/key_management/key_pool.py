@@ -561,41 +561,80 @@ class KeyPool:
         h      = _hash_key(key)
         prefix = f"{self.provider}:{h}"
 
-        if await self.redis.get(f"{prefix}:failed"):
-            return -1.0
-
         rpm_limit, tpm_limit, daily_limit = self._limits_for(model)
+        m_limit = self._monthly_limit()
 
-        rpm_used   = int(await self.redis.get(f"{prefix}:rpm")   or 0)
-        tpm_used   = int(await self.redis.get(f"{prefix}:tpm")   or 0)
-        daily_used = int(await self.redis.get(self._daily_key(h)) or 0)
-        ok_count   = int(await self.redis.get(f"{prefix}:ok")    or 0)
-        err_count  = int(await self.redis.get(f"{prefix}:err")   or 0)
-
-        # If a model is given, also check per-model counters (so flash-lite
-        # exhaustion on this key doesn't disqualify pro requests, and vice
-        # versa).
+        # Batch every counter read into ONE pipelined round-trip (P2, v1.21.0).
+        # This method previously issued 6-11 sequential awaited GETs per key;
+        # with several keys per provider scored across multiple fallback
+        # candidates, that was the dominant Redis cost on the routing hot path
+        # (~120 round-trips worst case). One pipeline collapses it to a single
+        # round-trip per key.
+        pipe = self.redis.pipeline()
+        pipe.get(f"{prefix}:failed")    # 0
+        pipe.get(f"{prefix}:rpm")       # 1
+        pipe.get(f"{prefix}:tpm")       # 2
+        pipe.get(self._daily_key(h))    # 3
+        pipe.get(f"{prefix}:ok")        # 4
+        pipe.get(f"{prefix}:err")       # 5
+        next_idx = 6
+        idx_model: Optional[int] = None
         if model:
             mh = _model_slug(model)
-            m_rpm   = int(await self.redis.get(f"{prefix}:m:{mh}:rpm")   or 0)
-            m_tpm   = int(await self.redis.get(f"{prefix}:m:{mh}:tpm")   or 0)
-            m_daily = int(await self.redis.get(
-                f"{prefix}:m:{mh}:daily:{self._today_utc()}"
-            ) or 0)
-            # Use whichever is HIGHER — provider-aggregate or per-model —
-            # so we respect both ceilings.
-            rpm_used   = max(rpm_used, m_rpm)
-            tpm_used   = max(tpm_used, m_tpm)
-            daily_used = max(daily_used, m_daily)
+            idx_model = next_idx
+            pipe.get(f"{prefix}:m:{mh}:rpm")
+            pipe.get(f"{prefix}:m:{mh}:tpm")
+            pipe.get(f"{prefix}:m:{mh}:daily:{self._today_utc()}")
+            next_idx += 3
+        idx_monthly: Optional[int] = None
+        if m_limit is not None:
+            idx_monthly = next_idx
+            pipe.get(self._monthly_key(h))
+            next_idx += 1
+
+        try:
+            results = await pipe.execute()
+        except Exception as exc:
+            # Fail-open (consistent with the gateway's rate-limit policy): a
+            # Redis blip should not disqualify every key. Treat counters as
+            # zero so the key still scores as available.
+            logger.debug("[%s] key scoring pipeline error: %s", self.provider, exc)
+            results = []
+
+        def _at(i: Optional[int]) -> int:
+            if i is None or i >= len(results):
+                return 0
+            v = results[i]
+            try:
+                return int(v) if v is not None else 0
+            except (TypeError, ValueError):
+                return 0
+
+        # results[0] is the 'failed' cooldown flag (truthy → excluded).
+        if results and results[0]:
+            return -1.0
+
+        rpm_used   = _at(1)
+        tpm_used   = _at(2)
+        daily_used = _at(3)
+        ok_count   = _at(4)
+        err_count  = _at(5)
+
+        # If a model is given, also respect per-model counters (so flash-lite
+        # exhaustion on this key doesn't disqualify pro requests, and vice
+        # versa). Use whichever is HIGHER — provider-aggregate or per-model.
+        if idx_model is not None:
+            rpm_used   = max(rpm_used,   _at(idx_model))
+            tpm_used   = max(tpm_used,   _at(idx_model + 1))
+            daily_used = max(daily_used, _at(idx_model + 2))
 
         if daily_used >= daily_limit:
             return -1.0
 
         # Monthly hard limit (only for providers that declare one, e.g. Cohere).
         monthly_avail = 1.0  # neutral when no monthly cap
-        m_limit = self._monthly_limit()
         if m_limit is not None:
-            monthly_used = int(await self.redis.get(self._monthly_key(h)) or 0)
+            monthly_used = _at(idx_monthly)
             if monthly_used >= m_limit:
                 logger.debug(
                     "[%s] key=%s monthly limit %d reached (%d used)",

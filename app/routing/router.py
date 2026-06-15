@@ -113,6 +113,28 @@ _DEFAULT_PROVIDER_ORDER: List[str] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Circuit breaker (P3 + F2, v1.21.0)
+# ---------------------------------------------------------------------------
+# Per (provider, model) breaker. After CIRCUIT_FAIL_THRESHOLD consecutive
+# ProviderErrors inside CIRCUIT_FAIL_WINDOW seconds, the pair's circuit
+# "opens" and the router skips it for CIRCUIT_OPEN_TTL seconds. This stops the
+# gateway from re-attempting a model that is reliably broken on every request
+# — e.g. a Pollinations model perpetually returning 402 (no balance) or an
+# NVIDIA model timing out — which previously burned latency on the hot path of
+# every single request. Rate-limit (429) failures do NOT trip the breaker:
+# they are a normal part of free-tier operation and are already handled by key
+# rotation and cooldowns.
+_CIRCUIT_FAIL_THRESHOLD = 3      # consecutive ProviderErrors before opening
+_CIRCUIT_FAIL_WINDOW    = 120    # seconds — window the failures must occur in
+_CIRCUIT_OPEN_TTL       = 300    # seconds — how long a tripped pair is skipped
+
+
+def _circuit_slug(model: str) -> str:
+    """Redis-safe slug for a model id (handles ``/`` and ``:`` separators)."""
+    return (model or "?").replace("/", "_").replace(":", "_").replace(" ", "_")
+
+
 class IntelligentRouter:
     """
     Routes ChatCompletion requests across providers and API-key accounts
@@ -339,6 +361,86 @@ class IntelligentRouter:
         return good + bad
 
     # ------------------------------------------------------------------
+    # Circuit breaker (P3 + F2)
+    # ------------------------------------------------------------------
+    def _circuit_fails_key(self, provider: str, model: str) -> str:
+        return f"arbiter:circuit:fails:{provider}:{_circuit_slug(model)}"
+
+    def _circuit_open_key(self, provider: str, model: str) -> str:
+        return f"arbiter:circuit:open:{provider}:{_circuit_slug(model)}"
+
+    async def _filter_open_circuits(
+        self, candidates: List[Tuple[str, str]]
+    ) -> List[Tuple[str, str]]:
+        """Drop ``(provider, model)`` pairs whose circuit is currently open.
+
+        Reads all the open-circuit flags in a single pipelined round-trip. If
+        *every* candidate is tripped, the breaker is bypassed for this request
+        (we return the original chain) so a fully-degraded fleet still gets an
+        attempt instead of an instant hard failure.
+        """
+        if not self.redis or not candidates:
+            return candidates
+        try:
+            pipe = self.redis.pipeline()
+            for p, m in candidates:
+                pipe.exists(self._circuit_open_key(p, m))
+            flags = await pipe.execute()
+        except Exception as exc:
+            logger.debug("circuit filter read error: %s", exc)
+            return candidates
+        open_pairs = {
+            (p, m) for (p, m), flag in zip(candidates, flags) if flag
+        }
+        if not open_pairs:
+            return candidates
+        filtered = [(p, m) for (p, m) in candidates if (p, m) not in open_pairs]
+        if not filtered:
+            logger.info(
+                "Circuit breaker: all %d candidate(s) tripped — bypassing "
+                "breaker for this request", len(candidates),
+            )
+            return candidates
+        logger.info(
+            "Circuit breaker skipped %d tripped candidate(s): %s",
+            len(open_pairs), sorted(open_pairs)[:5],
+        )
+        return filtered
+
+    async def _circuit_record_failure(self, provider: str, model: str) -> None:
+        """Count a hard failure; open the circuit once the threshold is hit."""
+        if not self.redis:
+            return
+        try:
+            fk = self._circuit_fails_key(provider, model)
+            # Anchor the window TTL to the first failure, then count up.
+            await self.redis.set(fk, 0, ex=_CIRCUIT_FAIL_WINDOW, nx=True)
+            fails = await self.redis.incr(fk)
+            if fails >= _CIRCUIT_FAIL_THRESHOLD:
+                await self.redis.set(
+                    self._circuit_open_key(provider, model), "1", ex=_CIRCUIT_OPEN_TTL
+                )
+                await self.redis.delete(fk)
+                logger.warning(
+                    "Circuit OPEN for %s/%s after %d consecutive failures — "
+                    "skipping it for %ds", provider, model, fails, _CIRCUIT_OPEN_TTL,
+                )
+        except Exception as exc:
+            logger.debug("circuit record-failure error: %s", exc)
+
+    async def _circuit_record_success(self, provider: str, model: str) -> None:
+        """Clear failure count + any open circuit when a pair succeeds."""
+        if not self.redis:
+            return
+        try:
+            await self.redis.delete(
+                self._circuit_fails_key(provider, model),
+                self._circuit_open_key(provider, model),
+            )
+        except Exception as exc:
+            logger.debug("circuit record-success error: %s", exc)
+
+    # ------------------------------------------------------------------
     # Shared prep — cache lookup + candidate-chain building
     # ------------------------------------------------------------------
     async def _prepare_route(
@@ -506,6 +608,11 @@ class IntelligentRouter:
             blocked_set = set(blocked_models)
             candidates = [(p, m) for (p, m) in candidates if m not in blocked_set]
 
+        # ── Circuit breaker: skip (provider, model) pairs that are reliably
+        # failing (P3 + F2). Applied last so it operates on the final chain;
+        # bypasses itself if it would empty the chain.
+        candidates = await self._filter_open_circuits(candidates)
+
         # Log with complexity analysis for observability
         complexity = analyze_complexity(request)
         logger.info(
@@ -648,6 +755,8 @@ class IntelligentRouter:
                         latency_ms=latency_ms,
                         token_id=token_id,
                     )
+                    # Healthy response — close any open circuit for this pair.
+                    await self._circuit_record_success(provider_name, model_name)
 
                     logger.info(
                         f"✓ {provider_name}/{model_name}  tokens={tokens_used}  "
@@ -717,6 +826,8 @@ class IntelligentRouter:
                                            provider_name, model_name, str(exc)[:120])
                         except Exception:
                             pass
+                    # Transient-but-persistent failure — feed the circuit breaker (P3 + F2).
+                    await self._circuit_record_failure(provider_name, model_name)
                     last_error = exc
                     break  # → next candidate
 
@@ -733,6 +844,7 @@ class IntelligentRouter:
                         error_message=str(exc),
                         rate_limited=False,
                     )
+                    await self._circuit_record_failure(provider_name, model_name)
                     last_error = exc
                     break
 
@@ -991,6 +1103,7 @@ class IntelligentRouter:
                                 error_type="ProviderError", error_message=str(exc),
                                 rate_limited=False,
                             )
+                            await self._circuit_record_failure(provider_name, model_name)
                             return
                         native_err = exc
                     except (asyncio.CancelledError, GeneratorExit):
@@ -1064,6 +1177,7 @@ class IntelligentRouter:
                         latency_ms=latency_ms,
                         token_id=token_id,
                     )
+                    await self._circuit_record_success(provider_name, model_name)
                     logger.info(
                         f"✓ [stream-native] {provider_name}/{model_name}  "
                         f"tokens={tokens_used}  latency={latency_ms}ms"
@@ -1157,6 +1271,7 @@ class IntelligentRouter:
                                            provider_name, model_name, str(exc)[:120])
                         except Exception:
                             pass
+                    await self._circuit_record_failure(provider_name, model_name)
                     last_error = exc
                     break  # next candidate
 
@@ -1168,6 +1283,7 @@ class IntelligentRouter:
                         error_type=type(exc).__name__, error_message=str(exc),
                         rate_limited=False,
                     )
+                    await self._circuit_record_failure(provider_name, model_name)
                     last_error = exc
                     break
 
@@ -1190,6 +1306,7 @@ class IntelligentRouter:
                     latency_ms=latency_ms,
                     token_id=token_id,
                 )
+                await self._circuit_record_success(provider_name, model_name)
                 logger.info(
                     f"✓ [stream] {provider_name}/{model_name}  tokens={tokens_used}  "
                     f"latency={latency_ms}ms"

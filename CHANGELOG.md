@@ -86,7 +86,46 @@ docker exec 556ac8df0f28_arbiter-redis-1 redis-cli KEYS 'arbiter:disabled:model:
 - **Cloudflare neuron budget** — 200/day is a safe approximation but may diverge on long prompts. Monitor `cloudflare:*:daily:*` Redis key; if mid-day 429s return, lower `daily` in `PROVIDER_LIMITS`.
 - **Cohere trial key** — 1000/month hard ceiling; once exhausted, unavailable until next calendar month.
 - **Model catalog drift** — models hardcoded in `_free_tier_catalog.py`; weekly health check auto-disables permanent failures but new models need manual additions.
-- **Dependabot** — 2 vulnerabilities (1 high, 1 moderate) on GitHub. Review when possible.
+- **Dependabot** — resolved in v1.21.0 (`python-multipart` 0.0.27, `PyJWT` 2.13.0, `authlib` 1.6.12; `pip-audit` clean).
+
+---
+
+## [1.21.0] – 2026-06-15 — Enterprise Hardening: Security, Performance & Reliability
+
+Comprehensive security + performance + reliability pass from a full enterprise-grade audit. **13 fixes** across the auth layer, provider transport, routing engine, cache, and dependencies. No request/response **schema** changes — but two **behaviour** changes affect integrators (see *Action Required* below).
+
+### ⚠️ Action Required for API Consumers
+
+Backward-compatible at the wire level (OpenAI-format request/response unchanged) but two runtime behaviours change. Integrated apps (OpenClaw, Hermes/Telegram bots, SDK clients) should be aware:
+
+1. **Cache key now incorporates `tools`, `tool_choice`, `response_format`, and `seed`.** Previously two requests with identical messages but different tool/JSON-mode settings could collide and return a wrong cached answer. After deploy, the cache effectively cold-starts (first-request misses are expected and self-heal within the hour). No client change required.
+2. **Per-token rate limiter is now fail-closed.** If Redis is unreachable, `/v1/*` returns **HTTP 429** (`Retry-After: 5`) instead of silently allowing the request. Verify your retry/backoff treats this transient 429 as retryable.
+3. **Circuit breaker may short-circuit reliably-failing models.** A `(provider, model)` pair returning 3 hard errors within 120 s is skipped for 5 min. Transparent — the router falls through to the next candidate; response shape never changes.
+
+### Security
+
+- **Constant-time gateway-token comparison** (`app/middleware/auth.py`) — `hmac.compare_digest` via new `_constant_time_match()`, closing a timing side-channel that could leak a valid token byte-by-byte.
+- **`.env` write injection hardening** (`app/api/keys_api.py`) — `_write_env_keys()` + `POST /api/providers/{name}/keys` reject newline/CR/comma in keys; `.env` rewrite uses a `re.sub` callable so backslash sequences can't be interpreted. Closes an authenticated-admin config-injection vector.
+- **DNS-aware SSRF guard on custom-provider probe + create** (`app/api/custom_providers_api.py`) — both routes now use the shared `_validate_base_url()` (rejects private/loopback/link-local/reserved IPs, IPv6-mapped IPv4, metadata hostnames; resolves the host). Replaces a weak string-match.
+- **UI-error rate limiter is Redis-backed + bounded** (`app/api/ui_errors_api.py`) — unauthenticated `/api/ui-error` now uses Redis `INCR`+`EXPIRE` keyed on the real (X-Forwarded-For) client IP, with a capped `OrderedDict` LRU fallback. Fixes the unbounded per-process dict / per-worker bypass.
+- **Fail-closed `/v1/*` rate limiter** (`app/middleware/auth.py`) — Redis errors now reject (429) instead of allowing unbounded traffic. See *Action Required #2*.
+- **Dependency CVE patches** (`requirements.txt`): `python-multipart` 0.0.26 → **0.0.27** (CVE-2026-42561), `PyJWT[crypto]` 2.12.0 → **2.13.0** (PYSEC-2026-175…179), `authlib` 1.6.11 → **1.6.12** (PYSEC-2026-188). `pip-audit` now reports **0 known vulnerabilities**.
+
+### Performance
+
+- **Process-wide pooled HTTP client** (`app/providers/base.py` + all 11 built-in providers + `app/api/chat.py`) — new `get_shared_async_client()` / `aclose_shared_async_client()` provide one keep-alive pool (200 max / 50 keepalive) reused everywhere; per-request timeouts preserved via `timeout=`. Eliminates a fresh TCP+TLS handshake per upstream call (~100-200 ms/call under concurrency) and ephemeral-port-exhaustion risk. `generic_openai.py` delegates to the same pool.
+- **Pipelined key scoring** (`app/key_management/key_pool.py`) — `_score_key()` batches its 6-11 Redis `GET`s into a **single pipelined round-trip** per key (was up to ~120 serial round-trips across fallback candidates), fail-open on Redis error.
+- **NVIDIA hot-path timeout 45 s → 25 s** (`app/providers/nvidia_provider.py`) — NVIDIA is first in the chain; an overloaded heavy model no longer dominates tail latency before fallback. Streaming keeps its longer ceiling.
+- **Non-blocking persistent-log writes** (`app/observability/persistent_log.py`) — the synchronous file append runs via `asyncio.to_thread`.
+
+### Reliability
+
+- **Circuit breaker per `(provider, model)`** (`app/routing/router.py`) — 3 consecutive `ProviderError`s within 120 s opens the circuit (Redis `arbiter:circuit:open:*`), skipped for 300 s. Stops re-attempting reliably-broken models (e.g. a Pollinations model perpetually returning 402, or an NVIDIA model timing out) on every request. **Rate-limit 429s never trip it.** Wired into both non-streaming and streaming loops; success closes the circuit; bypasses itself if every candidate is tripped. Complements the existing v1.20.2 permanent-error auto-disable (404/403).
+
+### Fixed
+
+- **Removed EOL `google/gemma-3-27b-it` from the NVIDIA catalog** (`app/providers/_free_tier_catalog.py`) — NVIDIA retired it 2026-05-12; upstream returned HTTP 410 Gone on every call (the most frequent error in the logs). The OpenRouter `:free` variant is a separate, live entry.
+- **Cache key correctness** (`app/cache/cache.py`) — `make_key()` now hashes `tools`, `tool_choice`, `response_format`, and `seed` via `_normalize_for_key()`. See *Action Required #1*.
 
 ---
 

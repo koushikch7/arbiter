@@ -412,16 +412,35 @@ def _read_env_key_tiers(provider: str) -> dict:
 
 
 def _write_env_keys(provider: str, keys: List[str]) -> None:
-    """Write the key list for a provider into .env (creates file if needed)."""
+    """Write the key list for a provider into .env (creates file if needed).
+
+    Hardening (S2, v1.21.0): each key is rejected if it contains a newline,
+    carriage return, or comma. Without this an authenticated admin could
+    inject arbitrary additional ``.env`` lines (e.g. overwrite
+    ``SESSION_SECRET_KEY`` or the S3 backup credentials) simply by submitting
+    a key value that embeds a newline. The ``re.sub`` replacement is also
+    performed via a callable so backslash sequences in the value (``\\1``,
+    ``\\g<0>``) can never be interpreted as group references.
+    """
     env_var = _ENV_VAR_MAP.get(provider)
     if not env_var:
         return
+    for k in keys:
+        if any(ch in k for ch in ("\n", "\r", ",")):
+            raise ValueError(
+                "API key contains forbidden characters (newline or comma)"
+            )
     env_file = _ensure_env_file()
     content = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
     value    = ",".join(keys)
     new_line = f"{env_var}={value}"
-    if re.search(rf"^{env_var}=", content, re.MULTILINE):
-        content = re.sub(rf"^{env_var}=.*$", new_line, content, flags=re.MULTILINE)
+    if re.search(rf"^{re.escape(env_var)}=", content, re.MULTILINE):
+        content = re.sub(
+            rf"^{re.escape(env_var)}=.*$",
+            lambda _m: new_line,
+            content,
+            flags=re.MULTILINE,
+        )
     else:
         content = content.rstrip("\n") + f"\n{new_line}\n"
     env_file.write_text(content, encoding="utf-8")
@@ -576,6 +595,10 @@ async def add_key(name: str, body: AddKeyBody, request: Request) -> JSONResponse
     k = body.key.strip()
     if not k:
         raise HTTPException(422, "Key cannot be empty")
+    # Reject control characters / delimiter so a key can never inject extra
+    # .env lines or break the comma-separated list (S2, v1.21.0).
+    if any(ch in k for ch in ("\n", "\r", ",")):
+        raise HTTPException(422, "Key contains forbidden characters (newline or comma)")
 
     existing = _read_env_keys(name)
     if k in existing:

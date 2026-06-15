@@ -29,7 +29,10 @@ from typing import List
 
 import httpx
 
-from app.providers.base import BaseProvider, RateLimitError, ProviderError, parse_retry_after
+from app.providers.base import (
+    BaseProvider, RateLimitError, ProviderError, parse_retry_after,
+    get_shared_async_client,
+)
 from app.models.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -88,11 +91,11 @@ class ZaiProvider(BaseProvider):
 
         logger.debug(f"ZaiProvider POST model={model}")
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            try:
-                resp = await client.post(ZAI_CHAT_URL, json=payload, headers=headers)
-            except httpx.RequestError as exc:
-                raise ProviderError(f"Z.ai network error: {exc}") from exc
+        client = get_shared_async_client()
+        try:
+            resp = await client.post(ZAI_CHAT_URL, json=payload, headers=headers, timeout=90.0)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"Z.ai network error: {exc}") from exc
 
         if resp.status_code == 429:
             raise RateLimitError(f"Z.ai 429: {resp.text[:300]}",

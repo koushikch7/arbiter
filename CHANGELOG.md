@@ -14,10 +14,9 @@ a single `/v1/chat/completions` endpoint. Intelligent routing by intent, complex
 and provider health — with automatic failover, rate-limit management, and model-level error tracking.
 
 **Live:** `https://arbiter.chkoushik.com` · Health: `GET /health` → `{"status":"ok","version":"..."}`
-**Server:** `oracle.chkoushik.com` · SSH: `ubuntu@oracle.chkoushik.com`
 **Container:** `arbiter-gateway-1` (Docker, host port 8080 → container 8000)
-**Redis:** `556ac8df0f28_arbiter-redis-1`
-**Source:** `/var/www/html/arbiter/` · GitHub: `github.com/koushikch7/arbiter` (branch: `master`)
+**Redis:** `arbiter-redis-1`
+**Source:** GitHub: `github.com/koushikch7/arbiter` (branch: `master`)
 **API docs:** `/docs` (Swagger) · `/redoc` · `/openapi.json` — auto-generated, always current
 
 ### Key Files
@@ -352,7 +351,7 @@ NVIDIA, OpenRouter, Cohere, Routeway, Z.ai unchanged. New `ollama` entry: 60 / 5
 
 - `get_key_tiers()` mapping was missing `nvidia`. Adding `#paid` to an NVIDIA key now correctly tags it as paid tier.
 
-### Smoke Tests (2026-05-26, live oracle.chkoushik.com)
+### Smoke Tests (2026-05-26, live production)
 
 | Test | Result | Notes |
 |---|---|---|

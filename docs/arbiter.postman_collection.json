@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "Arbiter — LLM Gateway API",
+    "description": "Official Postman collection for **Arbiter**, the self-hosted OpenAI-compatible LLM gateway (v1.21.0).\n\n## Setup\n1. Set the collection variable `base_url` to your instance (e.g. `http://localhost:8080` or `https://your-host`).\n2. Set `gateway_token` to a valid gateway token (from `GATEWAY_API_KEYS` in `.env`, or one minted at `/settings → Gateway Tokens`).\n3. All `/v1/*` requests inherit Bearer auth automatically.\n\n## Smart routing\nUse `\"model\": \"auto\"` to let Arbiter pick the best model by request complexity. Pin a provider with `?vendor=` or a model with `?force_model=`. Bias routing with the `X-Arbiter-Priority` header.\n\nRepo: https://github.com/koushikch7/arbiter",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{gateway_token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080", "type": "string" },
+    { "key": "gateway_token", "value": "gwtk_your_gateway_token", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Chat Completions",
+      "item": [
+        {
+          "name": "Chat — auto routing",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/v1/chat/completions", "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Explain the CAP theorem in two sentences.\" }\n  ],\n  \"temperature\": 0.7\n}"
+            },
+            "description": "Smart auto-routing: Arbiter classifies the request and selects the best free-tier model. The response `model` field and `X-Arbiter-Model-Used` header reveal the actual model used."
+          }
+        },
+        {
+          "name": "Chat — priority = quality",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Arbiter-Priority", "value": "quality" }
+            ],
+            "url": { "raw": "{{base_url}}/v1/chat/completions", "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Prove that the square root of 2 is irrational.\" }\n  ]\n}"
+            },
+            "description": "Bias routing toward higher-quality (larger) models. Values: speed | quality | balanced."
+          }
+        },
+        {
+          "name": "Chat — pin a provider (?vendor=)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/v1/chat/completions?vendor=cerebras",
+              "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"],
+              "query": [{ "key": "vendor", "value": "cerebras" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Say hello from Cerebras.\" }\n  ]\n}"
+            },
+            "description": "Force a specific provider first (gemini, groq, cerebras, cloudflare, nvidia, openrouter, cohere, ollama, routeway, huggingface, pollinations). Falls back to others on failure."
+          }
+        },
+        {
+          "name": "Chat — streaming (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" }
+            ],
+            "url": { "raw": "{{base_url}}/v1/chat/completions", "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"stream\": true,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Count from one to five.\" }\n  ]\n}"
+            },
+            "description": "Server-Sent Events stream of `chat.completion.chunk` objects, terminated by `data: [DONE]`."
+          }
+        },
+        {
+          "name": "Chat — real-time web search",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Arbiter-Realtime", "value": "true" }
+            ],
+            "url": { "raw": "{{base_url}}/v1/chat/completions", "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"What was the result of the latest SpaceX launch?\" }\n  ]\n}"
+            },
+            "description": "Grounds the answer in live Tavily web results with numbered citations. Source URLs returned in `X-Arbiter-Realtime-Sources` header and `x_arbiter.realtime_sources`."
+          }
+        },
+        {
+          "name": "Chat — tool calling",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/v1/chat/completions", "host": ["{{base_url}}"], "path": ["v1", "chat", "completions"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"What is the weather in Paris?\" }\n  ],\n  \"tools\": [\n    {\n      \"type\": \"function\",\n      \"function\": {\n        \"name\": \"get_weather\",\n        \"description\": \"Get current weather for a city\",\n        \"parameters\": {\n          \"type\": \"object\",\n          \"properties\": { \"city\": { \"type\": \"string\" } },\n          \"required\": [\"city\"]\n        }\n      }\n    }\n  ]\n}"
+            },
+            "description": "Pass an OpenAI-format `tools` array — Arbiter auto-routes to tool-capable providers (groq, nvidia, openrouter, cerebras, ollama) and forwards the definitions."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "item": [
+        {
+          "name": "List models",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/v1/models", "host": ["{{base_url}}"], "path": ["v1", "models"] },
+            "description": "OpenAI-compatible model list across all configured providers."
+          }
+        },
+        {
+          "name": "List image models",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/v1/images/models", "host": ["{{base_url}}"], "path": ["v1", "images", "models"] },
+            "description": "Available image-generation models and supported sizes."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "item": [
+        {
+          "name": "Generate image (free)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/v1/images/generations", "host": ["{{base_url}}"], "path": ["v1", "images", "generations"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"a serene mountain lake at sunrise, photorealistic\",\n  \"n\": 1,\n  \"size\": \"1024x1024\"\n}"
+            },
+            "description": "Free image generation via Pollinations.ai — no provider key required."
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+            "description": "Liveness probe — returns status, provider list, Redis connectivity, and version. No auth required."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (token & provider management)",
+      "description": "Admin endpoints. When Google SSO is enabled these require a signed session cookie (use the browser UI). With token-only auth they accept the gateway Bearer token.",
+      "item": [
+        {
+          "name": "List providers",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/providers", "host": ["{{base_url}}"], "path": ["api", "providers"] },
+            "description": "All providers with status, key counts, and pool stats."
+          }
+        },
+        {
+          "name": "Add a provider key",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/providers/gemini/keys", "host": ["{{base_url}}"], "path": ["api", "providers", "gemini", "keys"] },
+            "body": { "mode": "raw", "raw": "{\n  \"key\": \"AIzaSy...your-key\"\n}" },
+            "description": "Add a provider API key at runtime (written to .env, auto-tested). Replace `gemini` with any provider name."
+          }
+        },
+        {
+          "name": "List gateway tokens",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/gateway/tokens", "host": ["{{base_url}}"], "path": ["api", "gateway", "tokens"] },
+            "description": "List named gateway tokens with their routing policies and rate limits."
+          }
+        },
+        {
+          "name": "Create gateway token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/gateway/tokens", "host": ["{{base_url}}"], "path": ["api", "gateway", "tokens"] },
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"my-app\",\n  \"request_limit_per_minute\": 100,\n  \"routing_policy\": \"auto\"\n}" },
+            "description": "Mint a new named gateway token. Optional: per-token rate limit, routing policy (auto|restricted|preferred), allowed/blocked models."
+          }
+        },
+        {
+          "name": "Analytics data (JSON)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/data?win=1h",
+              "host": ["{{base_url}}"], "path": ["analytics", "data"],
+              "query": [{ "key": "win", "value": "1h", "description": "1h | 4h | 24h | 7d | 30d | 90d" }]
+            },
+            "description": "Real-time analytics payload: KPIs, rolling rates, in-flight gauge, recent activity, per-provider/model stats."
+          }
+        }
+      ]
+    }
+  ]
+}

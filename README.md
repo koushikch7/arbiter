@@ -1,5 +1,15 @@
 # Arbiter – Intelligent LLM Router & Gateway
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-compatible-412991?logo=openai&logoColor=white)](#-openai-compatible-api)
+[![Version](https://img.shields.io/badge/version-1.21.0-6366f1.svg)](CHANGELOG.md)
+
+> 🌐 **Website / docs:** **https://koushikch7.github.io/arbiter/** &nbsp;·&nbsp; 📮 [Postman collection](docs/arbiter.postman_collection.json) &nbsp;·&nbsp; 📖 [User Guide](USERGUIDE.md)
+
 A self-hosted, production-ready gateway that aggregates **12+ LLM providers** (plus unlimited custom OpenAI-compatible endpoints) behind a **single OpenAI-compatible endpoint**. Intelligently routes requests across providers and accounts using **complexity-aware scoring, model hierarchies, predictive rate limiting, and automatic fallback**.
 
 Designed for **multi-agent frameworks** like OpenClaw that generate concurrent bursts of requests — maximizes free-tier quota usage and prevents rate-limit bottlenecks.

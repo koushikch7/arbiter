@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Arbiter — Intelligent LLM Router &amp; Gateway</title>
+<meta name="description" content="Arbiter is a self-hosted, OpenAI-compatible LLM gateway that aggregates 11+ free-tier providers behind one endpoint with complexity-aware routing, weighted key rotation, model fallback, Redis caching, a circuit breaker, real-time web search, and a full observability dashboard." />
+<meta name="keywords" content="llm gateway, openai-compatible, llm router, ai gateway, free tier llm, gemini, groq, cloudflare workers ai, cerebras, openrouter, self-hosted, fastapi, redis" />
+<meta name="author" content="koushikch7" />
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Arbiter — Intelligent LLM Router &amp; Gateway" />
+<meta property="og:description" content="One OpenAI-compatible endpoint. 11+ free-tier providers. Complexity-aware routing, key rotation, fallback, caching, circuit breaker, web search & observability — fully self-hosted." />
+<meta property="og:url" content="https://koushikch7.github.io/arbiter/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Arbiter — Intelligent LLM Router &amp; Gateway" />
+<meta name="twitter:description" content="One OpenAI-compatible endpoint. 11+ free-tier providers. Self-hosted, observable, production-ready." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%96%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0e1a; --bg2:#0f1525; --card:#141b2e; --card2:#1a2236;
+    --border:#243049; --border2:#2e3b58;
+    --txt:#e6ecf7; --muted:#9aa8c4; --dim:#6b7896;
+    --brand:#6366f1; --brand2:#8b5cf6; --accent:#22d3ee;
+    --green:#34d399; --amber:#fbbf24; --red:#f87171;
+    --radius:14px; --maxw:1160px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.88em}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  .muted{color:var(--muted)} .dim{color:var(--dim)}
+
+  /* ---------- nav ---------- */
+  header.nav{position:sticky;top:0;z-index:50;background:rgba(10,14,26,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;align-items:center;gap:18px;height:60px}
+  .logo{font-weight:800;font-size:1.18rem;letter-spacing:-.02em;display:flex;align-items:center;gap:9px}
+  .logo .v{font-size:.62rem;font-weight:700;color:var(--brand2);border:1px solid var(--border2);border-radius:20px;padding:2px 8px;margin-left:4px}
+  .nav-links{display:flex;gap:22px;margin-left:auto;align-items:center}
+  .nav-links a{color:var(--muted);font-size:.92rem;font-weight:500}
+  .nav-links a:hover{color:var(--txt);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:9px 16px;font-weight:600;font-size:.9rem;cursor:pointer;border:1px solid transparent;transition:.15s}
+  .btn-primary{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}
+  .btn-primary:hover{filter:brightness(1.1);text-decoration:none}
+  .btn-ghost{background:var(--card);border-color:var(--border2);color:var(--txt)}
+  .btn-ghost:hover{background:var(--card2);text-decoration:none}
+  @media(max-width:860px){.nav-links a:not(.btn){display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;overflow:hidden;padding:78px 0 56px;border-bottom:1px solid var(--border)}
+  .hero::before{content:"";position:absolute;inset:0;background:
+    radial-gradient(1100px 480px at 72% -8%,rgba(99,102,241,.20),transparent 60%),
+    radial-gradient(800px 420px at 8% 12%,rgba(34,211,238,.12),transparent 60%);pointer-events:none}
+  .hero-grid{position:relative;display:grid;grid-template-columns:1.15fr .85fr;gap:46px;align-items:center}
+  @media(max-width:900px){.hero-grid{grid-template-columns:1fr;gap:30px}}
+  .badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .pill{font-size:.74rem;font-weight:600;padding:5px 11px;border-radius:30px;border:1px solid var(--border2);background:var(--card);color:var(--muted)}
+  .pill.live{color:var(--green);border-color:rgba(52,211,153,.35)}
+  .pill.live::before{content:"●";margin-right:6px;font-size:.7em;vertical-align:middle}
+  h1.title{font-size:clamp(2.1rem,5vw,3.5rem);font-weight:850;line-height:1.05;letter-spacing:-.03em;margin-bottom:18px}
+  h1.title .grad{background:linear-gradient(120deg,var(--accent),var(--brand2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lead{font-size:1.16rem;color:var(--muted);max-width:38em;margin-bottom:28px}
+  .cta{display:flex;flex-wrap:wrap;gap:12px}
+  .hero-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 24px 60px -28px rgba(0,0,0,.7)}
+  .hero-card .bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:var(--card2);border-bottom:1px solid var(--border)}
+  .hero-card .bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .dot-r{background:#ff5f57}.dot-y{background:#febc2e}.dot-g{background:#28c840}
+  .hero-card .bar span{margin-left:8px;font-size:.78rem;color:var(--dim);font-family:var(--mono)}
+  .hero-card pre{margin:0;padding:18px;font-family:var(--mono);font-size:.82rem;line-height:1.7;overflow-x:auto}
+  .tk-com{color:var(--dim)} .tk-key{color:var(--brand2)} .tk-str{color:var(--green)} .tk-fn{color:var(--accent)} .tk-var{color:#f0a868}
+
+  /* ---------- stat strip ---------- */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:46px 0}
+  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--card);padding:22px 18px;text-align:center}
+  .stat b{display:block;font-size:1.8rem;font-weight:800;background:linear-gradient(120deg,var(--accent),var(--brand2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stat span{font-size:.82rem;color:var(--muted)}
+
+  /* ---------- sections ---------- */
+  section{padding:64px 0;border-bottom:1px solid var(--border)}
+  .sec-head{text-align:center;max-width:42em;margin:0 auto 44px}
+  .kicker{font-size:.78rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--brand2)}
+  h2{font-size:clamp(1.6rem,3.4vw,2.3rem);font-weight:800;letter-spacing:-.02em;margin:10px 0 12px}
+  .sec-head p{color:var(--muted);font-size:1.05rem}
+
+  .grid{display:grid;gap:18px}
+  .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:900px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:620px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  .feature{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:.18s}
+  .feature:hover{border-color:var(--border2);transform:translateY(-3px);background:var(--card2)}
+  .feature .ic{font-size:1.5rem;margin-bottom:12px}
+  .feature h3{font-size:1.05rem;font-weight:700;margin-bottom:7px}
+  .feature p{font-size:.92rem;color:var(--muted)}
+
+  /* ---------- how it works ---------- */
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:stretch}
+  @media(max-width:860px){.flow{grid-template-columns:1fr 1fr}}
+  .flow .step{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative}
+  .flow .step b{display:block;color:var(--accent);font-size:.74rem;font-weight:700;margin-bottom:6px}
+  .flow .step h4{font-size:.96rem;margin-bottom:5px}
+  .flow .step p{font-size:.84rem;color:var(--muted)}
+
+  /* ---------- tables ---------- */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+  table{width:100%;border-collapse:collapse;font-size:.9rem;min-width:560px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--border)}
+  th{background:var(--card2);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td code{background:var(--bg2);padding:2px 7px;border-radius:6px;border:1px solid var(--border)}
+  .tag{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 9px;border-radius:20px}
+  .tag.get{background:rgba(52,211,153,.14);color:var(--green)}
+  .tag.post{background:rgba(99,102,241,.16);color:#a5b4fc}
+  .tag.del{background:rgba(248,113,113,.14);color:var(--red)}
+  .tag.patch{background:rgba(251,191,36,.14);color:var(--amber)}
+  .tag.free{background:rgba(52,211,153,.14);color:var(--green)}
+
+  /* ---------- code tabs ---------- */
+  .codebox{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .tabs{display:flex;gap:2px;background:var(--card2);border-bottom:1px solid var(--border);padding:0 6px}
+  .tab{padding:11px 16px;font-size:.86rem;font-weight:600;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.active{color:var(--txt);border-bottom-color:var(--brand2)}
+  .tab:hover{color:var(--txt)}
+  .panel{display:none;position:relative}
+  .panel.active{display:block}
+  .panel pre{margin:0;padding:20px;font-family:var(--mono);font-size:.82rem;line-height:1.7;overflow-x:auto}
+  .copy{position:absolute;top:10px;right:10px;background:var(--bg2);border:1px solid var(--border2);color:var(--muted);border-radius:7px;padding:5px 11px;font-size:.74rem;cursor:pointer;font-weight:600}
+  .copy:hover{color:var(--txt);background:var(--card2)}
+
+  .note{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(34,211,238,.05));border:1px solid var(--border2);border-left:3px solid var(--brand2);border-radius:10px;padding:14px 18px;font-size:.92rem;color:var(--muted);margin:18px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:760px){.two{grid-template-columns:1fr}}
+  ul.clean{list-style:none}
+  ul.clean li{padding:7px 0;padding-left:26px;position:relative;color:var(--muted);font-size:.95rem}
+  ul.clean li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+
+  /* ---------- footer ---------- */
+  footer{padding:46px 0 40px;text-align:center;color:var(--dim);font-size:.88rem}
+  footer .flinks{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+  footer a{color:var(--muted)}
+  .anchor{scroll-margin-top:74px}
+</style>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <div class="logo">⚖️ Arbiter <span class="v">v1.21.0</span></div>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#providers">Providers</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#api">API</a>
+      <a href="#guide">Guide</a>
+      <a class="btn btn-ghost" href="https://github.com/koushikch7/arbiter" target="_blank" rel="noopener">★ GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ===================== HERO ===================== -->
+<div class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="badge-row">
+        <span class="pill live">OpenAI-compatible</span>
+        <span class="pill">⚡ 11+ providers</span>
+        <span class="pill">🧠 Complexity-aware routing</span>
+        <span class="pill">🔒 Self-hosted</span>
+      </div>
+      <h1 class="title">One endpoint for <span class="grad">every free-tier LLM</span>.</h1>
+      <p class="lead">
+        Arbiter is a self-hosted, production-ready gateway that aggregates <strong>11+ LLM providers</strong>
+        behind a single OpenAI-compatible API. It routes each request to the best model using
+        complexity analysis, rotates keys across accounts, falls back automatically, caches responses,
+        and gives you a real-time observability dashboard — so you maximise free quota and never hit a wall.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#quickstart">🚀 Get started</a>
+        <a class="btn btn-ghost" href="#api">📖 API reference</a>
+        <a class="btn btn-ghost" href="arbiter.postman_collection.json" download>⬇ Postman collection</a>
+      </div>
+    </div>
+    <div class="hero-card">
+      <div class="bar"><i class="dot-r"></i><i class="dot-y"></i><i class="dot-g"></i><span>drop-in replacement</span></div>
+<pre><span class="tk-com"># Point any OpenAI SDK at Arbiter</span>
+<span class="tk-key">from</span> openai <span class="tk-key">import</span> OpenAI
+
+client = <span class="tk-fn">OpenAI</span>(
+    base_url=<span class="tk-str">"https://your-host/v1"</span>,
+    api_key=<span class="tk-str">"gwtk_your_gateway_token"</span>,
+)
+
+resp = client.chat.completions.<span class="tk-fn">create</span>(
+    model=<span class="tk-str">"auto"</span>,   <span class="tk-com"># Arbiter picks the best model</span>
+    messages=[{<span class="tk-str">"role"</span>:<span class="tk-str">"user"</span>,
+               <span class="tk-str">"content"</span>:<span class="tk-str">"Explain quantum tunnelling"</span>}],
+)
+<span class="tk-fn">print</span>(resp.choices[<span class="tk-var">0</span>].message.content)
+<span class="tk-com"># → routed to gemini / groq / cerebras / … automatically</span></pre>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- ===================== STATS ===================== -->
+  <div class="stats">
+    <div class="stat"><b>11+</b><span>LLM providers aggregated</span></div>
+    <div class="stat"><b>1</b><span>OpenAI-compatible endpoint</span></div>
+    <div class="stat"><b>5-level</b><span>fallback &amp; key rotation</span></div>
+    <div class="stat"><b>100%</b><span>self-hosted &amp; free-tier first</span></div>
+  </div>
+</div>
+
+<!-- ===================== FEATURES ===================== -->
+<section id="features" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Capabilities</div>
+      <h2>Everything a gateway should do — and more</h2>
+      <p>Built for multi-agent workloads that burst concurrent requests. Arbiter squeezes the most out of free tiers while staying observable and resilient.</p>
+    </div>
+    <div class="grid g3">
+      <div class="feature"><div class="ic">🧠</div><h3>Complexity-aware routing</h3><p>Every request is scored TRIVIAL→EXPERT. Hard prompts go to 120B–671B flagships; trivial ones to fast 7B models — matching capability to cost automatically.</p></div>
+      <div class="feature"><div class="ic">⚖️</div><h3>Weighted key rotation</h3><p>Multiple accounts per provider, scored in real time by remaining RPM / TPM / daily / monthly quota. Load spreads to the key with the most headroom.</p></div>
+      <div class="feature"><div class="ic">🔁</div><h3>Two-level fallback</h3><p>Key → model hierarchy → cross-vendor. A failure on one account or model transparently cascades to the next until the request succeeds.</p></div>
+      <div class="feature"><div class="ic">🚦</div><h3>Circuit breaker</h3><p>A provider/model that fails repeatedly is skipped for 5 minutes — so a reliably-broken upstream never burns latency on every request. Rate-limits never trip it.</p></div>
+      <div class="feature"><div class="ic">⚡</div><h3>Predictive rate-limiting</h3><p>Keys are skipped at ~85–95% of quota so the router routes <em>around</em> exhaustion before a 429 ever reaches you. Retry-after-aware cooldowns.</p></div>
+      <div class="feature"><div class="ic">🗜️</div><h3>Redis response cache</h3><p>Deterministic requests (temp ≤ 0.3) are cached &amp; gzip-compressed. Cache key includes tools / response_format / seed so tool &amp; JSON-mode calls never collide.</p></div>
+      <div class="feature"><div class="ic">🌐</div><h3>Real-time web search</h3><p>Opt-in <code>X-Arbiter-Realtime</code> header grounds answers in live Tavily results with numbered citations + Gemini Google-Search grounding.</p></div>
+      <div class="feature"><div class="ic">🛠️</div><h3>Native tool calling</h3><p>Pass an OpenAI <code>tools</code> array — Arbiter auto-routes to tool-capable providers and forwards function definitions verbatim.</p></div>
+      <div class="feature"><div class="ic">📊</div><h3>Real-time observability</h3><p>Dashboards for per-provider health, per-key quota gauges, latency percentiles, token spend, anomaly detection, and a 180-day audit log.</p></div>
+      <div class="feature"><div class="ic">🔐</div><h3>Enterprise auth</h3><p>Google SSO with admin approval for the UI; per-token Bearer auth for the API with named tokens, routing policies, model allow/block lists, and rate caps.</p></div>
+      <div class="feature"><div class="ic">🎨</div><h3>Free image generation</h3><p>Built-in <code>/v1/images/generations</code> via Pollinations — no key required — plus a UI gallery.</p></div>
+      <div class="feature"><div class="ic">🧩</div><h3>Bring your own provider</h3><p>Add any OpenAI- or Anthropic-compatible endpoint from the UI with a DNS-aware SSRF guard. Live model discovery included.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section id="how" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Architecture</div>
+      <h2>How a request flows</h2>
+      <p>From your OpenAI SDK call to the chosen upstream model — with caching, scoring, and fallback at every hop.</p>
+    </div>
+    <div class="flow">
+      <div class="step"><b>STEP 1</b><h4>Authenticate</h4><p>Bearer gateway-token check (constant-time) + per-token sliding-window rate limit.</p></div>
+      <div class="step"><b>STEP 2</b><h4>Cache &amp; classify</h4><p>Redis cache lookup, then complexity + intent classification of the prompt.</p></div>
+      <div class="step"><b>STEP 3</b><h4>Build chain</h4><p>Candidate (provider, model) list ordered by capability, health &amp; quota — circuit-broken pairs skipped.</p></div>
+      <div class="step"><b>STEP 4</b><h4>Score &amp; route</h4><p>Best key chosen by weighted availability; request sent over a pooled HTTP client.</p></div>
+      <div class="step"><b>STEP 5</b><h4>Fallback or return</h4><p>On failure, rotate key → next model → next vendor. On success, cache &amp; record stats.</p></div>
+    </div>
+    <div class="note">⚙️ <strong>Stack:</strong> Python 3.12 · FastAPI · Redis 7 · Docker Compose. Two containers (<code>gateway</code> + <code>redis</code>), one <code>.env</code>, port 8080. Background schedulers handle backups (S3), weekly model-health probes, daily email reports, and 180-day log retention.</div>
+  </div>
+</section>
+
+<!-- ===================== PROVIDERS ===================== -->
+<section id="providers" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Coverage</div>
+      <h2>11+ providers, free-tier first</h2>
+      <p>Mix and match unlimited accounts per provider. Overlapping models sum their rate limits for additive capacity.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Provider</th><th>Highlights</th><th>Free tier</th><th>Context</th></tr></thead>
+        <tbody>
+          <tr><td><strong>NVIDIA NIM</strong></td><td>Nemotron-3-Super 120B, Llama-3.3-70B, Mistral-Medium-3.5</td><td><span class="tag free">40 RPM · 1k RPD</span></td><td>131K</td></tr>
+          <tr><td><strong>Google Gemini</strong></td><td>3.1 Flash-Lite / Flash, Google-Search grounding, <code>#paid</code> tier tagging</td><td><span class="tag free">15 RPM · 1k RPD</span></td><td>1M</td></tr>
+          <tr><td><strong>Groq</strong></td><td>Llama 3.1/3.3, Llama 4 Scout, Kimi K2, GPT-OSS — fastest tokens/sec</td><td><span class="tag free">30 RPM · 14.4k RPD</span></td><td>131K</td></tr>
+          <tr><td><strong>Cerebras</strong></td><td>Llama 3.1/3.3, Qwen-3 235B, GLM-4.7 — ultra-fast inference</td><td><span class="tag free">5 RPM · 1M TPD</span></td><td>8K+</td></tr>
+          <tr><td><strong>Cloudflare Workers AI</strong></td><td>Llama 4 Scout, GPT-OSS, Qwen, DeepSeek-R1, Gemma — 300 RPM</td><td><span class="tag free">300 RPM</span></td><td>256K</td></tr>
+          <tr><td><strong>OpenRouter</strong></td><td>Curated <code>:free</code> models across many upstreams, <code>:online</code> opt-in</td><td><span class="tag free">20 RPM</span></td><td>131K</td></tr>
+          <tr><td><strong>Cohere</strong></td><td>Command-R / Command-A family, monthly-quota aware</td><td><span class="tag free">trial</span></td><td>256K</td></tr>
+          <tr><td><strong>Ollama Cloud</strong></td><td>Free <code>:cloud</code> models — gpt-oss, deepseek, glm, qwen3-coder, kimi</td><td><span class="tag free">60 RPM · 5k RPD</span></td><td>131K</td></tr>
+          <tr><td><strong>Routeway</strong></td><td>Unified gateway, 15 <code>:free</code> models seeded; paid opt-in</td><td><span class="tag free">free + paid</span></td><td>256K</td></tr>
+          <tr><td><strong>HuggingFace</strong></td><td>Inference router — open-weight models</td><td><span class="tag free">free credits</span></td><td>32K</td></tr>
+          <tr><td><strong>Pollinations</strong></td><td>Text + free image generation (anonymous tier works)</td><td><span class="tag free">free</span></td><td>131K</td></tr>
+          <tr><td><strong>Z.ai / Zhipu</strong></td><td>GLM-4.7 / 4.5 Flash (optional, configurable)</td><td><span class="tag free">free</span></td><td>128K</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== QUICK START ===================== -->
+<section id="quickstart" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Get running in 3 minutes</div>
+      <h2>Quick start</h2>
+      <p>One command to clone, one to configure, one to launch. Docker does the rest.</p>
+    </div>
+    <div class="codebox">
+      <div class="tabs">
+        <div class="tab active" data-t="qs-docker">🐳 Docker (recommended)</div>
+        <div class="tab" data-t="qs-env">⚙️ Configure .env</div>
+        <div class="tab" data-t="qs-verify">✅ Verify</div>
+      </div>
+      <div class="panel active" id="qs-docker">
+        <button class="copy">Copy</button>
+<pre><span class="tk-com"># 1. Clone</span>
+git clone https://github.com/koushikch7/arbiter.git &amp;&amp; cd arbiter
+
+<span class="tk-com"># 2. Configure (add at least one provider key)</span>
+cp .env.example .env
+nano .env
+
+<span class="tk-com"># 3. Launch (gateway + redis)</span>
+docker compose up -d --build
+
+<span class="tk-com"># Open the dashboard</span>
+open http://localhost:8080/dashboard</pre>
+      </div>
+      <div class="panel" id="qs-env">
+        <button class="copy">Copy</button>
+<pre><span class="tk-com"># Minimum: one provider key + a gateway token.</span>
+<span class="tk-com"># Add one or more keys per provider, comma-separated.</span>
+
+GEMINI_API_KEYS=AIzaSy...your-key
+GROQ_API_KEYS=gsk_...your-key
+CEREBRAS_API_KEYS=csk-...your-key
+
+<span class="tk-com"># Protect the API (comma-separated list of valid Bearer tokens)</span>
+GATEWAY_API_KEYS=gwtk_choose_a_strong_token
+
+<span class="tk-com"># Optional: Google SSO for the admin UI, SMTP, S3 backups…</span>
+<span class="tk-com"># See .env.example for the full list.</span></pre>
+      </div>
+      <div class="panel" id="qs-verify">
+        <button class="copy">Copy</button>
+<pre><span class="tk-com"># Health check</span>
+curl http://localhost:8080/health
+<span class="tk-com"># → {"status":"ok","providers":[...],"version":"1.21.0"}</span>
+
+<span class="tk-com"># First completion</span>
+curl http://localhost:8080/v1/chat/completions \
+  -H <span class="tk-str">"Authorization: Bearer gwtk_your_token"</span> \
+  -H <span class="tk-str">"Content-Type: application/json"</span> \
+  -d <span class="tk-str">'{"model":"auto","messages":[{"role":"user","content":"Hello!"}]}'</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== API ===================== -->
+<section id="api" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Developer reference</div>
+      <h2>API endpoints</h2>
+      <p>A drop-in OpenAI surface plus Arbiter extensions. Authenticate every <code>/v1/*</code> call with <code>Authorization: Bearer &lt;gateway-token&gt;</code>.</p>
+    </div>
+
+    <h3 style="margin:0 0 14px;font-size:1.1rem">Core OpenAI-compatible API</h3>
+    <div class="tbl-wrap" style="margin-bottom:30px">
+      <table>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag post">POST</span></td><td><code>/v1/chat/completions</code></td><td>Chat completion (streaming &amp; non-streaming). Smart auto-routing.</td></tr>
+          <tr><td><span class="tag get">GET</span></td><td><code>/v1/models</code></td><td>List all available models across providers.</td></tr>
+          <tr><td><span class="tag post">POST</span></td><td><code>/v1/images/generations</code></td><td>Generate images (free via Pollinations).</td></tr>
+          <tr><td><span class="tag get">GET</span></td><td><code>/v1/images/models</code></td><td>List image-generation models &amp; sizes.</td></tr>
+          <tr><td><span class="tag get">GET</span></td><td><code>/health</code></td><td>Health + provider list + version (no auth).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:0 0 14px;font-size:1.1rem">Arbiter request controls</h3>
+    <div class="tbl-wrap" style="margin-bottom:30px">
+      <table>
+        <thead><tr><th>Header</th><th>Body field</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>X-Arbiter-Priority</code></td><td><code>metadata.priority</code></td><td><code>speed</code> | <code>quality</code> | <code>balanced</code> — scoring bias</td></tr>
+          <tr><td><code>X-Arbiter-Prefer-Provider</code></td><td><code>metadata.prefer_provider</code></td><td>Boost a provider in auto routing</td></tr>
+          <tr><td><code>X-Arbiter-Fallback</code></td><td><code>fallback</code></td><td><code>none</code> | <code>same_provider</code> | <code>chain</code></td></tr>
+          <tr><td><code>X-Arbiter-Realtime</code></td><td><code>metadata.realtime</code></td><td><code>true</code> → Tavily web search + OpenRouter <code>:online</code></td></tr>
+          <tr><td colspan="2"><code>?vendor=</code> &nbsp;/&nbsp; <code>?force_model=</code> (query)</td><td>Pin a provider or exact model, bypassing auto-routing</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:0 0 14px;font-size:1.1rem">Response headers &amp; <code>x_arbiter</code> block</h3>
+    <div class="tbl-wrap" style="margin-bottom:30px">
+      <table>
+        <thead><tr><th>Header</th><th>Body field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>X-Arbiter-Model-Used</code></td><td><code>x_arbiter.provider/model</code></td><td>Provider &amp; model that actually served the request</td></tr>
+          <tr><td><code>X-Arbiter-Complexity</code></td><td><code>x_arbiter.complexity</code></td><td>TRIVIAL | SIMPLE | MODERATE | COMPLEX | EXPERT</td></tr>
+          <tr><td><code>X-Arbiter-Realtime-Sources</code></td><td><code>x_arbiter.realtime_sources</code></td><td>Source URLs when web search is on</td></tr>
+          <tr><td><code>X-RateLimit-Limit/Remaining</code></td><td>—</td><td>Per-token rate-limit state</td></tr>
+          <tr><td><code>Retry-After</code></td><td>—</td><td>Seconds until quota reset (on HTTP 429)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:0 0 14px;font-size:1.1rem">Examples</h3>
+    <div class="codebox">
+      <div class="tabs">
+        <div class="tab active" data-t="ex-curl">cURL</div>
+        <div class="tab" data-t="ex-py">Python (OpenAI SDK)</div>
+        <div class="tab" data-t="ex-js">Node.js</div>
+        <div class="tab" data-t="ex-stream">Streaming</div>
+        <div class="tab" data-t="ex-search">Web search</div>
+      </div>
+      <div class="panel active" id="ex-curl"><button class="copy">Copy</button>
+<pre>curl https://your-host/v1/chat/completions \
+  -H <span class="tk-str">"Authorization: Bearer gwtk_your_token"</span> \
+  -H <span class="tk-str">"Content-Type: application/json"</span> \
+  -H <span class="tk-str">"X-Arbiter-Priority: quality"</span> \
+  -d <span class="tk-str">'{
+    "model": "auto",
+    "messages": [{"role":"user","content":"Write a haiku about routing"}],
+    "temperature": 0.7
+  }'</span></pre></div>
+      <div class="panel" id="ex-py"><button class="copy">Copy</button>
+<pre><span class="tk-key">from</span> openai <span class="tk-key">import</span> OpenAI
+client = <span class="tk-fn">OpenAI</span>(base_url=<span class="tk-str">"https://your-host/v1"</span>, api_key=<span class="tk-str">"gwtk_your_token"</span>)
+
+resp = client.chat.completions.<span class="tk-fn">create</span>(
+    model=<span class="tk-str">"auto"</span>,
+    messages=[{<span class="tk-str">"role"</span>:<span class="tk-str">"user"</span>,<span class="tk-str">"content"</span>:<span class="tk-str">"Summarise the CAP theorem"</span>}],
+    extra_headers={<span class="tk-str">"X-Arbiter-Priority"</span>:<span class="tk-str">"balanced"</span>},
+)
+<span class="tk-fn">print</span>(resp.model)            <span class="tk-com"># actual model used</span>
+<span class="tk-fn">print</span>(resp.choices[<span class="tk-var">0</span>].message.content)</pre></div>
+      <div class="panel" id="ex-js"><button class="copy">Copy</button>
+<pre><span class="tk-key">import</span> OpenAI <span class="tk-key">from</span> <span class="tk-str">"openai"</span>;
+<span class="tk-key">const</span> client = <span class="tk-key">new</span> <span class="tk-fn">OpenAI</span>({
+  baseURL: <span class="tk-str">"https://your-host/v1"</span>,
+  apiKey:  <span class="tk-str">"gwtk_your_token"</span>,
+});
+
+<span class="tk-key">const</span> r = <span class="tk-key">await</span> client.chat.completions.<span class="tk-fn">create</span>({
+  model: <span class="tk-str">"auto"</span>,
+  messages: [{ role: <span class="tk-str">"user"</span>, content: <span class="tk-str">"Explain event loops"</span> }],
+});
+console.<span class="tk-fn">log</span>(r.choices[<span class="tk-var">0</span>].message.content);</pre></div>
+      <div class="panel" id="ex-stream"><button class="copy">Copy</button>
+<pre>curl -N https://your-host/v1/chat/completions \
+  -H <span class="tk-str">"Authorization: Bearer gwtk_your_token"</span> \
+  -H <span class="tk-str">"Content-Type: application/json"</span> \
+  -d <span class="tk-str">'{
+    "model": "auto",
+    "stream": true,
+    "messages": [{"role":"user","content":"Count to five"}]
+  }'</span>
+<span class="tk-com"># → Server-Sent Events: chat.completion.chunk … data: [DONE]</span></pre></div>
+      <div class="panel" id="ex-search"><button class="copy">Copy</button>
+<pre>curl https://your-host/v1/chat/completions \
+  -H <span class="tk-str">"Authorization: Bearer gwtk_your_token"</span> \
+  -H <span class="tk-str">"Content-Type: application/json"</span> \
+  -H <span class="tk-str">"X-Arbiter-Realtime: true"</span> \
+  -d <span class="tk-str">'{
+    "model": "auto",
+    "messages": [{"role":"user","content":"Latest SpaceX launch result?"}]
+  }'</span>
+<span class="tk-com"># Response grounded in live web data with [1]-style citations.</span>
+<span class="tk-com"># Sources in X-Arbiter-Realtime-Sources header.</span></pre></div>
+    </div>
+
+    <div class="note">📮 Prefer Postman? <a href="arbiter.postman_collection.json" download>Download the ready-made Postman collection</a> — set the <code>base_url</code> and <code>gateway_token</code> variables and start firing requests.</div>
+
+    <p class="muted" style="margin-top:18px">Beyond the public API, Arbiter exposes <strong>78 endpoints</strong> total — provider/key management, gateway tokens, analytics data, backups, users, announcements, Cloudflare Worker management and more. Explore them live at <code>/docs</code> (Swagger) on your instance.</p>
+  </div>
+</section>
+
+<!-- ===================== USER GUIDE ===================== -->
+<section id="guide" class="anchor">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Operating Arbiter</div>
+      <h2>User guide highlights</h2>
+      <p>Manage everything from the web UI — no restarts, no YAML surgery.</p>
+    </div>
+    <div class="two">
+      <div>
+        <h3 style="margin-bottom:10px">🎛️ Admin dashboards</h3>
+        <ul class="clean">
+          <li><strong>/dashboard</strong> — live provider &amp; per-key health, success rates, quota bars</li>
+          <li><strong>/analytics</strong> — latency percentiles, token spend, anomaly detection, CSV/JSON export</li>
+          <li><strong>/settings</strong> — add/remove/test keys, toggle providers &amp; models, routing policy, cache</li>
+          <li><strong>/playground</strong> — chat UI with model picker &amp; smart-route option</li>
+          <li><strong>/logs</strong> &amp; <strong>/logs/persistent</strong> — live buffer + 180-day audit viewer</li>
+          <li><strong>/backup</strong> — S3 backup &amp; restore management</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="margin-bottom:10px">🔑 Runtime management</h3>
+        <ul class="clean">
+          <li>Add &amp; rotate provider keys at runtime — written to <code>.env</code>, auto-tested</li>
+          <li>Issue named <strong>gateway tokens</strong> with per-token rate limits &amp; model allow/block lists</li>
+          <li>Tag keys <code>#paid</code> to reserve frontier models for billing-enabled accounts</li>
+          <li>Per-token routing policies: <code>auto</code> · <code>restricted</code> · <code>preferred</code></li>
+          <li>Google SSO with admin-approval workflow for UI access</li>
+          <li>Weekly AI-analysis email reports &amp; major-change dashboard banners</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note" style="margin-top:26px">📚 Full docs in the repo:
+      <a href="https://github.com/koushikch7/arbiter/blob/master/USERGUIDE.md">USERGUIDE.md</a> ·
+      <a href="https://github.com/koushikch7/arbiter/blob/master/README.md">README.md</a> ·
+      <a href="https://github.com/koushikch7/arbiter/blob/master/REQUIREMENTS.md">REQUIREMENTS.md</a> ·
+      <a href="https://github.com/koushikch7/arbiter/blob/master/CHANGELOG.md">CHANGELOG.md</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CTA ===================== -->
+<section style="text-align:center;border-bottom:none">
+  <div class="wrap">
+    <div class="kicker">Open source · self-hosted</div>
+    <h2 style="margin-bottom:14px">Stop hitting rate limits. Start routing intelligently.</h2>
+    <p class="muted" style="max-width:34em;margin:0 auto 26px">Clone it, point your OpenAI SDK at it, and let Arbiter handle the providers, quotas, fallback, and observability.</p>
+    <div class="cta" style="justify-content:center">
+      <a class="btn btn-primary" href="https://github.com/koushikch7/arbiter" target="_blank" rel="noopener">★ Star on GitHub</a>
+      <a class="btn btn-ghost" href="#quickstart">🚀 Quick start</a>
+      <a class="btn btn-ghost" href="arbiter.postman_collection.json" download>⬇ Postman collection</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="https://github.com/koushikch7/arbiter">GitHub</a>
+      <a href="#features">Features</a>
+      <a href="#api">API</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="arbiter.postman_collection.json" download>Postman</a>
+      <a href="https://github.com/koushikch7/arbiter/blob/master/CHANGELOG.md">Changelog</a>
+    </div>
+    <div>⚖️ <strong>Arbiter</strong> v1.21.0 — Intelligent LLM Router &amp; Gateway · Self-hosted · OpenAI-compatible</div>
+    <div class="dim" style="margin-top:6px">Built with FastAPI · Redis · Docker. Maximise free-tier quota, never hit a wall.</div>
+  </div>
+</footer>
+
+<script>
+  // Tabs
+  document.querySelectorAll('.tabs').forEach(function(group){
+    var tabs = group.querySelectorAll('.tab');
+    var box = group.parentElement;
+    tabs.forEach(function(tab){
+      tab.addEventListener('click', function(){
+        var id = tab.getAttribute('data-t');
+        tabs.forEach(function(t){ t.classList.remove('active'); });
+        tab.classList.add('active');
+        box.querySelectorAll('.panel').forEach(function(p){
+          p.classList.toggle('active', p.id === id);
+        });
+      });
+    });
+  });
+  // Copy buttons
+  document.querySelectorAll('.copy').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var pre = btn.parentElement.querySelector('pre');
+      var text = pre ? pre.innerText : '';
+      navigator.clipboard.writeText(text).then(function(){
+        var old = btn.textContent; btn.textContent = '✓ Copied';
+        setTimeout(function(){ btn.textContent = old; }, 1400);
+      });
+    });
+  });
+</script>
+</body>
+</html>
